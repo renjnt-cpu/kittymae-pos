@@ -1,6 +1,7 @@
-// Shared minimal header for this site's non-index pages (SKU Catalog, Record
-// Movement, Layaway). initShell() no longer builds any header/nav of its own, so
-// this is the only nav on these pages.
+// Shared header/nav for every page on this site, styled by css/styles.css's
+// header{}/nav{}/nav a{} rules -- same structure as the main ERP's shell.js
+// (colored header bar, pill-shaped nav links below), just this site's own pastel
+// blue palette and 4-page link set instead of the ERP's full nav.
 import { esc } from './shell.js';
 import { signOut } from './auth.js';
 
@@ -11,15 +12,20 @@ export function renderPosNav(employee, activeHref) {
     { href: 'movement.html', label: 'Record Movement' },
     { href: 'layaway.html', label: 'Layaway' },
   ];
-  const nav = document.createElement('header');
-  nav.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 16px;background:#fff;border-bottom:1px solid #eee;margin-bottom:16px;';
-  nav.innerHTML =
-    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
-      '<span style="font-weight:bold;">💍 Kittymae POS</span>' +
-      links.map((l) => '<a href="' + l.href + '" class="btn small' + (l.href === activeHref ? '' : ' secondary') + '">' + l.label + '</a>').join('') +
-    '</div>' +
-    '<div id="pos-nav-who" class="muted" style="font-size:13px;"></div>';
-  document.body.insertBefore(nav, document.body.firstChild);
+
+  const header = document.createElement('header');
+  header.innerHTML = '<h1>💍 Kittymae POS</h1>' +
+    '<div class="who">' +
+      '<span id="pos-nav-who"></span>' +
+    '</div>';
+
+  const nav = document.createElement('nav');
+  nav.innerHTML = links.map((l) =>
+    '<a href="' + l.href + '"' + (l.href === activeHref ? ' class="active"' : '') + '>' + l.label + '</a>'
+  ).join('');
+
+  document.body.prepend(nav);
+  document.body.prepend(header);
 
   document.getElementById('pos-nav-who').innerHTML =
     esc(employee.full_name) + ' · ' + esc(employee.role) +

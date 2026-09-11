@@ -5,24 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kittymae POS</title>
 <link rel="stylesheet" href="css/styles.css">
-<style>
-  .pos-header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
-  .pos-header h1 { margin:0; font-size:20px; }
-  .pos-header .who { font-size:13px; color:var(--muted, #666); }
-</style>
 </head>
 <body>
 <main>
-  <div class="pos-header">
-    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-      <h1>💍 Kittymae POS</h1>
-      <a href="products.html" class="btn small secondary">SKU Catalog</a>
-      <a href="movement.html" class="btn small secondary">Record Movement</a>
-      <a href="layaway.html" class="btn small secondary">Layaway</a>
-    </div>
-    <div id="pos-who" class="who"></div>
-  </div>
-
   <div id="pos-msg"></div>
   <div class="card">
     <h3>Branch</h3>
@@ -38,23 +23,14 @@
 
 <script type="module">
 import { initShell, esc, toast } from './js/shell.js';
-import { signOut } from './js/auth.js';
 import { getBranches, getInventory, subscribeToChanges } from './js/api.js';
+import { renderPosNav } from './js/posNav.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 
-// initShell() does the real work (session check, employee lookup, NOT_REGISTERED/
-// INACTIVE screens) -- reused as-is rather than re-implementing auth from scratch.
-// It builds no header/nav of its own; this page renders its own minimal "Kittymae POS"
-// header below, since it's meant to feel like its own focused front door, not another
-// ERP nav tab.
 const employee = await initShell();
 if (employee) {
-  document.getElementById('pos-who').innerHTML =
-    esc(employee.full_name) + ' · ' + esc(employee.role) +
-    (employee.branch_id ? ' · Branch #' + employee.branch_id : ' · All Branches') +
-    ' <button class="btn small secondary" id="pos-signout">Sign out</button>';
-  document.getElementById('pos-signout').addEventListener('click', signOut);
+  renderPosNav(employee, 'index.html');
 
   // ---- Look Up a SKU: same live-stock search widget as the main ERP's Dashboard
   // (js/api.js's getInventory/subscribeToChanges), just without that page's Sales
