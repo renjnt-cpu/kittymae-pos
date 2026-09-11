@@ -14,6 +14,7 @@ export function renderPosNav(employee, activeHref) {
     { href: 'index.html', label: 'Look Up / Record' },
     { href: 'products.html', label: 'SKU Catalog' },
     { href: 'movement.html', label: 'Record Movement' },
+    { href: 'layaway.html', label: 'Layaway' },
   ];
   const nav = document.createElement('header');
   nav.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 16px;background:#fff;border-bottom:1px solid #eee;margin-bottom:16px;';

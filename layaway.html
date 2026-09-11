@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layaway — Kittymae POS</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<main>
+  <div id="lw-msg"></div>
+  <div id="layaway-root"></div>
+</main>
+
+<script type="module">
+import { initShell, toast, esc } from './js/shell.js';
+import { getBranches, listLayaways, createLayawayHold, addLayawayPayment, completeLayaway, cancelLayaway, deleteLayawayPayment, subscribeToChanges } from './js/api.js';
+import { renderPosNav } from './js/posNav.js';
+
+const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+const STATUS_BADGE = { 'On Hold': 'pending', 'Completed': 'ok', 'Cancelled': 'low' };
+const PAYMENT_METHODS = ['Cash', 'GCash', 'Bank Transfer', 'Other'];
+// Same branch-scope rule as assert_can_act_on_branch()/record_sale() -- whole staff
+// can hold/pay/complete/cancel a layaway for their own branch; this group can do it
+// for any branch.
+const UNSCOPED_POSITIONS = ['Sales Executive', 'Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
+const POSITION_MANAGERS = ['Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
+
+const employee = await initShell('layaway');
+if (employee) {
+  renderPosNav(employee, 'layaway.html');
+  const root = document.getElementById('layaway-root');
+  const branches = await getBranches();
+  const branchById = Object.fromEntries(branches.map((b) => [b.id, b.name]));
+  const isScoped = ['Admin', 'Manager'].includes(employee.role) ? false : !UNSCOPED_POSITIONS.includes(employee.position);
+  const canManage = ['Admin', 'Manager'].includes(employee.role) || POSITION_MANAGERS.includes(employee.position);
+
+  const branchFieldHtml = isScoped
+    ? '<div class="field"><label>Branch</label><input type="text" value="' + esc(branchById[employee.branch_id] || 'None assigned') + '" disabled></div>'
+    : '<div class="field"><label>Branch *</label><select name="branchId" required>' + branches.map((b) => '<option value="' + b.id + '">' + esc(b.name) + '</option>').join('') + '</select></div>';
+
+  root.innerHTML =
+    '<div class="layout-2col">' +
+      '<div class="layout-2col-side">' +
+        '<div class="card">' +
+          '<h3>Hold an Item</h3>' +
+          '<p class="muted" style="margin-top:-4px;">The item leaves the sellable pool immediately (moves to Reserved) but stays on hand until either completed as a sale or cancelled.</p>' +
+          '<form id="lw-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
+            '<div class="field"><label>SKU *</label><input type="text" name="sku" required></div>' +
+            branchFieldHtml +
+            '<div class="field"><label>Qty *</label><input type="number" name="qty" min="1" value="1" required></div>' +
+            '<div class="field"><label>Customer Name *</label><input type="text" name="customerName" required></div>' +
+            '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
+            '<div class="field"><label>Unit Price (PHP)</label><input type="number" name="unitPrice" step="0.01" min="0"></div>' +
+            '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
+            '<button class="btn" type="submit">Hold Item</button>' +
+          '</form>' +
+        '</div>' +
+      '</div>' +
+      '<div class="layout-2col-main">' +
+        '<div class="tiles" id="lw-tiles"></div>' +
+        '<div class="card">' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+            '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="lw-f-search" placeholder="SKU, customer, contact…"></div>' +
+            '<div class="field"><label>Status</label><select id="lw-f-status"><option value="all">All Statuses</option><option>On Hold</option><option>Completed</option><option>Cancelled</option></select></div>' +
+            '<button type="button" class="btn small secondary" id="lw-f-clear">Clear Filters</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="lw-list"><div class="muted">Loading…</div></div>' +
+      '</div>' +
+    '</div>';
+
+  document.getElementById('lw-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    const branchId = isScoped ? employee.branch_id : Number(f.branchId.value);
+    try {
+      await createLayawayHold({
+        sku: f.sku.value.trim(), branchId, qty: Number(f.qty.value),
+        customerName: f.customerName.value.trim(), contactNumber: f.contactNumber.value.trim(),
+        unitPrice: f.unitPrice.value ? Number(f.unitPrice.value) : null, notes: f.notes.value.trim(),
+      });
+      toast('lw-msg', 'Item held.', false);
+      f.reset();
+      f.qty.value = 1;
+      await load();
+    } catch (err) {
+      toast('lw-msg', String(err.message || err), true);
+    }
+  });
+
+  let allHolds = [];
+  await load();
+  subscribeToChanges(['layaway_holds', 'layaway_payments'], load);
+
+  document.getElementById('lw-f-search').addEventListener('input', render);
+  document.getElementById('lw-f-status').addEventListener('change', render);
+  document.getElementById('lw-f-clear').addEventListener('click', () => {
+    document.getElementById('lw-f-search').value = '';
+    document.getElementById('lw-f-status').value = 'all';
+    render();
+  });
+
+  async function load() {
+    const list = document.getElementById('lw-list');
+    list.innerHTML = '<div class="muted">Loading…</div>';
+    try {
+      allHolds = await listLayaways();
+      render();
+    } catch (err) {
+      list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
+    }
+  }
+
+  function paidSoFar(h) { return (h.layaway_payments || []).reduce((s, p) => s + Number(p.amount), 0); }
+
+  function render() {
+    const fSearch = document.getElementById('lw-f-search').value.trim().toLowerCase();
+    const fStatus = document.getElementById('lw-f-status').value;
+    let rows = allHolds;
+    if (fSearch) rows = rows.filter((h) =>
+      h.sku.toLowerCase().includes(fSearch) || h.customer_name.toLowerCase().includes(fSearch) || (h.contact_number || '').toLowerCase().includes(fSearch));
+    if (fStatus !== 'all') rows = rows.filter((h) => h.status === fStatus);
+
+    const onHold = rows.filter((h) => h.status === 'On Hold');
+    const totalHeld = onHold.reduce((s, h) => s + Number(h.total_price || 0), 0);
+    const totalPaid = onHold.reduce((s, h) => s + paidSoFar(h), 0);
+    document.getElementById('lw-tiles').innerHTML =
+      tile(onHold.length, 'On Hold') +
+      tile(rows.filter((h) => h.status === 'Completed').length, 'Completed') +
+      tile(money(totalHeld), 'Value On Hold') +
+      tile(money(totalPaid), 'Paid So Far');
+
+    const list = document.getElementById('lw-list');
+    if (!rows.length) { list.innerHTML = '<p class="muted">No layaway holds for this filter.</p>'; return; }
+
+    list.innerHTML = '<div class="table-scroll"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
+      '<colgroup><col style="width:14%"><col style="width:9%"><col style="width:8%"><col style="width:13%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:20%"></colgroup>' +
+      '<thead><tr><th>SKU</th><th>Branch</th><th>Qty</th><th>Customer</th><th>Unit Price</th><th>Total</th><th>Paid</th><th>Status</th><th></th></tr></thead><tbody>' +
+      rows.map((h) => {
+        const paid = paidSoFar(h);
+        const remaining = h.total_price == null ? null : Number(h.total_price) - paid;
+        const canAct = canManage || employee.branch_id === h.branch_id || UNSCOPED_POSITIONS.includes(employee.position);
+        return '<tr>' +
+          '<td data-label="SKU">' + esc(h.sku) + '</td>' +
+          '<td data-label="Branch">' + esc(branchById[h.branch_id] || '') + '</td>' +
+          '<td data-label="Qty">' + h.qty + '</td>' +
+          '<td data-label="Customer">' + esc(h.customer_name) + (h.contact_number ? '<div class="muted" style="font-size:10px;">' + esc(h.contact_number) + '</div>' : '') + '</td>' +
+          '<td data-label="Unit Price">' + money(h.unit_price) + '</td>' +
+          '<td data-label="Total">' + money(h.total_price) + '</td>' +
+          '<td data-label="Paid">' + money(paid) + (remaining !== null ? '<div class="muted" style="font-size:10px;">' + money(remaining) + ' left</div>' : '') + '</td>' +
+          '<td data-label="Status"><span class="badge ' + (STATUS_BADGE[h.status] || 'pending') + '">' + esc(h.status) + '</span></td>' +
+          '<td data-label="" style="font-size:11px;">' +
+            (h.layaway_payments && h.layaway_payments.length
+              ? h.layaway_payments.map((p) => '<div>' + money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '') +
+                  (canManage ? ' <button class="btn small secondary" data-act="del-payment" data-id="' + p.id + '" style="padding:1px 6px;">✕</button>' : '') + '</div>').join('')
+              : '') +
+            (h.status === 'On Hold' && canAct
+              ? '<form class="lw-pay-form" data-hold-id="' + h.id + '" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">' +
+                  '<input type="number" name="amount" step="0.01" min="0.01" placeholder="Amount" required style="width:70px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
+                  '<select name="method" style="padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' + PAYMENT_METHODS.map((m) => '<option>' + m + '</option>').join('') + '</select>' +
+                  '<input type="text" name="reference" placeholder="Reference" style="width:70px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
+                  '<button class="btn small" type="submit">Add Payment</button>' +
+                '</form>' +
+                '<div style="margin-top:4px;display:flex;gap:4px;">' +
+                  '<button class="btn small secondary" data-act="complete" data-id="' + h.id + '">Complete</button>' +
+                  '<button class="btn small secondary" data-act="cancel" data-id="' + h.id + '">Cancel</button>' +
+                '</div>'
+              : '') +
+          '</td>' +
+        '</tr>';
+      }).join('') +
+      '</tbody></table></div>';
+
+    list.querySelectorAll('.lw-pay-form').forEach((form) => form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      try {
+        await addLayawayPayment(Number(f.dataset.holdId), Number(f.amount.value), f.method.value, f.reference.value.trim());
+        toast('lw-msg', 'Payment added.', false);
+        await load();
+      } catch (err) {
+        toast('lw-msg', String(err.message || err), true);
+      }
+    }));
+
+    list.querySelectorAll('[data-act="complete"]').forEach((btn) => btn.addEventListener('click', async () => {
+      const hold = allHolds.find((h) => h.id === Number(btn.dataset.id));
+      const paid = hold ? paidSoFar(hold) : 0;
+      if (hold && hold.total_price != null && paid < Number(hold.total_price)) {
+        if (!confirm('Not fully paid yet (' + money(paid) + ' of ' + money(hold.total_price) + '). Complete anyway?')) return;
+      } else if (!confirm('Mark this layaway as completed and sold?')) return;
+      try { await completeLayaway(Number(btn.dataset.id)); toast('lw-msg', 'Layaway completed.', false); await load(); }
+      catch (err) { toast('lw-msg', String(err.message || err), true); }
+    }));
+
+    list.querySelectorAll('[data-act="cancel"]').forEach((btn) => btn.addEventListener('click', async () => {
+      if (!confirm('Cancel this layaway? The item goes back to Available stock.')) return;
+      try { await cancelLayaway(Number(btn.dataset.id)); toast('lw-msg', 'Layaway cancelled.', false); await load(); }
+      catch (err) { toast('lw-msg', String(err.message || err), true); }
+    }));
+
+    list.querySelectorAll('[data-act="del-payment"]').forEach((btn) => btn.addEventListener('click', async () => {
+      if (!confirm('Delete this payment entry?')) return;
+      try { await deleteLayawayPayment(Number(btn.dataset.id)); toast('lw-msg', 'Payment removed.', false); await load(); }
+      catch (err) { toast('lw-msg', String(err.message || err), true); }
+    }));
+  }
+
+  function tile(num, label) { return '<div class="tile"><div class="num">' + esc(num) + '</div><div class="lbl">' + esc(label) + '</div></div>'; }
+}
+</script>
+</body>
+</html>
