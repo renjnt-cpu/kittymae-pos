@@ -16,6 +16,7 @@
 import { initShell, toast, esc } from './js/shell.js';
 import { getBranches, listBranchCapitalEntries, getBranchCapitalBalances, getBranchCapitalRemaining, createBranchCapitalEntry, approveBranchCapitalEntry, deleteBranchCapitalEntry, subscribeToChanges } from './js/api.js';
 import { renderPosNav } from './js/posNav.js';
+import { branchBadge, branchOptionStyle } from './js/branchColors.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 
@@ -43,7 +44,7 @@ if (employee) {
   const branches = await getBranches();
   const branchById = Object.fromEntries(branches.map((b) => [b.id, b.name]));
   const branchOptions = (selected) => branches.map((b) =>
-    '<option value="' + b.id + '"' + (b.id === selected ? ' selected' : '') + '>' + esc(b.name) + '</option>'
+    '<option value="' + b.id + '"' + (b.id === selected ? ' selected' : '') + ' style="' + branchOptionStyle(b.id, branches) + '">' + esc(b.name) + '</option>'
   ).join('');
 
   const addFormHtml =
@@ -190,7 +191,7 @@ if (employee) {
       rows.map((r) => {
         const pending = r.status === 'Pending Approval';
         return '<tr' + (pending ? ' style="background:#fff8e8;"' : '') + '>' +
-          '<td data-label="Branch">' + esc(r.branches?.name || '') + '</td>' +
+          '<td data-label="Branch">' + (r.branches ? branchBadge(esc, r.branches.name, r.branch_id, branches) : '') + '</td>' +
           '<td data-label="Date">' + (r.entry_date || '—') + '</td>' +
           '<td data-label="Amount">' + money(r.amount) +
             (r.creator ? '<div class="muted" style="font-size:10px;margin-top:2px;">Added by ' + esc(r.creator.full_name) + '</div>' : '') +

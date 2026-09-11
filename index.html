@@ -25,6 +25,7 @@
 import { initShell, esc, toast } from './js/shell.js';
 import { getBranches, getInventory, subscribeToChanges } from './js/api.js';
 import { renderPosNav } from './js/posNav.js';
+import { branchButtonStyle } from './js/branchColors.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 
@@ -47,9 +48,11 @@ if (employee) {
   function renderBranchButtons() {
     const box = document.getElementById('branch-buttons');
     const options = [{ id: null, name: 'All Branches' }, ...branches];
-    box.innerHTML = options.map((b) =>
-      '<button class="btn ' + (b.id === selectedBranch ? '' : 'secondary') + '" data-id="' + b.id + '">' + esc(b.name) + '</button>'
-    ).join('');
+    box.innerHTML = options.map((b) => {
+      const style = b.id === null ? '' : ' style="' + branchButtonStyle(b.id, branches, b.id === selectedBranch) + '"';
+      const cls = b.id === null ? 'btn ' + (b.id === selectedBranch ? '' : 'secondary') : 'btn';
+      return '<button class="' + cls + '"' + style + ' data-id="' + b.id + '">' + esc(b.name) + '</button>';
+    }).join('');
     box.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', async () => {
       selectedBranch = btn.dataset.id === 'null' ? null : Number(btn.dataset.id);
       renderBranchButtons();

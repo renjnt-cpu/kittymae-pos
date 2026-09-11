@@ -22,15 +22,15 @@
       <div class="field" id="branch-field"></div>
       <div class="field"><label>Movement Type *</label>
         <select name="transactionType" required id="mv-type">
-          <option value="Sale">Sale</option>
-          <option value="Stock In">Stock In (receiving)</option>
-          <option value="Stock Out">Stock Out (non-sale)</option>
-          <option value="Damage">Damage</option>
-          <option value="Missing">Missing</option>
-          <option value="Customer Return">Customer Return</option>
-          <option value="Supplier Return">Supplier Return</option>
-          <option value="Adjustment">Adjustment</option>
-          <option value="Correction">Correction</option>
+          <option value="Sale" style="background:#fbdce7;color:#a83e64;">Sale</option>
+          <option value="Stock In" style="background:#dcebfb;color:#2f6690;">Stock In (receiving)</option>
+          <option value="Stock Out" style="background:#fde2c8;color:#b06a1f;">Stock Out (non-sale)</option>
+          <option value="Damage" style="background:#e4e0fb;color:#5b52a3;">Damage</option>
+          <option value="Missing" style="background:#ecd9f7;color:#7c3aa8;">Missing</option>
+          <option value="Customer Return" style="background:#ffe6d9;color:#c06a3f;">Customer Return</option>
+          <option value="Supplier Return" style="background:#dcf3df;color:#2e7d4f;">Supplier Return</option>
+          <option value="Adjustment" style="background:#f3ecd9;color:#8a7440;">Adjustment</option>
+          <option value="Correction" style="background:#fbdcdc;color:#b23c3c;">Correction</option>
         </select>
       </div>
       <div class="field"><label>Qty *</label><input type="number" name="qty" min="1" required></div>
@@ -66,6 +66,7 @@ import {
   subscribeToChanges,
 } from './js/api.js';
 import { renderPosNav } from './js/posNav.js';
+import { branchBadge, branchOptionStyle } from './js/branchColors.js';
 
 const REMOVES = new Set(['Stock Out', 'Damage', 'Missing', 'Supplier Return', 'Sale']);
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
@@ -131,10 +132,10 @@ if (employee) {
   const branchField = document.getElementById('branch-field');
   if (isScoped) {
     const b = branches.find((x) => x.id === employee.branch_id);
-    branchField.innerHTML = '<label>Branch</label><input type="text" value="' + esc(b?.name || 'None assigned') + '" disabled>';
+    branchField.innerHTML = '<label>Branch</label>' + (b ? branchBadge(esc, b.name, b.id, branches) : '<input type="text" value="None assigned" disabled>');
   } else {
     branchField.innerHTML = '<label>Branch *</label><select name="branchId" required>' +
-      branches.map((b) => '<option value="' + b.id + '">' + esc(b.name) + '</option>').join('') + '</select>';
+      branches.map((b) => '<option value="' + b.id + '" style="' + branchOptionStyle(b.id, branches) + '">' + esc(b.name) + '</option>').join('') + '</select>';
   }
   const branchName = (id) => (branches.find((b) => b.id === id) || {}).name || '';
 
@@ -426,7 +427,7 @@ if (employee) {
             (r.sku ? '<div class="muted" style="font-size:11px;">' + esc(r.sku) + '</div>' : '') +
           '</td>' +
           '<td data-label="Qty">' + r.qty + '</td>' +
-          '<td data-label="Branch">' + esc(r.branches?.name || '—') + '</td>' +
+          '<td data-label="Branch">' + (r.branches ? branchBadge(esc, r.branches.name, r.branch_id, branches) : '—') + '</td>' +
           '<td data-label="Status">' +
             '<select data-status-for="' + r.id + '" class="badge ' + statusBadgeClass(r.status) + '" style="border:none;font:inherit;">' + statusOptionsFor(r.status) + '</select>' +
           '</td>' +
@@ -499,7 +500,7 @@ if (employee) {
         matches.map((m) =>
           '<tr>' +
             '<td>' + esc(m.order_reference || '—') + (m.customer_name ? '<div class="muted" style="font-size:11px;">' + esc(m.customer_name) + '</div>' : '') + '</td>' +
-            '<td>' + esc(m.branches?.name || '—') + '</td>' +
+            '<td>' + (m.branches ? branchBadge(esc, m.branches.name, m.branch_id, branches) : '—') + '</td>' +
             '<td><span class="badge ' + statusBadgeClass(m.status) + '">' + esc(prettyStatus(m.status)) + '</span></td>' +
             '<td>' + m.qty + '</td>' +
             '<td style="font-size:11px;">' + esc(m.notes || '—') + '</td>' +

@@ -16,6 +16,7 @@
 import { initShell, toast, esc } from './js/shell.js';
 import { getBranches, listLayaways, createLayawayHold, addLayawayPayment, completeLayaway, cancelLayaway, deleteLayawayPayment, subscribeToChanges } from './js/api.js';
 import { renderPosNav } from './js/posNav.js';
+import { branchBadge, branchOptionStyle } from './js/branchColors.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const STATUS_BADGE = { 'On Hold': 'pending', 'Completed': 'ok', 'Cancelled': 'low' };
@@ -36,8 +37,8 @@ if (employee) {
   const canManage = ['Admin', 'Manager'].includes(employee.role) || POSITION_MANAGERS.includes(employee.position);
 
   const branchFieldHtml = isScoped
-    ? '<div class="field"><label>Branch</label><input type="text" value="' + esc(branchById[employee.branch_id] || 'None assigned') + '" disabled></div>'
-    : '<div class="field"><label>Branch *</label><select name="branchId" required>' + branches.map((b) => '<option value="' + b.id + '">' + esc(b.name) + '</option>').join('') + '</select></div>';
+    ? '<div class="field"><label>Branch</label>' + (branchById[employee.branch_id] ? branchBadge(esc, branchById[employee.branch_id], employee.branch_id, branches) : '<input type="text" value="None assigned" disabled>') + '</div>'
+    : '<div class="field"><label>Branch *</label><select name="branchId" required>' + branches.map((b) => '<option value="' + b.id + '" style="' + branchOptionStyle(b.id, branches) + '">' + esc(b.name) + '</option>').join('') + '</select></div>';
 
   root.innerHTML =
     '<div class="layout-2col">' +
@@ -143,7 +144,7 @@ if (employee) {
         const canAct = canManage || employee.branch_id === h.branch_id || UNSCOPED_POSITIONS.includes(employee.position);
         return '<tr>' +
           '<td data-label="SKU">' + esc(h.sku) + '</td>' +
-          '<td data-label="Branch">' + esc(branchById[h.branch_id] || '') + '</td>' +
+          '<td data-label="Branch">' + (branchById[h.branch_id] ? branchBadge(esc, branchById[h.branch_id], h.branch_id, branches) : '') + '</td>' +
           '<td data-label="Qty">' + h.qty + '</td>' +
           '<td data-label="Customer">' + esc(h.customer_name) + (h.contact_number ? '<div class="muted" style="font-size:10px;">' + esc(h.contact_number) + '</div>' : '') + '</td>' +
           '<td data-label="Unit Price">' + money(h.unit_price) + '</td>' +

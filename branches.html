@@ -21,6 +21,7 @@ import {
   subscribeToChanges,
 } from './js/api.js';
 import { renderPosNav } from './js/posNav.js';
+import { branchButtonStyle } from './js/branchColors.js';
 
 const SUB_STATUS_BADGE = { Pending: 'pending', Listed: 'transit', Sold: 'ok', Cancelled: 'low' };
 const SUB_STATUSES = ['Pending', 'Listed', 'Sold', 'Cancelled'];
@@ -283,7 +284,7 @@ if (employee) {
       // a branch that isn't theirs (the write RLS policy already rejects that; this just
       // disables the form instead of letting them hit a confusing error).
       box.innerHTML = branches.map((b) =>
-        '<button type="button" class="btn ' + (b.id === selectedBranch ? '' : 'secondary') + '" data-id="' + b.id + '">' + esc(b.name) + '</button>'
+        '<button type="button" class="btn" style="' + branchButtonStyle(b.id, branches, b.id === selectedBranch) + '" data-id="' + b.id + '">' + esc(b.name) + '</button>'
       ).join('');
       box.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', async () => {
         selectedBranch = Number(btn.dataset.id);
