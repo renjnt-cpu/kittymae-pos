@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SKU Catalog — Kittymae POS</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<main>
+  <div id="prod-msg"></div>
+  <div id="products-root"></div>
+</main>
+
+<script type="module">
+import { initShell, toast, esc } from './js/shell.js';
+import { listProducts, updateProduct, subscribeToChanges, PRODUCTS_ROW_CAP } from './js/api.js';
+import { renderPosNav } from './js/posNav.js';
+
+const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + ' g';
+
+const employee = await initShell('products');
+if (employee) {
+  renderPosNav(employee, 'products.html');
+  const root = document.getElementById('products-root');
+  const canManage = ['Admin', 'Manager'].includes(employee.role);
+
+  // New SKUs are added in the "SKU 2026" Google Sheet, not here -- this page only
+  // reflects that catalog (search/browse, plus correcting a detail already on file).
+  root.innerHTML =
+    '<div class="card">' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+        '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="f-search" placeholder="SKU, Sub SKU, or product name…"></div>' +
+        '<div class="field"><label>Status</label><select id="f-status"><option value="all">All</option><option value="Active" selected>Active</option><option value="Discontinued">Discontinued</option></select></div>' +
+        '<button type="button" class="btn small secondary" id="f-clear">Clear Filters</button>' +
+      '</div>' +
+    '</div>' +
+    '<div id="prod-list"><div class="muted">Loading…</div></div>';
+
+  // With 7,392 SKUs, fetching everything and filtering client-side silently hit
+  // Supabase's default 1000-row cap -- see PRODUCTS_ROW_CAP in api.js. Search and
+  // status now query the server directly instead, capped explicitly with a visible
+  // notice when that cap is hit (same fix as Order & Item Status on movement.html).
+  let allProducts = [];
+  let searchTimer = null;
+  let realtimeTimer = null;
+  await load();
+  // Debounced: an edit or the Active/Discontinued toggle firing on one row shouldn't
+  // matter much here, but this keeps the same safety pattern as movement.html in
+  // case of another bulk import later.
+  subscribeToChanges('products', () => {
+    clearTimeout(realtimeTimer);
+    realtimeTimer = setTimeout(load, 500);
+  });
+
+  document.getElementById('f-search').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(load, 300);
+  });
+  document.getElementById('f-status').addEventListener('change', load);
+  document.getElementById('f-clear').addEventListener('click', () => {
+    document.getElementById('f-search').value = '';
+    document.getElementById('f-status').value = 'all';
+    load();
+  });
+
+  async function load() {
+    const list = document.getElementById('prod-list');
+    list.innerHTML = '<div class="muted">Loading…</div>';
+    try {
+      allProducts = await listProducts({
+        search: document.getElementById('f-search').value.trim(),
+        status: document.getElementById('f-status').value,
+      });
+      render();
+    } catch (err) {
+      list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
+    }
+  }
+
+  function render() {
+    const rows = allProducts; // already scoped to the current search + status at the query level
+    const truncated = rows.length >= PRODUCTS_ROW_CAP;
+
+    const list = document.getElementById('prod-list');
+    if (!rows.length) { list.innerHTML = '<p class="muted">No SKUs match this filter.</p>'; return; }
+    const truncatedNotice = truncated
+      ? '<p class="muted" style="margin:0 0 8px;color:#b45309;">Showing the first ' + PRODUCTS_ROW_CAP + ' matching SKUs — search to narrow further and see the rest.</p>'
+      : '';
+
+    function rowHtml(p) {
+      return '<tr data-row-id="' + esc(p.sku) + '">' +
+          '<td data-label="SKU"><b>' + esc(p.sku) + '</b></td>' +
+          '<td data-label="Product Name">' + esc(p.item_name) + '</td>' +
+          '<td data-label="Sub SKU">' + esc(p.sub_sku || '—') + '</td>' +
+          '<td data-label="Price">' + money(p.system_selling_price) + '</td>' +
+          '<td data-label="Est. Gram">' + weight(p.gross_weight_g) + '</td>' +
+          '<td data-label="Status"><span class="badge ' + (p.product_status === 'Active' ? 'ok' : 'low') + '">' + esc(p.product_status) + '</span></td>' +
+          '<td data-label="Actions" style="white-space:nowrap;">' +
+            (canManage
+              ? '<button class="btn small secondary" data-sku="' + esc(p.sku) + '" data-act="edit">Edit</button> ' +
+                (p.product_status === 'Active'
+                  ? '<button class="btn small secondary" data-sku="' + esc(p.sku) + '" data-act="discontinue">Discontinue</button>'
+                  : '<button class="btn small secondary" data-sku="' + esc(p.sku) + '" data-act="reactivate">Reactivate</button>')
+              : '') +
+          '</td>' +
+        '</tr>' +
+        '<tr class="edit-row" data-edit-for="' + esc(p.sku) + '" style="display:none;"><td colspan="7"></td></tr>';
+    }
+
+    list.innerHTML = truncatedNotice + '<div class="table-scroll"><table><thead><tr style="white-space:nowrap;">' +
+      '<th>SKU</th><th>Product Name</th><th>Sub SKU</th><th>Price</th><th>Est. Gram</th><th>Status</th><th></th>' +
+      '</tr></thead><tbody>' + rows.map(rowHtml).join('') + '</tbody></table></div>';
+
+    if (!canManage) return;
+
+    list.querySelectorAll('[data-act="edit"]').forEach((btn) => btn.addEventListener('click', () => openEdit(btn.dataset.sku, rows)));
+
+    list.querySelectorAll('[data-act="discontinue"]').forEach((btn) => btn.addEventListener('click', async () => {
+      if (!confirm('Mark ' + btn.dataset.sku + ' as Discontinued? It stays visible in history, just hidden from the default Active view.')) return;
+      try { await updateProduct(btn.dataset.sku, { productStatus: 'Discontinued' }); toast('prod-msg', 'SKU discontinued.', false); await load(); }
+      catch (err) { toast('prod-msg', String(err.message || err), true); }
+    }));
+
+    list.querySelectorAll('[data-act="reactivate"]').forEach((btn) => btn.addEventListener('click', async () => {
+      try { await updateProduct(btn.dataset.sku, { productStatus: 'Active' }); toast('prod-msg', 'SKU reactivated.', false); await load(); }
+      catch (err) { toast('prod-msg', String(err.message || err), true); }
+    }));
+  }
+
+  /** Opens an inline edit form pre-filled with the SKU's current values, same pattern
+   * as Bills' edit-in-place row. SKU itself is never editable — it's the primary key
+   * every other table (inventory, ledger, transfers) references by. */
+  function openEdit(sku, rows) {
+    const p = rows.find((r) => r.sku === sku);
+    const cell = document.querySelector('tr[data-edit-for="' + sku + '"]');
+    const isOpen = cell.style.display !== 'none';
+    document.querySelectorAll('.edit-row').forEach((r) => { r.style.display = 'none'; r.querySelector('td').innerHTML = ''; });
+    if (isOpen) return;
+    cell.style.display = '';
+    cell.querySelector('td').innerHTML =
+      '<form class="edit-form" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+        '<div class="field"><label>Product Name</label><input type="text" name="itemName" value="' + esc(p.item_name) + '" required></div>' +
+        '<div class="field"><label>Sub SKU</label><input type="text" name="subSku" value="' + esc(p.sub_sku || '') + '"></div>' +
+        '<div class="field"><label>Price (PHP)</label><input type="number" name="price" step="0.01" min="0" value="' + (p.system_selling_price ?? '') + '"></div>' +
+        '<div class="field"><label>Est. Gram</label><input type="number" name="grossWeightG" step="0.001" min="0" value="' + (p.gross_weight_g ?? '') + '"></div>' +
+        '<button class="btn small" type="submit">Save</button> ' +
+        '<button class="btn small secondary" type="button" data-cancel="1">Cancel</button>' +
+      '</form>';
+    const form = cell.querySelector('.edit-form');
+    form.querySelector('[data-cancel]').addEventListener('click', () => { cell.style.display = 'none'; form.remove(); });
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      try {
+        await updateProduct(sku, {
+          itemName: f.itemName.value.trim(), subSku: f.subSku.value.trim(),
+          price: f.price.value, grossWeightG: f.grossWeightG.value,
+        });
+        toast('prod-msg', 'SKU updated.', false);
+        await load();
+      } catch (err) {
+        toast('prod-msg', String(err.message || err), true);
+      }
+    });
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+/* White and pastel yellow theme. */
+:root { --rose:#fff1bc; --rose-lt:#fff8de; --rose-bg:#fffbf0; --ink:#2b2b2b; --muted:#767676; --ok:#2e7d32; --warn:#c62828; }
+* { box-sizing:border-box; }
+body { font-family:Arial,Helvetica,sans-serif; margin:0; background:var(--rose-bg); color:var(--ink); }
+header { background:var(--rose); color:var(--ink); padding:14px 20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+header h1 { font-size:18px; margin:0; }
+header .who { font-size:13px; opacity:0.95; }
+nav { display:flex; gap:6px; padding:12px 20px; background:#fff; border-bottom:1px solid #eee; flex-wrap:wrap; }
+nav a { background:none; border:1px solid var(--rose-lt); color:var(--ink); padding:7px 14px; border-radius:20px; cursor:pointer; font-size:13px; text-decoration:none; }
+nav a.active { background:var(--rose); color:var(--ink); border-color:var(--rose); }
+main { padding:16px 20px 60px; max-width:1100px; margin:0 auto; }
+.tiles { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+.tile { background:#fff; border-radius:10px; padding:14px 18px; min-width:150px; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+.tile .num { font-size:26px; font-weight:bold; color:var(--ink); }
+.tile .lbl { font-size:12px; color:var(--muted); }
+h2 { font-size:16px; margin:22px 0 10px; }
+h3 { font-size:14px; margin:16px 0 8px; color:var(--muted); }
+.table-scroll { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.06); font-size:13px; }
+th,td { text-align:left; padding:8px 10px; border-bottom:1px solid #f0f0f0; }
+th { background:#eeeeee; font-size:11px; text-transform:uppercase; color:var(--muted); }
+tr:last-child td { border-bottom:none; }
+.badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; }
+.badge.low { background:#fdecea; color:var(--warn); }
+.badge.ok { background:#eaf6ec; color:var(--ok); }
+.badge.pending { background:#fff4e0; color:#a15c00; }
+.badge.transit { background:#e3edfd; color:#1a56b0; }
+.card { background:#fff; border-radius:10px; padding:16px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+.card form { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; }
+.field { display:flex; flex-direction:column; gap:4px; }
+.field label { font-size:11px; color:var(--muted); }
+.field input, .field select, .field textarea { padding:7px 8px; border:1px solid #ddd; border-radius:6px; font-size:13px; min-width:140px; }
+button.btn { background:var(--rose); color:var(--ink); border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:13px; }
+button.btn.secondary { background:#eee; color:var(--ink); }
+button.btn.small { padding:4px 10px; font-size:12px; }
+.msg { padding:10px 14px; border-radius:8px; margin-bottom:12px; font-size:13px; }
+.msg.error { background:#fdecea; color:var(--warn); }
+.msg.ok { background:#eaf6ec; color:var(--ok); }
+.muted { color:var(--muted); font-size:12px; }
+.center-screen { display:flex; align-items:center; justify-content:center; min-height:70vh; text-align:center; padding:20px; }
+
+/* Mobile-first: stacked single column below 960px so nothing ever silently wraps
+   onto its own row at an awkward in-between width. Above 960px, switch to a fixed
+   3-column row (Add Bill / Main / Recurring) that never wraps. */
+.bills-layout { display:flex; flex-direction:column; gap:16px; }
+.bills-col-add, .bills-col-main, .bills-col-recurring { flex:1 1 auto; min-width:0; }
+@media (min-width:960px) {
+  .bills-layout { flex-direction:row; flex-wrap:nowrap; align-items:flex-start; }
+  .bills-col-add { flex:0 0 300px; }
+  .bills-col-main { flex:1 1 auto; min-width:0; }
+  .bills-col-recurring { flex:0 0 260px; }
+}
+
+/* Generic 2-column reuse of the same pattern (Add form + main content) for Subasta/Scrap. */
+.layout-2col { display:flex; flex-direction:column; gap:16px; }
+.layout-2col-side, .layout-2col-main { flex:1 1 auto; min-width:0; }
+@media (min-width:960px) {
+  .layout-2col { flex-direction:row; flex-wrap:nowrap; align-items:flex-start; }
+  .layout-2col-side { flex:0 0 300px; }
+  .layout-2col-main { flex:1 1 auto; min-width:0; }
+}
+
+/* 3-column variant (Add form / active list / a compact sidebar) — used by Refunds to
+   set Completed records apart in their own panel on the right. */
+.layout-3col { display:flex; flex-direction:column; gap:16px; }
+.layout-3col-side, .layout-3col-main, .layout-3col-right { flex:1 1 auto; min-width:0; }
+@media (min-width:960px) {
+  .layout-3col { flex-direction:row; flex-wrap:nowrap; align-items:flex-start; }
+  .layout-3col-side { flex:0 0 280px; }
+  .layout-3col-main { flex:1 1 auto; min-width:0; }
+  .layout-3col-right { flex:0 0 280px; }
+}
+.completed-item { border-bottom:1px solid #f0f0f0; padding:8px 0; }
+.completed-item:last-child { border-bottom:none; }
+.completed-orderid { width:100%; text-align:left; font-weight:bold; background:none; border:none; padding:4px 0; cursor:pointer; color:var(--ink); font-size:13px; }
+.completed-orderid:hover { color:var(--muted); }
+.completed-detail { font-size:12px; padding:6px 2px 2px; line-height:1.6; }
+.completed-detail b { color:var(--muted); font-weight:normal; }
+
+/* Mobile: turn wide data tables into one-field-per-line cards (using each
+   <td>'s data-label) instead of forcing horizontal scroll — a scrollbar is easy
+   to miss and hides columns like Status or the action buttons entirely on a phone. */
+@media (max-width:760px) {
+  main { padding:12px 12px 50px; }
+
+  .table-scroll table, .table-scroll tr, .table-scroll td { display:block; width:100%; }
+  /* Must be scoped to thead specifically, not tr:first-child -- :first-child matches
+     the first row of EACH section (thead/tbody/tfoot separately), so tr:first-child
+     was also hiding the first real data row and the entire tfoot totals row (tfoot
+     always has exactly one row, which is always its own first child). With only one
+     entry, that hid the whole list. */
+  .table-scroll thead tr { display:none; }
+  .table-scroll tr:not(.edit-row) { margin-bottom:10px; border:1px solid #eee; border-radius:8px; overflow:hidden; }
+  .table-scroll td { border-bottom:1px solid #f5f5f5; padding:8px 12px; white-space:normal !important; }
+  .table-scroll td:last-child { border-bottom:none; }
+  .table-scroll td[data-label]::before { content:attr(data-label); display:block; font-size:10px; text-transform:uppercase; letter-spacing:0.03em; color:var(--muted); margin-bottom:2px; }
+}

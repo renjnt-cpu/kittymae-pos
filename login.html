@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kittymae POS</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="center-screen" id="screen">
+  <div>
+    <h2>💍 Kittymae POS</h2>
+    <p class="muted">Sign in with your Google account to continue.</p>
+    <button class="btn" id="google-btn">Sign in with Google</button>
+
+    <p class="muted" style="margin:16px 0 8px;">— or —</p>
+    <form id="id-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:8px;max-width:220px;margin:0 auto;">
+      <div class="field"><label>ID Number</label><input type="text" id="id-number" placeholder="e.g. MK24006" required></div>
+      <div class="field"><label>Password</label><input type="password" id="id-password" required></div>
+      <button class="btn secondary" type="submit">Sign In</button>
+    </form>
+
+    <div id="msg" style="margin-top:16px;"></div>
+  </div>
+</div>
+
+<script type="module">
+import { supabase } from './js/supabaseClient.js';
+import { signInWithGoogle, signInWithIdPassword, linkEmployee } from './js/auth.js';
+
+document.getElementById('google-btn').addEventListener('click', async () => {
+  try { await signInWithGoogle(); }
+  catch (err) { showError(String(err.message || err)); }
+});
+
+document.getElementById('id-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const idNumber = document.getElementById('id-number').value;
+  const password = document.getElementById('id-password').value;
+  try {
+    await signInWithIdPassword(idNumber, password);
+    await linkEmployee();
+    window.location.href = 'index.html';
+  } catch (err) {
+    const msg = String(err.message || err);
+    showError(msg.startsWith('NOT_REGISTERED') ? 'That ID number isn\'t registered.' : msg.startsWith('INACTIVE') ? 'This account is inactive.' : msg.includes('Invalid login credentials') ? 'Incorrect ID number or password.' : msg);
+  }
+});
+
+function showError(text) {
+  document.getElementById('msg').innerHTML = '<div class="msg error">' + text + '</div>';
+}
+
+// If we land here already signed in (e.g. OAuth redirect came back to login.html, or a
+// stale tab), try to link + go straight to the dashboard instead of showing the button.
+const { data: { session } } = await supabase.auth.getSession();
+if (session) {
+  try {
+    await linkEmployee();
+    window.location.href = 'index.html';
+  } catch (err) {
+    const msg = String(err.message || err);
+    if (msg.startsWith('NOT_REGISTERED')) {
+      document.getElementById('screen').innerHTML =
+        '<div><h2>Not registered yet</h2><p>Signed in as <b>' + session.user.email + '</b>, but you\'re not in the Employees list.</p>' +
+        '<p class="muted">Ask an Admin to add you, then sign in again.</p></div>';
+    } else if (msg.startsWith('INACTIVE')) {
+      document.getElementById('screen').innerHTML = '<div><h2>Account inactive</h2><p>Your record is marked Inactive. Contact an Admin.</p></div>';
+    } else {
+      showError(msg);
+    }
+  }
+}
+</script>
+</body>
+</html>
