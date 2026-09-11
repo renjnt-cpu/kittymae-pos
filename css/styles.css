@@ -1,6 +1,6 @@
-/* White and pastel purple theme -- Kittymae POS's own palette, distinct from the main
+/* White and pastel blue theme -- Kittymae POS's own palette, distinct from the main
    ERP's pastel yellow, though structurally the same header/nav layout. */
-:root { --rose:#ecd9f7; --rose-lt:#f5ebfc; --rose-bg:#faf6fd; --ink:#2b2b2b; --muted:#767676; --ok:#2e7d32; --warn:#c62828; }
+:root { --rose:#cfe8fb; --rose-lt:#e6f4fd; --rose-bg:#f5fafd; --ink:#2b2b2b; --muted:#767676; --ok:#2e7d32; --warn:#c62828; }
 * { box-sizing:border-box; }
 body { font-family:Arial,Helvetica,sans-serif; margin:0; background:var(--rose-bg); color:var(--ink); }
 header { background:var(--rose); color:var(--ink); padding:14px 20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
