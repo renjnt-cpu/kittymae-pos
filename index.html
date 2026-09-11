@@ -23,21 +23,25 @@
     <div id="pos-who" class="who"></div>
   </div>
 
+  <div id="pos-msg"></div>
+  <div class="card">
+    <h3>Branch</h3>
+    <div id="branch-buttons" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+  </div>
   <div class="card">
     <h3>Look Up a SKU</h3>
-    <p class="muted" style="margin-top:-4px;">Quick product lookup — SKU, price, weight, status. New SKUs are added in the Google Sheet, not here (see SKU Catalog on the main system for that). To record a movement, use <a href="movement.html">Record Movement</a>.</p>
-    <div class="field" style="max-width:380px;"><label>Search</label><input type="text" id="lookup-search" placeholder="SKU or product name…"></div>
-    <div id="lookup-results" style="margin-top:10px;"></div>
+    <p class="muted" style="margin-top:-4px;">Live stock levels — same search as the Dashboard on the main system. New SKUs are added in the Google Sheet, not here (see SKU Catalog on the main system for that). To record a movement, use <a href="movement.html">Record Movement</a>.</p>
+    <div class="field" style="max-width:380px;"><label>Search SKU / Item Name</label><input type="text" id="lookup-search"></div>
   </div>
+  <div id="stock-table"><div class="muted">Loading…</div></div>
 </main>
 
 <script type="module">
-import { initShell, esc } from './js/shell.js';
+import { initShell, esc, toast } from './js/shell.js';
 import { signOut } from './js/auth.js';
-import { searchProducts } from './js/api.js';
+import { getBranches, getInventory, subscribeToChanges } from './js/api.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
-const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + ' g';
 
 // initShell() does the real work (session check, employee lookup, NOT_REGISTERED/
 // INACTIVE screens) -- reused as-is rather than re-implementing auth from scratch.
@@ -52,34 +56,76 @@ if (employee) {
     ' <button class="btn small secondary" id="pos-signout">Sign out</button>';
   document.getElementById('pos-signout').addEventListener('click', signOut);
 
-  // ---- SKU lookup ----
-  const lookupInput = document.getElementById('lookup-search');
-  const lookupResults = document.getElementById('lookup-results');
-  let lookupTimer = null;
-  lookupInput.addEventListener('input', () => {
-    clearTimeout(lookupTimer);
-    const q = lookupInput.value.trim();
-    if (!q) { lookupResults.innerHTML = ''; return; }
-    lookupTimer = setTimeout(async () => {
-      try {
-        const matches = await searchProducts(q);
-        if (!matches.length) { lookupResults.innerHTML = '<p class="muted">No SKUs match.</p>'; return; }
-        lookupResults.innerHTML = '<div class="table-scroll"><table><thead><tr>' +
-          '<th>SKU</th><th>Product Name</th><th>Price</th><th>Est. Gram</th><th>Status</th>' +
-          '</tr></thead><tbody>' + matches.slice(0, 30).map((p) =>
-            '<tr>' +
-              '<td data-label="SKU"><b>' + esc(p.sku) + '</b></td>' +
-              '<td data-label="Product Name">' + esc(p.item_name) + '</td>' +
-              '<td data-label="Price">' + money(p.system_selling_price) + '</td>' +
-              '<td data-label="Est. Gram">' + weight(p.gross_weight_g) + '</td>' +
-              '<td data-label="Status"><span class="badge ' + (p.product_status === 'Active' ? 'ok' : 'low') + '">' + esc(p.product_status) + '</span></td>' +
-            '</tr>'
-          ).join('') + '</tbody></table></div>';
-      } catch (err) {
-        lookupResults.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
-      }
-    }, 250);
-  });
+  // ---- Look Up a SKU: same live-stock search widget as the main ERP's Dashboard
+  // (js/api.js's getInventory/subscribeToChanges), just without that page's Sales
+  // Overview/tiles section -- this is the quick-lookup half of it, not the analytics.
+  const branches = await getBranches();
+  const isScoped = employee.role === 'Branch Supervisor' || employee.role === 'Staff';
+  let selectedBranch = isScoped ? employee.branch_id : null; // null = All Branches
+
+  renderBranchButtons();
+  await loadStock();
+  subscribeToChanges(['inventory', 'inventory_transactions'], loadStock);
+  document.getElementById('lookup-search').addEventListener('input', () => renderTable(window.__allRows || []));
+
+  function renderBranchButtons() {
+    const box = document.getElementById('branch-buttons');
+    const options = [{ id: null, name: 'All Branches' }, ...branches];
+    box.innerHTML = options.map((b) =>
+      '<button class="btn ' + (b.id === selectedBranch ? '' : 'secondary') + '" data-id="' + b.id + '">' + esc(b.name) + '</button>'
+    ).join('');
+    box.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', async () => {
+      selectedBranch = btn.dataset.id === 'null' ? null : Number(btn.dataset.id);
+      renderBranchButtons();
+      await loadStock();
+    }));
+  }
+
+  async function loadStock() {
+    document.getElementById('stock-table').innerHTML = '<div class="muted">Loading…</div>';
+    try {
+      const rows = await getInventory(selectedBranch);
+      window.__allRows = rows;
+      renderTable(rows);
+    } catch (err) {
+      toast('pos-msg', String(err.message || err), true);
+    }
+  }
+
+  function rowFinancials(r) {
+    const supplierPrice = r.products?.supplier_price;
+    const sellingPrice = r.products?.system_selling_price;
+    const purchasedAmount = supplierPrice != null ? r.qty_available * supplierPrice : null;
+    const estSales = sellingPrice != null ? r.qty_available * sellingPrice : null;
+    const profit = purchasedAmount != null && estSales != null ? estSales - purchasedAmount : null;
+    return { purchasedAmount, estSales, profit };
+  }
+
+  function renderTable(rows) {
+    const q = (document.getElementById('lookup-search').value || '').toLowerCase();
+    const filtered = q ? rows.filter((r) => r.sku.toLowerCase().includes(q) || (r.products?.item_name || '').toLowerCase().includes(q)) : rows;
+    const box = document.getElementById('stock-table');
+    if (!filtered.length) { box.innerHTML = '<p class="muted">No matching stock.</p>'; return; }
+    box.innerHTML = '<div class="table-scroll"><table><thead><tr><th>SKU</th><th>Item Name</th><th>Available</th><th>Reserved</th><th>Grams on Hand</th><th>Status</th>' +
+      '<th>Sup. Price</th><th>Pancake Price</th><th>Gold Rate (Sup./Current)</th><th>Purchased Amount</th><th>Est. Sales</th><th>Est. Profit</th></tr></thead><tbody>' +
+      filtered.map((r) => {
+        const low = r.products && r.qty_available <= r.products.reorder_level;
+        const status = r.qty_available === 0
+          ? '<span class="badge low">OUT OF STOCK</span>'
+          : low ? '<span class="badge low">LOW STOCK</span>' : '<span class="badge ok">OK</span>';
+        const { purchasedAmount, estSales, profit } = rowFinancials(r);
+        const supRate = r.products?.supplier_gold_rate_per_g, curRate = r.products?.current_gold_rate_per_g;
+        return '<tr><td data-label="SKU">' + esc(r.sku) + '</td><td data-label="Item Name">' + esc(r.products?.item_name || '') + '</td><td data-label="Available">' + r.qty_available +
+          '</td><td data-label="Reserved">' + r.qty_reserved + '</td><td data-label="Grams on Hand">' + (r.total_grams_on_hand ?? '—') + '</td><td data-label="Status">' + status + '</td>' +
+          '<td data-label="Sup. Price">' + money(r.products?.supplier_price) + '</td>' +
+          '<td data-label="Pancake Price">' + money(r.products?.system_selling_price) + '</td>' +
+          '<td data-label="Gold Rate (Sup./Current)">' + (supRate != null ? Number(supRate).toLocaleString('en-PH') : '—') + ' / ' + (curRate != null ? Number(curRate).toLocaleString('en-PH') : '—') + '</td>' +
+          '<td data-label="Purchased Amount">' + money(purchasedAmount) + '</td>' +
+          '<td data-label="Est. Sales">' + money(estSales) + '</td>' +
+          '<td data-label="Est. Profit">' + money(profit) + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table></div>';
+  }
 }
 </script>
 </body>
