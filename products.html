@@ -20,7 +20,7 @@ import { renderPosNav } from './js/posNav.js';
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + ' g';
 
-const employee = await initShell('products');
+const employee = await initShell();
 if (employee) {
   renderPosNav(employee, 'products.html');
   const root = document.getElementById('products-root');

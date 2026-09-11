@@ -26,7 +26,7 @@ const PAYMENT_METHODS = ['Cash', 'GCash', 'Bank Transfer', 'Other'];
 const UNSCOPED_POSITIONS = ['Sales Executive', 'Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
 const POSITION_MANAGERS = ['Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
 
-const employee = await initShell('layaway');
+const employee = await initShell();
 if (employee) {
   renderPosNav(employee, 'layaway.html');
   const root = document.getElementById('layaway-root');

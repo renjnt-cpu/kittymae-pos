@@ -123,7 +123,7 @@ function historyKey(r) {
 const UNSCOPED_POSITIONS = ['Sales Executive', 'Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
 function tile(num, label) { return '<div class="tile"><div class="num">' + esc(num) + '</div><div class="lbl">' + esc(label) + '</div></div>'; }
 
-const employee = await initShell('movement');
+const employee = await initShell();
 if (employee) {
   renderPosNav(employee, 'movement.html');
   const branches = await getBranches();

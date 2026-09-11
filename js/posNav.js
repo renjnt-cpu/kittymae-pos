@@ -1,17 +1,12 @@
 // Shared minimal header for this site's non-index pages (SKU Catalog, Record
-// Movement). initShell() still builds the full ERP nav (Bills/Refunds/Transfers/etc.)
-// since it doesn't know this is a pared-down site -- those pages don't exist here, so
-// that nav is stripped and replaced with just the 3 pages this site actually has,
-// same pattern index.html (the old pos.html) already used for itself.
+// Movement, Layaway). initShell() no longer builds any header/nav of its own, so
+// this is the only nav on these pages.
 import { esc } from './shell.js';
 import { signOut } from './auth.js';
 
 export function renderPosNav(employee, activeHref) {
-  document.querySelector('body > header')?.remove();
-  document.querySelector('body > nav')?.remove();
-
   const links = [
-    { href: 'index.html', label: 'Look Up / Record' },
+    { href: 'index.html', label: 'Look Up a SKU' },
     { href: 'products.html', label: 'SKU Catalog' },
     { href: 'movement.html', label: 'Record Movement' },
     { href: 'layaway.html', label: 'Layaway' },

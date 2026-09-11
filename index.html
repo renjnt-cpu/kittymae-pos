@@ -22,89 +22,35 @@
     </div>
     <div id="pos-who" class="who"></div>
   </div>
-  <div id="pos-msg"></div>
 
   <div class="card">
     <h3>Look Up a SKU</h3>
-    <p class="muted" style="margin-top:-4px;">Quick product lookup — SKU, price, weight, status. New SKUs are added in the Google Sheet, not here (see SKU Catalog on the main system for that).</p>
+    <p class="muted" style="margin-top:-4px;">Quick product lookup — SKU, price, weight, status. New SKUs are added in the Google Sheet, not here (see SKU Catalog on the main system for that). To record a movement, use <a href="movement.html">Record Movement</a>.</p>
     <div class="field" style="max-width:380px;"><label>Search</label><input type="text" id="lookup-search" placeholder="SKU or product name…"></div>
     <div id="lookup-results" style="margin-top:10px;"></div>
-  </div>
-
-  <div class="card">
-    <h3>Record a Movement</h3>
-    <p class="muted" style="margin-top:-4px;">Covers receiving, sales, non-sale stock out, damage, missing items, and corrections.</p>
-    <form id="mv-form">
-      <div class="field" style="position:relative;">
-        <label>SKU *</label>
-        <input type="text" name="sku" id="mv-sku" required autocomplete="off" placeholder="Type a SKU or item name…">
-        <div id="mv-sku-name" class="muted" style="font-size:11px;"></div>
-        <div id="mv-sku-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 10px rgba(0,0,0,0.12);max-height:220px;overflow-y:auto;"></div>
-      </div>
-      <div class="field" id="branch-field"></div>
-      <div class="field"><label>Movement Type *</label>
-        <select name="transactionType" required id="mv-type">
-          <option value="Sale">Sale</option>
-          <option value="Stock In">Stock In (receiving)</option>
-          <option value="Stock Out">Stock Out (non-sale)</option>
-          <option value="Damage">Damage</option>
-          <option value="Missing">Missing</option>
-          <option value="Customer Return">Customer Return</option>
-          <option value="Supplier Return">Supplier Return</option>
-          <option value="Adjustment">Adjustment</option>
-          <option value="Correction">Correction</option>
-        </select>
-      </div>
-      <div class="field"><label>Qty *</label><input type="number" name="qty" min="1" required></div>
-      <div id="mv-sale-fields" style="display:contents;">
-        <div class="field"><label>Unit Price (PHP)</label><input type="number" name="unitPrice" step="0.01" min="0"></div>
-        <div class="field"><label>Customer Name</label><input type="text" name="customerName"></div>
-        <div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>
-      </div>
-      <div class="field"><label id="mv-ref-label">Reference # / Order ID</label><input type="text" name="referenceNumber"></div>
-      <div class="field" id="mv-reason-field"><label>Reason</label><input type="text" name="reason"></div>
-      <div class="field"><label>Notes</label><input type="text" name="notes"></div>
-      <button class="btn" type="submit">Record</button>
-    </form>
   </div>
 </main>
 
 <script type="module">
-import { initShell, toast, esc } from './js/shell.js';
+import { initShell, esc } from './js/shell.js';
 import { signOut } from './js/auth.js';
-import { getBranches, recordMovement, recordSale, searchProducts } from './js/api.js';
+import { searchProducts } from './js/api.js';
 
-const REMOVES = new Set(['Stock Out', 'Damage', 'Missing', 'Supplier Return', 'Sale']);
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + ' g';
-const UNSCOPED_POSITIONS = ['Sales Executive', 'Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
 
 // initShell() does the real work (session check, employee lookup, NOT_REGISTERED/
 // INACTIVE screens) -- reused as-is rather than re-implementing auth from scratch.
-// Its own header/nav (the full "Kittymae Jewels System" ERP-style nav) is then
-// swapped out for a minimal, distinct "Kittymae POS" header, since this page is
-// meant to feel like its own focused front door, not another ERP nav tab.
-const employee = await initShell('pos');
+// It builds no header/nav of its own; this page renders its own minimal "Kittymae POS"
+// header below, since it's meant to feel like its own focused front door, not another
+// ERP nav tab.
+const employee = await initShell();
 if (employee) {
-  document.querySelector('body > header')?.remove();
-  document.querySelector('body > nav')?.remove();
-
   document.getElementById('pos-who').innerHTML =
     esc(employee.full_name) + ' · ' + esc(employee.role) +
     (employee.branch_id ? ' · Branch #' + employee.branch_id : ' · All Branches') +
     ' <button class="btn small secondary" id="pos-signout">Sign out</button>';
   document.getElementById('pos-signout').addEventListener('click', signOut);
-
-  const branches = await getBranches();
-  const isScoped = ['Admin', 'Manager'].includes(employee.role) ? false : !UNSCOPED_POSITIONS.includes(employee.position);
-  const branchField = document.getElementById('branch-field');
-  if (isScoped) {
-    const b = branches.find((x) => x.id === employee.branch_id);
-    branchField.innerHTML = '<label>Branch</label><input type="text" value="' + esc(b?.name || 'None assigned') + '" disabled>';
-  } else {
-    branchField.innerHTML = '<label>Branch *</label><select name="branchId" required>' +
-      branches.map((b) => '<option value="' + b.id + '">' + esc(b.name) + '</option>').join('') + '</select>';
-  }
 
   // ---- SKU lookup ----
   const lookupInput = document.getElementById('lookup-search');
@@ -133,109 +79,6 @@ if (employee) {
         lookupResults.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
       }
     }, 250);
-  });
-
-  // ---- Record a Movement (same logic as movement.html) ----
-  const saleFields = document.getElementById('mv-sale-fields');
-  const reasonField = document.getElementById('mv-reason-field');
-  const refLabel = document.getElementById('mv-ref-label');
-  function syncFieldsToType() {
-    const isSale = document.getElementById('mv-type').value === 'Sale';
-    saleFields.style.display = isSale ? 'contents' : 'none';
-    reasonField.style.display = isSale ? 'none' : '';
-    refLabel.textContent = isSale ? 'Order ID' : 'Reference #';
-  }
-  document.getElementById('mv-type').addEventListener('change', syncFieldsToType);
-  syncFieldsToType();
-
-  const skuInput = document.getElementById('mv-sku');
-  const skuSuggest = document.getElementById('mv-sku-suggest');
-  const skuNamePreview = document.getElementById('mv-sku-name');
-  let skuSearchToken = 0;
-  let skuSearchTimer = null;
-
-  function hideSkuSuggestions() { skuSuggest.style.display = 'none'; skuSuggest.innerHTML = ''; }
-
-  function pickSku(p) {
-    skuInput.value = p.sku;
-    skuNamePreview.textContent = p.item_name + (p.category ? ' · ' + p.category : (p.product_line ? ' · ' + p.product_line : ''));
-    hideSkuSuggestions();
-  }
-
-  function renderSkuSuggestions(matches) {
-    if (!matches.length) { hideSkuSuggestions(); return; }
-    skuSuggest.innerHTML = matches.map((p) =>
-      '<div data-sku="' + esc(p.sku) + '" style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:13px;">' +
-        '<strong>' + esc(p.sku) + '</strong> — ' + esc(p.item_name) +
-        (p.category || p.product_line ? '<div class="muted" style="font-size:11px;">' + esc(p.category || p.product_line) + '</div>' : '') +
-      '</div>'
-    ).join('');
-    skuSuggest.style.display = '';
-    skuSuggest.querySelectorAll('[data-sku]').forEach((row, i) => {
-      row.addEventListener('mousedown', (ev) => { ev.preventDefault(); pickSku(matches[i]); });
-    });
-  }
-
-  skuInput.addEventListener('input', () => {
-    skuNamePreview.textContent = '';
-    const q = skuInput.value.trim();
-    clearTimeout(skuSearchTimer);
-    if (!q) { hideSkuSuggestions(); return; }
-    skuSearchTimer = setTimeout(async () => {
-      const token = ++skuSearchToken;
-      try {
-        const results = await searchProducts(q);
-        if (token !== skuSearchToken) return;
-        renderSkuSuggestions(results);
-        const exact = results.find((p) => p.sku.toLowerCase() === q.toLowerCase());
-        if (exact) skuNamePreview.textContent = exact.item_name + (exact.category || exact.product_line ? ' · ' + (exact.category || exact.product_line) : '');
-      } catch (err) {
-        // A failed lookup shouldn't block typing a SKU by hand -- just no suggestions this keystroke.
-      }
-    }, 200);
-  });
-  skuInput.addEventListener('blur', () => setTimeout(hideSkuSuggestions, 150));
-  skuInput.addEventListener('focus', () => { if (skuSuggest.innerHTML) skuSuggest.style.display = ''; });
-
-  document.getElementById('mv-form').addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const f = ev.target;
-    const branchId = isScoped ? employee.branch_id : Number(f.branchId.value);
-    const qty = Number(f.qty.value);
-    const type = f.transactionType.value;
-    const btn = f.querySelector('button[type=submit]');
-    btn.disabled = true;
-    try {
-      if (type === 'Sale') {
-        await recordSale({
-          sku: f.sku.value.trim(), branchId, qty,
-          orderNumber: f.referenceNumber.value.trim(),
-          unitPrice: f.unitPrice.value ? Number(f.unitPrice.value) : null,
-          customerName: f.customerName.value.trim(),
-          contactNumber: f.contactNumber.value.trim(),
-        });
-      } else {
-        const removes = REMOVES.has(type);
-        await recordMovement({
-          sku: f.sku.value.trim(),
-          branchId,
-          transactionType: type,
-          qtyChange: removes ? -qty : qty,
-          referenceNumber: f.referenceNumber.value,
-          reason: f.reason.value,
-          notes: f.notes.value,
-        });
-      }
-      toast('pos-msg', 'Movement recorded.', false);
-      f.reset();
-      syncFieldsToType();
-      skuNamePreview.textContent = '';
-      hideSkuSuggestions();
-    } catch (err) {
-      toast('pos-msg', String(err.message || err), true);
-    } finally {
-      btn.disabled = false;
-    }
   });
 }
 </script>
