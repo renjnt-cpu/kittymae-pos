@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Branches — Kittymae POS</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<main>
+  <div id="br-msg"></div>
+  <div id="branches-root"></div>
+</main>
+
+<script type="module">
+import { initShell, toast, esc } from './js/shell.js';
+import {
+  getBranches,
+  listSubastaItems, createSubastaItem, updateSubastaItem, deleteSubastaItem,
+  listScrapEntries, getScrapCashBalances, createScrapEntry, deleteScrapEntry, uploadScrapAttachment, getScrapAttachmentUrl,
+  subscribeToChanges,
+} from './js/api.js';
+import { renderPosNav } from './js/posNav.js';
+
+const SUB_STATUS_BADGE = { Pending: 'pending', Listed: 'transit', Sold: 'ok', Cancelled: 'low' };
+const SUB_STATUSES = ['Pending', 'Listed', 'Sold', 'Cancelled'];
+const SUB_STATUS_OPTIONS = (selected) => SUB_STATUSES.map((s) => '<option' + (s === selected ? ' selected' : '') + '>' + s + '</option>').join('');
+const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + 'g';
+
+const GOLD_KARATS = ['24K', '22K', '21K', '18K', '16K', '14K', '10K', 'Other'];
+const SILVER_KARATS = ['999', '925', 'Other'];
+const karatOptionsFor = (metal) => (metal === 'Silver' ? SILVER_KARATS : GOLD_KARATS).map((k) => '<option>' + k + '</option>').join('');
+
+const PAYMENT_METHODS = ['Cash', 'Store Sales Cash', 'GCash', 'Bank Transfer', 'Other'];
+// 3 fixed slots instead of a dynamic add/remove list -- covers any real split (rarely
+// more than 2 methods on one transaction) without the complexity of managing rows
+// inside innerHTML-rendered forms. Slots left blank/zero are just ignored on submit.
+function paymentSlotsHtml(prefix, existing, opts) {
+  const label0 = (opts && opts.label0) || 'Payment Method';
+  const requireFirst = !(opts && opts.optional);
+  const rows = existing && existing.length ? existing : [];
+  let html = '';
+  for (let i = 0; i < 3; i++) {
+    const row = rows[i] || {};
+    const isRequired = i === 0 && requireFirst;
+    const label = i === 0 ? label0 + (isRequired ? ' *' : ' (optional)') : label0 + ' ' + (i + 1) + ' (optional)';
+    const amtLabel = 'Amount (PHP)' + (isRequired ? ' *' : '');
+    html +=
+      '<div class="field"><label>' + label + '</label><select name="' + prefix + 'Method' + i + '"' + (isRequired ? ' required' : '') + '>' +
+        (!isRequired ? '<option value="">— none —</option>' : '') +
+        PAYMENT_METHODS.map((m) => '<option' + (row.method === m ? ' selected' : '') + '>' + m + '</option>').join('') +
+      '</select></div>' +
+      '<div class="field"><label>' + amtLabel + '</label><input type="number" name="' + prefix + 'Amount' + i + '" step="0.01" min="0"' + (isRequired ? ' required' : '') + (row.amount ? ' value="' + row.amount + '"' : '') + '></div>';
+  }
+  return html;
+}
+function readPaymentSlots(f, prefix) {
+  const payments = [];
+  for (let i = 0; i < 3; i++) {
+    const method = f[prefix + 'Method' + i]?.value;
+    const amount = Number(f[prefix + 'Amount' + i]?.value || 0);
+    if (method && amount > 0) payments.push({ method, amount });
+  }
+  return payments;
+}
+
+const employee = await initShell();
+if (employee) {
+  renderPosNav(employee, 'branches.html');
+  const root = document.getElementById('branches-root');
+
+  {
+    // Any active employee can reach this page now -- "whole staff" can add a Scrap or
+    // Subasta entry for their own branch (canAddHere()), everyone can view every
+    // branch, and editing/deleting stays with canWriteHere()'s stricter group.
+    const isScoped = employee.role === 'Branch Supervisor';
+    const branches = await getBranches();
+    const branchOptions = (selected) => branches.map((b) =>
+      '<option value="' + b.id + '"' + (b.id === selected ? ' selected' : '') + '>' + esc(b.name) + '</option>'
+    ).join('');
+    // Branches are the primary lens here — always exactly one selected, no combined
+    // "All Branches" view. Branch Supervisor is locked to their own; everyone else
+    // starts on the first branch in the list.
+    let selectedBranch = isScoped ? employee.branch_id : branches[0].id;
+    const branchName = (id) => (branches.find((b) => b.id === id) || {}).name || '';
+
+    // Shared by every row's Edit/Delete buttons -- mirrors the backend RLS exactly
+    // (Admin/Manager anywhere, Branch Supervisor only their own branch, or the
+    // Operations Supervisor/Inventory Supervisor/Admin Assistant position group
+    // anywhere -- is_position_manager() in 62_position_managers_refund_scrap_subasta.sql)
+    // so a button is never shown enabled only to fail with a permission error.
+    // Declared here (not further down, near where it's read) because
+    // renderBranchButtons() -- called below, before the rest of this block runs --
+    // calls canAddHere() -> canWriteHere() -> POSITION_MANAGERS; a `const` declared
+    // after that first call site would throw "Cannot access before initialization"
+    // on every single page load, for every employee.
+    const POSITION_MANAGERS = ['Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
+    function canWriteHere() {
+      return ['Admin', 'Manager'].includes(employee.role) || (isScoped && selectedBranch === employee.branch_id) ||
+        POSITION_MANAGERS.includes(employee.position);
+    }
+
+    // Add gate: everything canWriteHere() allows, plus literally any active employee
+    // for their own branch (scrap_any_employee_own_branch_insert /
+    // subasta_any_employee_own_branch_insert), plus Sales Executive company-wide
+    // (scrap_sales_executive_insert -- she doesn't have a fixed branch_id, rotates
+    // weekly) -- "whole staff" can add, only the position-manager group above (or
+    // Admin/Manager/own-branch Supervisor) can edit or delete afterward.
+    function canAddHere() {
+      return canWriteHere() || employee.branch_id === selectedBranch || employee.position === 'Sales Executive';
+    }
+
+    root.innerHTML =
+      '<div class="card">' +
+        '<h3>Branch</h3>' +
+        '<div id="branch-buttons" style="display:flex;gap:8px;flex-wrap:wrap;"></div>' +
+      '</div>' +
+
+      '<h2>Subasta <span class="muted" id="sub-branch-label" style="font-weight:normal;"></span></h2>' +
+      '<div class="layout-2col">' +
+        '<div class="layout-2col-side">' +
+          '<div class="card">' +
+            '<h3>Add Subasta Item</h3>' +
+            '<div id="sub-write-note"></div>' +
+            '<form id="sub-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
+              '<div class="field"><label>SKU</label><input type="text" name="sku"></div>' +
+              '<div class="field"><label>Item Description *</label><input type="text" name="itemDescription" required></div>' +
+              '<div class="field"><label>Weight (grams)</label><input type="number" name="weightGrams" step="0.001" min="0"></div>' +
+              '<div class="field"><label>Pawn Reference</label><input type="text" name="pawnReference"></div>' +
+              '<div class="field"><label>Pawn Date</label><input type="date" name="pawnDate"></div>' +
+              '<div class="field"><label>Auction Eligible Date</label><input type="date" name="auctionEligibleDate"></div>' +
+              '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
+              '<button class="btn" type="submit">Add Item</button>' +
+            '</form>' +
+          '</div>' +
+        '</div>' +
+        '<div class="layout-2col-main">' +
+          '<div class="tiles" id="sub-tiles"></div>' +
+          '<div class="card">' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+              '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="sub-f-search" placeholder="Item, SKU, pawn ref, buyer, grams, date…"></div>' +
+              '<div class="field"><label>Status</label><select id="sub-f-status"><option value="all">All Statuses</option>' + SUB_STATUS_OPTIONS() + '</select></div>' +
+              '<div class="field"><label>Pawned From</label><input type="date" id="sub-f-from"></div>' +
+              '<div class="field"><label>Pawned To</label><input type="date" id="sub-f-to"></div>' +
+              '<button type="button" class="btn small secondary" id="sub-f-clear">Clear Filters</button>' +
+            '</div>' +
+          '</div>' +
+          '<div id="sub-list"><div class="muted">Loading…</div></div>' +
+        '</div>' +
+      '</div>' +
+
+      '<h2 style="margin-top:30px;">Scrap <span class="muted" id="scrap-branch-label" style="font-weight:normal;"></span></h2>' +
+      '<div class="layout-2col">' +
+        '<div class="layout-2col-side">' +
+          '<div class="card">' +
+            '<h3>Add Scrap Entry</h3>' +
+            '<div id="scrap-write-note"></div>' +
+            '<form id="scrap-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
+              '<div class="field"><label>Date</label><input type="date" name="entryDate" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
+              '<div class="field"><label>Type *</label><select name="entryType"><option value="In">In (bought from customer)</option><option value="Out">Out (sold to refiner)</option></select></div>' +
+              '<div class="field"><label>Customer Name</label><input type="text" name="customerName"></div>' +
+              '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
+              '<div class="field"><label>Metal *</label><select name="metalType" id="scrap-metal" required><option>Gold</option><option>Silver</option></select></div>' +
+              '<div class="field"><label>Karat / Purity</label><select name="karat" id="scrap-karat">' + karatOptionsFor('Gold') + '</select></div>' +
+              '<div class="field" id="scrap-karat-other-field" style="display:none;"><label>Specify</label><input type="text" name="karatOther" placeholder="Karat / purity"></div>' +
+              '<div class="field"><label>Weight (grams) *</label><input type="number" name="weightGrams" step="0.001" min="0" required></div>' +
+              '<div class="field"><label>Price per Gram (PHP)</label><input type="number" name="pricePerGram" step="0.01" min="0"></div>' +
+              paymentSlotsHtml('scrap', [{ method: 'Cash', amount: '' }]) +
+              '<div class="field"><label>Source</label><input type="text" name="source" placeholder="Walk-in, buyback, refiner name…"></div>' +
+              '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
+              '<div class="field"><label>Photo</label><input type="file" name="attachment" accept="image/*"></div>' +
+              '<button class="btn" type="submit">Add Entry</button>' +
+            '</form>' +
+          '</div>' +
+        '</div>' +
+        '<div class="layout-2col-main">' +
+          '<div class="tiles" id="scrap-tiles"></div>' +
+          '<h3>Current Balance <span class="muted" style="font-weight:normal;">— weight on hand</span></h3>' +
+          '<div id="scrap-balance" class="card"><div class="muted">Loading…</div></div>' +
+          '<div class="card">' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+              '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="scrap-f-search" placeholder="Metal, grams, customer, payment, source, date…"></div>' +
+              '<div class="field"><label>Metal</label><select id="scrap-f-metal"><option value="all">All</option><option>Gold</option><option>Silver</option></select></div>' +
+              '<div class="field"><label>Type</label><select id="scrap-f-type"><option value="all">All</option><option>In</option><option>Out</option></select></div>' +
+              '<div class="field"><label>From</label><input type="date" id="scrap-f-from" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
+              '<div class="field"><label>To</label><input type="date" id="scrap-f-to" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
+              '<button type="button" class="btn small secondary" id="scrap-f-clear">Clear Filters</button>' +
+            '</div>' +
+          '</div>' +
+          '<div id="scrap-list"><div class="muted">Loading…</div></div>' +
+        '</div>' +
+      '</div>';
+
+    renderBranchButtons();
+
+    document.getElementById('sub-form').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      try {
+        await createSubastaItem({
+          branchId: selectedBranch, sku: f.sku.value.trim(),
+          itemDescription: f.itemDescription.value.trim(), weightGrams: f.weightGrams.value ? Number(f.weightGrams.value) : null,
+          pawnReference: f.pawnReference.value.trim(), pawnDate: f.pawnDate.value || null,
+          auctionEligibleDate: f.auctionEligibleDate.value || null, notes: f.notes.value.trim(),
+        });
+        toast('br-msg', 'Item added.', false);
+        f.reset();
+        await loadSubasta();
+      } catch (err) {
+        toast('br-msg', String(err.message || err), true);
+      }
+    });
+
+    document.getElementById('scrap-metal').addEventListener('change', (ev) => {
+      document.getElementById('scrap-karat').innerHTML = karatOptionsFor(ev.target.value);
+      document.getElementById('scrap-karat-other-field').style.display = 'none';
+    });
+    document.getElementById('scrap-karat').addEventListener('change', (ev) => {
+      document.getElementById('scrap-karat-other-field').style.display = ev.target.value === 'Other' ? '' : 'none';
+    });
+
+    document.getElementById('scrap-form').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      try {
+        const karat = f.karat.value === 'Other' ? f.karatOther.value.trim() : f.karat.value;
+        const payments = readPaymentSlots(f, 'scrap');
+        if (!payments.length) { toast('br-msg', 'Enter at least one payment method and amount.', true); return; }
+        const newScrapId = await createScrapEntry({
+          branchId: selectedBranch, entryDate: f.entryDate.value, entryType: f.entryType.value, metalType: f.metalType.value,
+          karat, weightGrams: Number(f.weightGrams.value),
+          pricePerGram: f.pricePerGram.value ? Number(f.pricePerGram.value) : null,
+          customerName: f.customerName.value.trim(), contactNumber: f.contactNumber.value.trim(),
+          payments,
+          source: f.source.value.trim(), notes: f.notes.value.trim(),
+        });
+        if (f.attachment.files[0]) await uploadScrapAttachment(selectedBranch, newScrapId, f.attachment.files[0]);
+        toast('br-msg', 'Entry added.', false);
+        f.reset();
+        f.entryDate.value = new Date().toISOString().slice(0, 10);
+        document.getElementById('scrap-karat').innerHTML = karatOptionsFor(f.metalType.value);
+        document.getElementById('scrap-karat-other-field').style.display = 'none';
+        await loadScrap();
+      } catch (err) {
+        toast('br-msg', String(err.message || err), true);
+      }
+    });
+
+    let allSubasta = [], allScrap = [], scrapCashBalances = [];
+    await Promise.all([loadSubasta(), loadScrap()]);
+    subscribeToChanges('subasta_items', loadSubasta);
+    subscribeToChanges(['scrap_entries', 'branch_capital_entries'], loadScrap);
+
+    document.getElementById('sub-f-search').addEventListener('input', renderSubasta);
+    document.getElementById('sub-f-status').addEventListener('change', renderSubasta);
+    document.getElementById('sub-f-from').addEventListener('change', renderSubasta);
+    document.getElementById('sub-f-to').addEventListener('change', renderSubasta);
+    document.getElementById('sub-f-clear').addEventListener('click', () => {
+      document.getElementById('sub-f-search').value = '';
+      document.getElementById('sub-f-status').value = 'all';
+      document.getElementById('sub-f-from').value = '';
+      document.getElementById('sub-f-to').value = '';
+      renderSubasta();
+    });
+    document.getElementById('scrap-f-search').addEventListener('input', renderScrap);
+    document.getElementById('scrap-f-metal').addEventListener('change', renderScrap);
+    document.getElementById('scrap-f-type').addEventListener('change', renderScrap);
+    document.getElementById('scrap-f-from').addEventListener('change', renderScrap);
+    document.getElementById('scrap-f-to').addEventListener('change', renderScrap);
+    document.getElementById('scrap-f-clear').addEventListener('click', () => {
+      document.getElementById('scrap-f-search').value = '';
+      document.getElementById('scrap-f-metal').value = 'all';
+      document.getElementById('scrap-f-type').value = 'all';
+      document.getElementById('scrap-f-from').value = '';
+      document.getElementById('scrap-f-to').value = '';
+      renderScrap();
+    });
+
+    function renderBranchButtons() {
+      const box = document.getElementById('branch-buttons');
+      // Everyone can now VIEW every branch here — Branch Supervisor just can't ADD for
+      // a branch that isn't theirs (the write RLS policy already rejects that; this just
+      // disables the form instead of letting them hit a confusing error).
+      box.innerHTML = branches.map((b) =>
+        '<button type="button" class="btn ' + (b.id === selectedBranch ? '' : 'secondary') + '" data-id="' + b.id + '">' + esc(b.name) + '</button>'
+      ).join('');
+      box.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', async () => {
+        selectedBranch = Number(btn.dataset.id);
+        renderBranchButtons();
+        await Promise.all([loadSubasta(), loadScrap()]);
+      }));
+      const label = ' — ' + branchName(selectedBranch);
+      document.getElementById('sub-branch-label').textContent = label;
+      document.getElementById('scrap-branch-label').textContent = label;
+
+      document.querySelectorAll('#sub-form button[type="submit"], #scrap-form button[type="submit"]').forEach((btn) => { btn.disabled = !canAddHere(); });
+      const note = canAddHere() ? '' : employee.branch_id
+        ? '<p class="muted" style="font-size:11px;">View only — you can only add items for ' + esc(branchName(employee.branch_id)) + '.</p>'
+        : '<p class="muted" style="font-size:11px;">View only.</p>';
+      document.querySelectorAll('#sub-write-note, #scrap-write-note').forEach((el) => { el.innerHTML = note; });
+    }
+
+    async function loadSubasta() {
+      const list = document.getElementById('sub-list');
+      list.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        allSubasta = await listSubastaItems(selectedBranch);
+        renderSubasta();
+      } catch (err) {
+        list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
+      }
+    }
+
+    function renderSubasta() {
+      let rows = allSubasta;
+      const fSearch = document.getElementById('sub-f-search').value.trim().toLowerCase();
+      const fStatus = document.getElementById('sub-f-status').value;
+      const fFrom = document.getElementById('sub-f-from').value;
+      const fTo = document.getElementById('sub-f-to').value;
+      if (fSearch) rows = rows.filter((r) =>
+        r.item_description.toLowerCase().includes(fSearch) ||
+        (r.pawn_reference || '').toLowerCase().includes(fSearch) ||
+        (r.buyer_name || '').toLowerCase().includes(fSearch) ||
+        (r.sku || '').toLowerCase().includes(fSearch) ||
+        (r.weight_grams !== null && String(r.weight_grams).includes(fSearch)) ||
+        (r.pawn_date || '').includes(fSearch) ||
+        (r.sale_date || '').includes(fSearch));
+      if (fStatus !== 'all') rows = rows.filter((r) => r.status === fStatus);
+      if (fFrom) rows = rows.filter((r) => r.pawn_date && r.pawn_date >= fFrom);
+      if (fTo) rows = rows.filter((r) => r.pawn_date && r.pawn_date <= fTo);
+
+      const counts = SUB_STATUSES.reduce((acc, s) => { acc[s] = rows.filter((r) => r.status === s).length; return acc; }, {});
+      const soldTotal = rows.filter((r) => r.status === 'Sold').reduce((s, r) => s + Number(r.sale_price || 0), 0);
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const soldToday = rows.filter((r) => r.status === 'Sold' && r.sale_date === todayStr).reduce((s, r) => s + Number(r.sale_price || 0), 0);
+      const subTotalWeight = rows.reduce((s, r) => s + Number(r.weight_grams || 0), 0);
+      document.getElementById('sub-tiles').innerHTML =
+        tile(rows.length, 'Qty') + tile(weight(subTotalWeight), 'Total Weight') +
+        tile(counts.Pending, 'Pending') + tile(counts.Listed, 'Listed') + tile(counts.Sold, 'Sold') + tile(money(soldTotal), 'Sold Total') + tile(money(soldToday), 'Sold Today');
+
+      const list = document.getElementById('sub-list');
+      if (!rows.length) { list.innerHTML = '<p class="muted">No subasta items for this filter.</p>'; return; }
+
+      // Every field shows directly in the row -- no click-to-expand -- matching the
+      // Transactions list. Edit still opens a form (same as before), it just isn't
+      // gated behind a separate "view details" click anymore.
+      list.innerHTML = '<div class="table-scroll"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
+        '<colgroup><col style="width:14%"><col style="width:7%"><col style="width:9%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:7%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:12%"></colgroup>' +
+        '<thead><tr><th>Item</th><th>Weight</th><th>Pawn Ref</th><th>Pawn Date</th><th>Eligible</th><th>Status</th><th>Sale Date</th><th>Sale Price</th><th>Payment</th><th>Buyer/Notes</th><th></th></tr></thead><tbody>' +
+        rows.map((r) => {
+          const payments = r.subasta_payments || [];
+          const paymentDetail = payments.length > 1
+            ? payments.map((p) => esc(p.payment_method) + ': ' + money(p.amount)).join('<br>')
+            : esc(r.payment_method || '—');
+          return '<tr>' +
+            '<td data-label="Item">' + esc(r.item_description) + (r.sku ? '<div class="muted" style="font-size:10px;">' + esc(r.sku) + '</div>' : '') + '</td>' +
+            '<td data-label="Weight">' + (r.weight_grams ? Number(r.weight_grams).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + 'g' : '—') + '</td>' +
+            '<td data-label="Pawn Ref">' + esc(r.pawn_reference || '—') + '</td>' +
+            '<td data-label="Pawn Date">' + (r.pawn_date || '—') + '</td>' +
+            '<td data-label="Eligible">' + (r.auction_eligible_date || '—') + '</td>' +
+            '<td data-label="Status"><span class="badge ' + (SUB_STATUS_BADGE[r.status] || 'pending') + '">' + esc(r.status) + '</span></td>' +
+            '<td data-label="Sale Date">' + (r.sale_date || '—') + '</td>' +
+            '<td data-label="Sale Price">' + money(r.sale_price) + '</td>' +
+            '<td data-label="Payment" style="font-size:11px;">' + paymentDetail + '</td>' +
+            '<td data-label="Buyer/Notes" style="font-size:11px;">' + esc(r.buyer_name || '') + (r.notes ? '<div class="muted">' + esc(r.notes) + '</div>' : '') +
+              '<div class="muted" style="font-size:10px;">' + (r.creator ? 'Added by ' + esc(r.creator.full_name) : '') + '</div>' +
+            '</td>' +
+            '<td style="white-space:nowrap;">' +
+              (canWriteHere() ? '<button class="btn small secondary" data-id="' + r.id + '" data-act="edit">Edit</button> <button class="btn small secondary" data-id="' + r.id + '" data-act="delete">Delete</button>' : '') +
+            '</td>' +
+          '</tr>' +
+          '<tr class="edit-row" data-edit-for="' + r.id + '" style="display:none;"><td colspan="11"></td></tr>';
+        }).join('') +
+      '</tbody>' +
+      '</table></div>';
+
+      list.querySelectorAll('[data-act]').forEach((btn) => btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        try {
+          if (btn.dataset.act === 'delete') { if (!confirm('Delete this item?')) return; await deleteSubastaItem(id); toast('br-msg', 'Deleted.', false); await loadSubasta(); }
+          else if (btn.dataset.act === 'edit') openSubEdit(id, rows);
+        } catch (err) {
+          toast('br-msg', String(err.message || err), true);
+        }
+      }));
+    }
+
+    /** Opens an inline edit form in the hidden row right below this item -- same
+     * mechanic as Bills' inline edit -- instead of a separate "view details" step. */
+    function openSubEdit(id, rows) {
+      const r = rows.find((x) => String(x.id) === String(id));
+      const cell = document.querySelector('tr[data-edit-for="' + id + '"]');
+      const isOpen = cell.style.display !== 'none';
+      document.querySelectorAll('#sub-list .edit-row').forEach((row) => { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; });
+      if (isOpen) return; // toggle closed if it was already open
+      cell.style.display = '';
+      cell.querySelector('td').innerHTML = subEditFormHtml(r);
+      const form = cell.querySelector('.edit-form');
+      form.querySelector('[data-cancel]').addEventListener('click', () => { cell.style.display = 'none'; cell.querySelector('td').innerHTML = ''; });
+      form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const f = ev.target;
+        try {
+          await updateSubastaItem(id, {
+            branchId: isScoped ? employee.branch_id : Number(f.branchId.value),
+            sku: f.sku.value.trim(),
+            itemDescription: f.itemDescription.value.trim(), weightGrams: f.weightGrams.value ? Number(f.weightGrams.value) : null,
+            pawnReference: f.pawnReference.value.trim(),
+            pawnDate: f.pawnDate.value || null, auctionEligibleDate: f.auctionEligibleDate.value || null,
+            status: f.status.value, saleDate: f.saleDate.value || null,
+            payments: readPaymentSlots(f, 'sub'),
+            buyerName: f.buyerName.value.trim(), notes: f.notes.value.trim(),
+          });
+          toast('br-msg', 'Item updated.', false);
+          await loadSubasta();
+        } catch (err) {
+          toast('br-msg', String(err.message || err), true);
+        }
+      });
+    }
+
+    function subEditFormHtml(r) {
+      const existingPayments = (r.subasta_payments || []).map((p) => ({ method: p.payment_method, amount: p.amount }));
+      return '<form class="edit-form" data-id="' + r.id + '" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+          '<div class="field"><label>Branch</label><select name="branchId"' + (isScoped ? ' disabled' : '') + '>' + branchOptions(r.branch_id) + '</select></div>' +
+          '<div class="field"><label>SKU</label><input type="text" name="sku" value="' + esc(r.sku || '') + '"></div>' +
+          '<div class="field" style="min-width:200px;"><label>Item Description</label><input type="text" name="itemDescription" value="' + esc(r.item_description) + '" required></div>' +
+          '<div class="field"><label>Weight (grams)</label><input type="number" name="weightGrams" step="0.001" min="0" value="' + (r.weight_grams ?? '') + '"></div>' +
+          '<div class="field"><label>Pawn Reference</label><input type="text" name="pawnReference" value="' + esc(r.pawn_reference || '') + '"></div>' +
+          '<div class="field"><label>Pawn Date</label><input type="date" name="pawnDate" value="' + (r.pawn_date || '') + '"></div>' +
+          '<div class="field"><label>Auction Eligible Date</label><input type="date" name="auctionEligibleDate" value="' + (r.auction_eligible_date || '') + '"></div>' +
+          '<div class="field"><label>Status</label><select name="status">' + SUB_STATUS_OPTIONS(r.status) + '</select></div>' +
+          '<div class="field"><label>Sale Date</label><input type="date" name="saleDate" value="' + (r.sale_date || '') + '"></div>' +
+          '<div class="field"><label>Buyer</label><input type="text" name="buyerName" value="' + esc(r.buyer_name || '') + '"></div>' +
+          '<div class="field" style="min-width:180px;"><label>Notes</label><input type="text" name="notes" value="' + esc(r.notes || '') + '"></div>' +
+          paymentSlotsHtml('sub', existingPayments, { label0: 'Sale Payment Method', optional: true }) +
+          '<button class="btn small" type="submit">Save</button> ' +
+          '<button class="btn small secondary" type="button" data-cancel="1">Cancel</button>' +
+        '</form>';
+    }
+
+    async function loadScrap() {
+      const list = document.getElementById('scrap-list');
+      list.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        const [entries, cashBalances] = await Promise.all([listScrapEntries(selectedBranch), getScrapCashBalances()]);
+        allScrap = entries;
+        scrapCashBalances = cashBalances;
+        renderScrap();
+      } catch (err) {
+        list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
+      }
+    }
+
+    function renderScrapBalance(rows) {
+      const box = document.getElementById('scrap-balance');
+      if (!rows.length) { box.innerHTML = '<p class="muted">No scrap recorded for this filter.</p>'; return; }
+      box.innerHTML = '<div class="table-scroll"><table><tr><th>Metal</th><th>Karat/Purity</th><th>Balance</th></tr>' +
+        rows.map((b) => '<tr><td data-label="Metal">' + esc(b.metal_type) + '</td><td data-label="Karat/Purity">' + esc(b.karat || '—') + '</td><td data-label="Balance">' + weight(b.balance_grams) + '</td></tr>').join('') +
+        '</table></div>';
+    }
+
+    /** Net grams (In adds, Out subtracts) per metal+karat, from whichever rows are
+     * CURRENTLY filtered -- so Current Balance tracks the From/To range (and
+     * Search/Metal/Type) instead of always showing the all-time running total from
+     * getScrapBalances(), which ignored every filter above it. Clearing the date
+     * filters naturally shows the true all-time balance again, since nothing then
+     * narrows `rows`. */
+    function computeBalanceFromRows(rows) {
+      const byKey = {};
+      rows.forEach((r) => {
+        const key = r.metal_type + '|' + (r.karat || '');
+        const g = Number(r.weight_grams || 0);
+        byKey[key] = (byKey[key] || 0) + (r.entry_type === 'In' ? g : -g);
+      });
+      return Object.keys(byKey).sort().map((key) => {
+        const [metal_type, karat] = key.split('|');
+        return { metal_type, karat: karat || null, balance_grams: byKey[key] };
+      });
+    }
+
+    function renderScrap() {
+      let rows = allScrap;
+      const fSearch = document.getElementById('scrap-f-search').value.trim().toLowerCase();
+      const fMetal = document.getElementById('scrap-f-metal').value;
+      const fType = document.getElementById('scrap-f-type').value;
+      const fFrom = document.getElementById('scrap-f-from').value;
+      const fTo = document.getElementById('scrap-f-to').value;
+      if (fSearch) rows = rows.filter((r) =>
+        (r.source || '').toLowerCase().includes(fSearch) ||
+        (r.notes || '').toLowerCase().includes(fSearch) ||
+        r.metal_type.toLowerCase().includes(fSearch) ||
+        (r.karat || '').toLowerCase().includes(fSearch) ||
+        (r.customer_name || '').toLowerCase().includes(fSearch) ||
+        (r.contact_number || '').toLowerCase().includes(fSearch) ||
+        (r.payment_method || '').toLowerCase().includes(fSearch) ||
+        (r.weight_grams !== null && String(r.weight_grams).includes(fSearch)) ||
+        (r.entry_date || '').includes(fSearch));
+      if (fMetal !== 'all') rows = rows.filter((r) => r.metal_type === fMetal);
+      if (fType !== 'all') rows = rows.filter((r) => r.entry_type === fType);
+      if (fFrom) rows = rows.filter((r) => r.entry_date >= fFrom);
+      if (fTo) rows = rows.filter((r) => r.entry_date <= fTo);
+
+      renderScrapBalance(computeBalanceFromRows(rows));
+
+      // Broken out by metal + karat, from the SAME filtered rows as the list below --
+      // so the From/To range (and Search/Metal/Type) actually changes this number.
+      // Defaults to today (the date fields default to today), but picking a wider
+      // range widens this too, instead of being stuck on literally today's date.
+      const rangeIn = rows.filter((r) => r.entry_type === 'In');
+      const byMetalKarat = {};
+      rangeIn.forEach((r) => {
+        const key = r.metal_type + ' ' + (r.karat || '—');
+        byMetalKarat[key] = (byMetalKarat[key] || 0) + Number(r.total_amount || 0);
+      });
+      const keys = Object.keys(byMetalKarat).sort();
+      let tilesHtml = tile(rows.length, 'Qty') + tile(weight(rows.reduce((s, r) => s + Number(r.weight_grams || 0), 0)), 'Total Weight') +
+        tile(money(rows.reduce((s, r) => s + Number(r.total_amount || 0), 0)), 'Total Amount') +
+        (keys.length
+          ? keys.map((k) => tile(money(byMetalKarat[k]), 'Purchased (' + k + ')')).join('')
+          : tile(money(0), 'Purchased'));
+
+      // Branch Capital's "Scrap" purpose entries minus net cash spent/received buying
+      // scrap -- only meaningful where the viewer actually has Branch Capital visibility
+      // for this branch (Admin/Manager/Sales Executive see every branch; Branch
+      // Supervisor only their own), so it's hidden rather than shown wrong for anyone else.
+      const canSeeScrapCash = ['Admin', 'Manager'].includes(employee.role) || employee.position === 'Sales Executive' ||
+        (isScoped && selectedBranch === employee.branch_id);
+      if (canSeeScrapCash) {
+        const cashRow = scrapCashBalances.find((b) => b.branch_id === selectedBranch);
+        tilesHtml += tile(money(cashRow ? cashRow.remaining_scrap_cash : 0), 'Remaining Scrap Cash');
+      }
+      document.getElementById('scrap-tiles').innerHTML = tilesHtml;
+
+      const list = document.getElementById('scrap-list');
+      if (!rows.length) { list.innerHTML = '<p class="muted">No scrap entries for this filter.</p>'; return; }
+
+      // Every field shows directly in the row -- no click-to-expand -- matching the
+      // Transactions list. Payment breaks down per method underneath the total when
+      // an entry was split across more than one.
+      list.innerHTML = '<div class="table-scroll"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
+        '<colgroup><col style="width:9%"><col style="width:10%"><col style="width:11%"><col style="width:7%"><col style="width:8%"><col style="width:9%"><col style="width:9%"><col style="width:12%"><col style="width:12%"><col style="width:13%"></colgroup>' +
+        '<thead><tr><th>Date</th><th>Customer</th><th>Metal/Karat</th><th>Type</th><th>Weight</th><th>Price/g</th><th>Total</th><th>Payment</th><th>Source/Notes</th><th></th></tr></thead><tbody>' +
+        rows.map((r) => {
+          const payments = r.scrap_payments || [];
+          const paymentDetail = payments.length > 1
+            ? payments.map((p) => esc(p.payment_method) + ': ' + money(p.amount)).join('<br>')
+            : esc(r.payment_method || '—');
+          return '<tr>' +
+            '<td data-label="Date">' + (r.entry_date || '—') + '<div class="muted" style="font-size:10px;">' + esc(r.contact_number || '') + '</div></td>' +
+            '<td data-label="Customer">' + esc(r.customer_name || 'Walk-in') + '</td>' +
+            '<td data-label="Metal/Karat">' + esc(r.metal_type) + ' ' + esc(r.karat || '') + '</td>' +
+            '<td data-label="Type"><span class="badge ' + (r.entry_type === 'In' ? 'ok' : 'pending') + '">' + esc(r.entry_type) + '</span></td>' +
+            '<td data-label="Weight">' + weight(r.weight_grams) + '</td>' +
+            '<td data-label="Price/g">' + money(r.price_per_gram) + '</td>' +
+            '<td data-label="Total">' + money(r.total_amount) + '</td>' +
+            '<td data-label="Payment" style="font-size:11px;">' + paymentDetail + '</td>' +
+            '<td data-label="Source/Notes" style="font-size:11px;">' + esc(r.source || '') + (r.notes ? '<div class="muted">' + esc(r.notes) + '</div>' : '') +
+              '<div class="muted" style="font-size:10px;">' + (r.creator ? 'Added by ' + esc(r.creator.full_name) : '') + '</div>' +
+            '</td>' +
+            '<td style="white-space:nowrap;">' +
+              (r.attachment_path ? '<button class="btn small secondary" data-id="' + r.id + '" data-path="' + esc(r.attachment_path) + '" data-act="view-photo">Photo</button> ' : '') +
+              (canWriteHere() ? '<button class="btn small secondary" data-id="' + r.id + '" data-act="delete">Delete</button>' : '') +
+            '</td>' +
+          '</tr>';
+        }).join('') +
+      '</tbody>' +
+      '</table></div>';
+
+      list.querySelectorAll('[data-act="delete"]').forEach((btn) => btn.addEventListener('click', async () => {
+        if (!confirm('Delete this scrap entry?')) return;
+        try { await deleteScrapEntry(btn.dataset.id); toast('br-msg', 'Deleted.', false); await loadScrap(); }
+        catch (err) { toast('br-msg', String(err.message || err), true); }
+      }));
+
+      list.querySelectorAll('[data-act="view-photo"]').forEach((btn) => btn.addEventListener('click', async () => {
+        try { window.open(await getScrapAttachmentUrl(btn.dataset.path), '_blank'); }
+        catch (err) { toast('br-msg', String(err.message || err), true); }
+      }));
+    }
+
+    function tile(num, label) { return '<div class="tile"><div class="num">' + num + '</div><div class="lbl">' + label + '</div></div>'; }
+  }
+}
+</script>
+</body>
+</html>
