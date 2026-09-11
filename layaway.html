@@ -22,8 +22,18 @@ import { renderPosNav } from './js/posNav.js';
 import { branchBadge, branchOptionStyle } from './js/branchColors.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-PH', { dateStyle: 'medium' }) : '—';
 const STATUS_BADGE = { 'On Hold': 'pending', 'Completed': 'ok', 'Cancelled': 'low' };
 const PAYMENT_METHODS = ['Cash', 'GCash', 'Bank Transfer', 'Other'];
+// A layaway with no activity forfeits 2 months (~60 days) after Date Purchased
+// (hold_date) -- WARN_DAYS gives a 2-week heads-up before that so staff can chase
+// payment before it's actually too late, not just after.
+const FORFEITURE_DAYS = 60;
+const FORFEITURE_WARN_DAYS = 45;
+function daysSince(dateStr) {
+  if (!dateStr) return 0;
+  return Math.floor((new Date() - new Date(dateStr + 'T00:00:00')) / 86400000);
+}
 // Same branch-scope rule as assert_can_act_on_branch()/record_sale() -- whole staff
 // can hold/pay/complete/cancel a layaway for their own branch; this group can do it
 // for any branch.
@@ -119,6 +129,10 @@ if (employee) {
         '</div>' +
         '<div class="tiles" id="mm-tiles"></div>' +
         '<div id="mm-table"></div>' +
+
+        '<h3 style="margin-top:22px;">Forfeiture Watch <span class="muted" style="font-weight:normal;">— On Hold items, oldest first (not affected by the date range above)</span></h3>' +
+        '<p class="muted" style="margin-top:-4px;">Unpaid holds are forfeited 2 months after Date Purchased. Rows turn red once an item is close to or past that.</p>' +
+        '<div id="fw-table"></div>' +
       '</div>' +
     '</div>';
 
@@ -221,6 +235,7 @@ if (employee) {
       allHolds = await listLayaways();
       render();
       renderMonthly();
+      renderForfeitureWatch();
     } catch (err) {
       list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
     }
@@ -371,6 +386,51 @@ if (employee) {
           '<td data-label="Total Value">' + money(m.value) + '</td>' +
           '<td data-label="Total Paid">' + money(m.paid) + '</td>' +
           '<td data-label="Remaining">' + money(m.value - m.paid) + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
+  // ---- Forfeiture Watch: every still-On-Hold item, oldest first, with its full
+  // payment history (a layaway is paid in installments over time, so "how much so
+  // far and when" matters more here than a single total) and a Date Purchased +
+  // Forfeit Date pair so a row visibly turns red once it's close to or past the
+  // 2-month cutoff. Independent of the date-range filter above -- this is about
+  // what needs attention right now, not a historical range. ----
+  function renderForfeitureWatch() {
+    const rows = allHolds
+      .filter((h) => h.status === 'On Hold')
+      .map((h) => ({ h, daysHeld: daysSince(h.hold_date) }))
+      .sort((a, b) => b.daysHeld - a.daysHeld);
+
+    const box = document.getElementById('fw-table');
+    if (!rows.length) { box.innerHTML = '<p class="muted">No items currently on hold.</p>'; return; }
+
+    box.innerHTML = '<div class="table-scroll table-2col"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
+      '<thead><tr><th>Date Purchased</th><th>Item</th><th>Customer</th><th>Payments</th><th>Paid</th><th>Remaining</th><th>Days Held</th><th>Forfeit Date</th></tr></thead><tbody>' +
+      rows.map(({ h, daysHeld }) => {
+        const paid = paidSoFar(h);
+        const remaining = h.total_price == null ? null : Number(h.total_price) - paid;
+        const forfeitDate = new Date(h.hold_date + 'T00:00:00');
+        forfeitDate.setDate(forfeitDate.getDate() + FORFEITURE_DAYS);
+        const isOverdue = daysHeld >= FORFEITURE_DAYS;
+        const isWarning = !isOverdue && daysHeld >= FORFEITURE_WARN_DAYS;
+        const rowStyle = isOverdue ? 'background:#fdecea;' : isWarning ? 'background:#fff3f3;' : '';
+        const payments = h.layaway_payments || [];
+        return '<tr style="' + rowStyle + '">' +
+          '<td data-label="Date Purchased">' + fmtDate(h.hold_date) + '</td>' +
+          '<td data-label="Item">' + esc(h.sku) + (h.order_id ? '<div class="muted" style="font-size:10px;">Order ' + esc(h.order_id) + '</div>' : '') + '</td>' +
+          '<td data-label="Customer">' + esc(h.customer_name) + (h.contact_number ? '<div class="muted" style="font-size:10px;">' + esc(h.contact_number) + '</div>' : '') + '</td>' +
+          '<td data-label="Payments" class="full-row" style="font-size:11px;">' +
+            (payments.length
+              ? payments.map((p) => money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '') + ' — ' + (p.paid_at || '')).join('<br>')
+              : '<span class="muted">No payments yet</span>') +
+          '</td>' +
+          '<td data-label="Paid">' + money(paid) + '</td>' +
+          '<td data-label="Remaining">' + (remaining !== null ? money(remaining) : '—') + '</td>' +
+          '<td data-label="Days Held">' + daysHeld + '</td>' +
+          '<td data-label="Forfeit Date">' + fmtDate(forfeitDate.toISOString().slice(0, 10)) +
+            (isOverdue ? ' <span class="badge low">FORFEITURE DUE</span>' : isWarning ? ' <span class="badge low">NEARING</span>' : '') +
+          '</td>' +
         '</tr>';
       }).join('') + '</tbody></table></div>';
   }
