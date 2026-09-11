@@ -15,7 +15,7 @@
 <script type="module">
 import { initShell, toast, esc } from './js/shell.js';
 import {
-  getBranches,
+  getBranches, searchProducts,
   listSubastaItems, createSubastaItem, updateSubastaItem, deleteSubastaItem,
   listScrapEntries, getScrapCashBalances, createScrapEntry, deleteScrapEntry, uploadScrapAttachment, getScrapAttachmentUrl,
   subscribeToChanges,
@@ -125,7 +125,12 @@ if (employee) {
             '<h3>Add Subasta Item</h3>' +
             '<div id="sub-write-note"></div>' +
             '<form id="sub-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
-              '<div class="field"><label>SKU</label><input type="text" name="sku"></div>' +
+              '<div class="field" style="position:relative;">' +
+                '<label>SKU</label>' +
+                '<input type="text" name="sku" id="sub-sku" autocomplete="off" placeholder="Type a SKU or item name…">' +
+                '<div id="sub-sku-name" class="muted" style="font-size:11px;"></div>' +
+                '<div id="sub-sku-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 10px rgba(0,0,0,0.12);max-height:220px;overflow-y:auto;"></div>' +
+              '</div>' +
               '<div class="field"><label>Item Description *</label><input type="text" name="itemDescription" required></div>' +
               '<div class="field"><label>Weight (grams)</label><input type="number" name="weightGrams" step="0.001" min="0"></div>' +
               '<div class="field"><label>Pawn Reference</label><input type="text" name="pawnReference"></div>' +
@@ -195,6 +200,55 @@ if (employee) {
 
     renderBranchButtons();
 
+    // ---- SKU autocomplete for Subasta, same pattern as movement.html/layaway.html --
+    // connects a pawned item back to a real SKU Catalog product (picking a suggestion
+    // also fills in Item Description/Weight when those are still blank) instead of a
+    // freehand SKU that might not match anything real. ----
+    const subSkuInput = document.getElementById('sub-sku');
+    const subSkuSuggest = document.getElementById('sub-sku-suggest');
+    const subSkuNamePreview = document.getElementById('sub-sku-name');
+    let subSkuSearchToken = 0, subSkuSearchTimer = null;
+    function hideSubSkuSuggestions() { subSkuSuggest.style.display = 'none'; subSkuSuggest.innerHTML = ''; }
+    function pickSubSku(p) {
+      const f = document.getElementById('sub-form');
+      subSkuInput.value = p.sku;
+      subSkuNamePreview.textContent = p.item_name + (p.category || p.product_line ? ' · ' + (p.category || p.product_line) : '');
+      if (!f.itemDescription.value.trim()) f.itemDescription.value = p.item_name;
+      if (!f.weightGrams.value && p.gross_weight_g != null) f.weightGrams.value = p.gross_weight_g;
+      hideSubSkuSuggestions();
+    }
+    function renderSubSkuSuggestions(matches) {
+      if (!matches.length) { hideSubSkuSuggestions(); return; }
+      subSkuSuggest.innerHTML = matches.map((p, i) =>
+        '<div data-i="' + i + '" style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:13px;">' +
+          '<strong>' + esc(p.sku) + '</strong> — ' + esc(p.item_name) +
+          (p.category || p.product_line ? '<div class="muted" style="font-size:11px;">' + esc(p.category || p.product_line) + '</div>' : '') +
+        '</div>'
+      ).join('');
+      subSkuSuggest.style.display = '';
+      subSkuSuggest.querySelectorAll('[data-i]').forEach((row, i) => {
+        row.addEventListener('mousedown', (ev) => { ev.preventDefault(); pickSubSku(matches[i]); });
+      });
+    }
+    subSkuInput.addEventListener('input', () => {
+      subSkuNamePreview.textContent = '';
+      const q = subSkuInput.value.trim();
+      clearTimeout(subSkuSearchTimer);
+      if (!q) { hideSubSkuSuggestions(); return; }
+      subSkuSearchTimer = setTimeout(async () => {
+        const token = ++subSkuSearchToken;
+        try {
+          const results = await searchProducts(q);
+          if (token !== subSkuSearchToken) return;
+          renderSubSkuSuggestions(results);
+          const exact = results.find((p) => p.sku.toLowerCase() === q.toLowerCase());
+          if (exact) subSkuNamePreview.textContent = exact.item_name + (exact.category || exact.product_line ? ' · ' + (exact.category || exact.product_line) : '');
+        } catch (err) { /* a failed lookup shouldn't block typing a SKU by hand */ }
+      }, 200);
+    });
+    subSkuInput.addEventListener('blur', () => setTimeout(hideSubSkuSuggestions, 150));
+    subSkuInput.addEventListener('focus', () => { if (subSkuSuggest.innerHTML) subSkuSuggest.style.display = ''; });
+
     document.getElementById('sub-form').addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const f = ev.target;
@@ -207,6 +261,8 @@ if (employee) {
         });
         toast('br-msg', 'Item added.', false);
         f.reset();
+        subSkuNamePreview.textContent = '';
+        hideSubSkuSuggestions();
         await loadSubasta();
       } catch (err) {
         toast('br-msg', String(err.message || err), true);
