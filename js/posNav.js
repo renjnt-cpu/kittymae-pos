@@ -30,6 +30,7 @@ export function renderPosNav(employee, activeHref) {
   document.body.prepend(header);
 
   document.getElementById('pos-nav-who').innerHTML =
+    '<a class="btn small secondary" href="https://renjnt-cpu.github.io/kittymae-inventory-system/dashboard.html">Switch to ERP ↗</a> ' +
     esc(employee.full_name) + ' · ' + esc(employee.role) +
     ' <button class="btn small secondary" id="pos-nav-signout">Sign out</button>';
   document.getElementById('pos-nav-signout').addEventListener('click', signOut);

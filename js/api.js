@@ -893,13 +893,14 @@ export async function listLayaways(branchId) {
   if (branchId != null) query = query.eq('branch_id', branchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return attachEmployeeNames(data, { creator: 'created_by' });
+  return attachEmployeeNames(data, { creator: 'created_by', handler: 'handled_by' });
 }
 
-export async function createLayawayHold({ sku, branchId, qty, customerName, contactNumber, unitPrice, notes }) {
+export async function createLayawayHold({ sku, branchId, qty, customerName, contactNumber, unitPrice, notes, orderId, handledBy }) {
   const { data, error } = await supabase.rpc('create_layaway_hold', {
     p_sku: sku, p_branch_id: branchId, p_qty: qty, p_customer_name: customerName,
     p_contact_number: contactNumber || null, p_unit_price: unitPrice || null, p_notes: notes || null,
+    p_order_id: orderId || null, p_handled_by: handledBy || null,
   });
   if (error) throw new Error(error.message);
   return data;
