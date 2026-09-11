@@ -95,4 +95,21 @@ button.btn.small { padding:4px 10px; font-size:12px; }
   .table-scroll td { border-bottom:1px solid #f5f5f5; padding:8px 12px; white-space:normal !important; }
   .table-scroll td:last-child { border-bottom:none; }
   .table-scroll td[data-label]::before { content:attr(data-label); display:block; font-size:10px; text-transform:uppercase; letter-spacing:0.03em; color:var(--muted); margin-bottom:2px; }
+
+  /* Current Balance (Scrap/Subasta) -- only 3 short columns (Metal/Karat/Balance),
+     already narrow enough to fit a phone screen as a real table, so stacking it into
+     one-field-per-line cards like every other table just wastes vertical space. */
+  .table-mini table { display:table; }
+  .table-mini tr { display:table-row; margin-bottom:0; border:none; border-radius:0; }
+  .table-mini thead tr { display:table-row; }
+  .table-mini td, .table-mini th { display:table-cell; width:auto; border-bottom:1px solid #f5f5f5; padding:6px 8px; }
+  .table-mini td[data-label]::before { content:none; }
+
+  /* Scrap/Subasta entries -- ~10 fields each is too many one-per-line rows to
+     scan on a phone. Lay them out 2-per-line instead (wrapping to several rows),
+     except the last one or two columns (notes/actions), which stay full-width since
+     they hold variable-length text or buttons that don't fit half a phone screen. */
+  .table-2col tr { display:grid; grid-template-columns:1fr 1fr; }
+  .table-2col td { border-bottom:1px solid #f5f5f5; }
+  .table-2col td.full-row { grid-column:1 / -1; }
 }

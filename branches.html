@@ -346,7 +346,7 @@ if (employee) {
       // Every field shows directly in the row -- no click-to-expand -- matching the
       // Transactions list. Edit still opens a form (same as before), it just isn't
       // gated behind a separate "view details" click anymore.
-      list.innerHTML = '<div class="table-scroll"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
+      list.innerHTML = '<div class="table-scroll table-2col"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
         '<colgroup><col style="width:14%"><col style="width:7%"><col style="width:9%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:7%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:12%"></colgroup>' +
         '<thead><tr><th>Item</th><th>Weight</th><th>Pawn Ref</th><th>Pawn Date</th><th>Eligible</th><th>Status</th><th>Sale Date</th><th>Sale Price</th><th>Payment</th><th>Buyer/Notes</th><th></th></tr></thead><tbody>' +
         rows.map((r) => {
@@ -364,10 +364,10 @@ if (employee) {
             '<td data-label="Sale Date">' + (r.sale_date || '—') + '</td>' +
             '<td data-label="Sale Price">' + money(r.sale_price) + '</td>' +
             '<td data-label="Payment" style="font-size:11px;">' + paymentDetail + '</td>' +
-            '<td data-label="Buyer/Notes" style="font-size:11px;">' + esc(r.buyer_name || '') + (r.notes ? '<div class="muted">' + esc(r.notes) + '</div>' : '') +
+            '<td data-label="Buyer/Notes" class="full-row" style="font-size:11px;">' + esc(r.buyer_name || '') + (r.notes ? '<div class="muted">' + esc(r.notes) + '</div>' : '') +
               '<div class="muted" style="font-size:10px;">' + (r.creator ? 'Added by ' + esc(r.creator.full_name) : '') + '</div>' +
             '</td>' +
-            '<td style="white-space:nowrap;">' +
+            '<td class="full-row" style="white-space:nowrap;">' +
               (canWriteHere() ? '<button class="btn small secondary" data-id="' + r.id + '" data-act="edit">Edit</button> <button class="btn small secondary" data-id="' + r.id + '" data-act="delete">Delete</button>' : '') +
             '</td>' +
           '</tr>' +
@@ -457,7 +457,7 @@ if (employee) {
     function renderScrapBalance(rows) {
       const box = document.getElementById('scrap-balance');
       if (!rows.length) { box.innerHTML = '<p class="muted">No scrap recorded for this filter.</p>'; return; }
-      box.innerHTML = '<div class="table-scroll"><table><tr><th>Metal</th><th>Karat/Purity</th><th>Balance</th></tr>' +
+      box.innerHTML = '<div class="table-scroll table-mini"><table><tr><th>Metal</th><th>Karat/Purity</th><th>Balance</th></tr>' +
         rows.map((b) => '<tr><td data-label="Metal">' + esc(b.metal_type) + '</td><td data-label="Karat/Purity">' + esc(b.karat || '—') + '</td><td data-label="Balance">' + weight(b.balance_grams) + '</td></tr>').join('') +
         '</table></div>';
     }
@@ -540,7 +540,7 @@ if (employee) {
       // Every field shows directly in the row -- no click-to-expand -- matching the
       // Transactions list. Payment breaks down per method underneath the total when
       // an entry was split across more than one.
-      list.innerHTML = '<div class="table-scroll"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
+      list.innerHTML = '<div class="table-scroll table-2col"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
         '<colgroup><col style="width:9%"><col style="width:10%"><col style="width:11%"><col style="width:7%"><col style="width:8%"><col style="width:9%"><col style="width:9%"><col style="width:12%"><col style="width:12%"><col style="width:13%"></colgroup>' +
         '<thead><tr><th>Date</th><th>Customer</th><th>Metal/Karat</th><th>Type</th><th>Weight</th><th>Price/g</th><th>Total</th><th>Payment</th><th>Source/Notes</th><th></th></tr></thead><tbody>' +
         rows.map((r) => {
@@ -557,10 +557,10 @@ if (employee) {
             '<td data-label="Price/g">' + money(r.price_per_gram) + '</td>' +
             '<td data-label="Total">' + money(r.total_amount) + '</td>' +
             '<td data-label="Payment" style="font-size:11px;">' + paymentDetail + '</td>' +
-            '<td data-label="Source/Notes" style="font-size:11px;">' + esc(r.source || '') + (r.notes ? '<div class="muted">' + esc(r.notes) + '</div>' : '') +
+            '<td data-label="Source/Notes" class="full-row" style="font-size:11px;">' + esc(r.source || '') + (r.notes ? '<div class="muted">' + esc(r.notes) + '</div>' : '') +
               '<div class="muted" style="font-size:10px;">' + (r.creator ? 'Added by ' + esc(r.creator.full_name) : '') + '</div>' +
             '</td>' +
-            '<td style="white-space:nowrap;">' +
+            '<td class="full-row" style="white-space:nowrap;">' +
               (r.attachment_path ? '<button class="btn small secondary" data-id="' + r.id + '" data-path="' + esc(r.attachment_path) + '" data-act="view-photo">Photo</button> ' : '') +
               (canWriteHere() ? '<button class="btn small secondary" data-id="' + r.id + '" data-act="delete">Delete</button>' : '') +
             '</td>' +
