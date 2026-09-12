@@ -96,24 +96,44 @@ export async function searchProducts(query) {
 // Active by default), select('*') with no limit was silently truncated at
 // Supabase's default 1000-row cap -- products.html would only ever show
 // alphabetically-first ~1000 SKUs, with no error or notice that ~6,000+ were
-// missing. Capped explicitly here instead, with a UI notice when it's hit.
-export const PRODUCTS_ROW_CAP = 1000;
+// missing. Fetches every page below instead so the catalog is never cut off.
+const PRODUCTS_PAGE_SIZE = 1000;
+
+// Plain text sort put "A1" after "A013" (comparing '0' < '1' character by character),
+// scattering a SKU like "A1"/"A10"/"A11" nowhere near each other and nowhere near
+// "A001"-"A013" either, even though a person reading the list expects them grouped in
+// numeric order. Intl.Collator's numeric mode compares embedded number runs by value
+// instead of by character, which is what "alphabetical" actually means for SKUs like
+// these (mixed letter/number, sometimes zero-padded, sometimes not, occasionally with
+// a "-" separating more than one number, e.g. "KMS002-1").
+const skuCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
 
 /** Full SKU Catalog listing for products.html — everyone with a session can read
  * every row (products_read_all), so no branch/role filtering here. search/status
  * scope the query server-side instead of fetching everything and filtering
- * client-side, same reasoning as listOrderItemStatuses(). */
+ * client-side, same reasoning as listOrderItemStatuses(). Pages through in batches of
+ * PRODUCTS_PAGE_SIZE (PostgREST's own hard per-request cap) rather than trying to
+ * raise a single .limit() past it, so a bare "browse everything" call actually returns
+ * everything instead of just the first page. */
 export async function listProducts({ search = '', status = 'Active' } = {}) {
-  let query = supabase.from('products').select('*');
-  if (status !== 'all') query = query.eq('product_status', status);
   const term = sanitizeForOrFilter(search || '');
-  if (term) {
-    const pat = '%' + term + '%';
-    query = query.or('sku.ilike.' + pat + ',sub_sku.ilike.' + pat + ',item_name.ilike.' + pat);
+  function buildQuery() {
+    let query = supabase.from('products').select('*');
+    if (status !== 'all') query = query.eq('product_status', status);
+    if (term) {
+      const pat = '%' + term + '%';
+      query = query.or('sku.ilike.' + pat + ',sub_sku.ilike.' + pat + ',item_name.ilike.' + pat);
+    }
+    return query.order('sku');
   }
-  const { data, error } = await query.order('sku').limit(PRODUCTS_ROW_CAP);
-  if (error) throw new Error(error.message);
-  return data;
+  let all = [];
+  for (let offset = 0; offset < 20000; offset += PRODUCTS_PAGE_SIZE) {
+    const { data, error } = await buildQuery().range(offset, offset + PRODUCTS_PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    all = all.concat(data);
+    if (data.length < PRODUCTS_PAGE_SIZE) break;
+  }
+  return all.sort((a, b) => skuCollator.compare(a.sku, b.sku));
 }
 
 /** New SKUs are added in the Google Sheet, not here — this only patches a detail on an

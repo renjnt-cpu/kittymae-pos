@@ -14,7 +14,7 @@
 
 <script type="module">
 import { initShell, toast, esc } from './js/shell.js';
-import { listProducts, updateProduct, subscribeToChanges, PRODUCTS_ROW_CAP } from './js/api.js';
+import { listProducts, updateProduct, subscribeToChanges } from './js/api.js';
 import { renderPosNav } from './js/posNav.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
@@ -38,10 +38,9 @@ if (employee) {
     '</div>' +
     '<div id="prod-list"><div class="muted">Loading…</div></div>';
 
-  // With 7,392 SKUs, fetching everything and filtering client-side silently hit
-  // Supabase's default 1000-row cap -- see PRODUCTS_ROW_CAP in api.js. Search and
-  // status now query the server directly instead, capped explicitly with a visible
-  // notice when that cap is hit (same fix as Order & Item Status on movement.html).
+  // With 7,392 SKUs, search/status filters query the server directly (listProducts
+  // pages through everything that matches instead of stopping at PostgREST's 1000-row
+  // per-request cap) rather than fetching everything and filtering client-side.
   let allProducts = [];
   let searchTimer = null;
   let realtimeTimer = null;
@@ -81,13 +80,10 @@ if (employee) {
 
   function render() {
     const rows = allProducts; // already scoped to the current search + status at the query level
-    const truncated = rows.length >= PRODUCTS_ROW_CAP;
 
     const list = document.getElementById('prod-list');
     if (!rows.length) { list.innerHTML = '<p class="muted">No SKUs match this filter.</p>'; return; }
-    const truncatedNotice = truncated
-      ? '<p class="muted" style="margin:0 0 8px;color:#b45309;">Showing the first ' + PRODUCTS_ROW_CAP + ' matching SKUs — search to narrow further and see the rest.</p>'
-      : '';
+    const countNotice = '<p class="muted" style="margin:0 0 8px;">' + rows.length.toLocaleString('en-PH') + ' SKU(s)</p>';
 
     function rowHtml(p) {
       return '<tr data-row-id="' + esc(p.sku) + '">' +
@@ -109,7 +105,7 @@ if (employee) {
         '<tr class="edit-row" data-edit-for="' + esc(p.sku) + '" style="display:none;"><td colspan="7"></td></tr>';
     }
 
-    list.innerHTML = truncatedNotice + '<div class="table-scroll table-mini"><table><thead><tr style="white-space:nowrap;">' +
+    list.innerHTML = countNotice + '<div class="table-scroll table-mini"><table><thead><tr style="white-space:nowrap;">' +
       '<th>SKU</th><th>Product Name</th><th>Sub SKU</th><th>Price</th><th>Est. Gram</th><th>Status</th><th></th>' +
       '</tr></thead><tbody>' + rows.map(rowHtml).join('') + '</tbody></table></div>';
 
