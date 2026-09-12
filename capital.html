@@ -19,6 +19,12 @@ import { renderPosNav } from './js/posNav.js';
 import { branchBadge, branchOptionStyle } from './js/branchColors.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + 'g';
+// Same Metal/Karat vocabulary as Scrap entries on branches.html, for when a capital
+// injection is gold/silver stock handed over instead of (or alongside) cash.
+const GOLD_KARATS = ['24K', '22K', '21K', '18K', '16K', '14K', '10K', 'Other'];
+const SILVER_KARATS = ['999', '925', 'Other'];
+const karatOptionsFor = (metal) => (metal === 'Silver' ? SILVER_KARATS : GOLD_KARATS).map((k) => '<option>' + k + '</option>').join('');
 
 const employee = await initShell();
 if (employee) {
@@ -59,6 +65,10 @@ if (employee) {
         '<div class="field"><label>Amount (PHP) *</label><input type="number" name="amount" step="0.01" required></div>' +
         '<div class="field"><label>Purpose</label><select name="purposeType" id="purpose-type"><option>Scrap</option><option>Other</option></select></div>' +
         '<div class="field" id="purpose-other-field" style="display:none;"><label>Specify</label><input type="text" name="purposeOther" placeholder="What does \'Other\' mean here?"></div>' +
+        '<div class="field"><label>Metal (if given as gold/silver stock)</label><select name="metalType" id="cap-metal"><option value="">— none, cash only —</option><option>Gold</option><option>Silver</option></select></div>' +
+        '<div class="field" id="cap-karat-field" style="display:none;"><label>Karat / Purity</label><select name="karat" id="cap-karat">' + karatOptionsFor('Gold') + '</select></div>' +
+        '<div class="field" id="cap-karat-other-field" style="display:none;"><label>Specify</label><input type="text" name="karatOther" placeholder="Karat / purity"></div>' +
+        '<div class="field" id="cap-weight-field" style="display:none;"><label>Weight (grams)</label><input type="number" name="weightGrams" step="0.001" min="0"></div>' +
         '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
         '<button class="btn" type="submit">Add Entry</button>' +
       '</form>' +
@@ -76,7 +86,9 @@ if (employee) {
               '<div class="field"><label>To</label><input type="date" id="cap-tot-to"></div>' +
               '<button type="button" class="btn small secondary" id="cap-tot-clear">All Time</button>' +
             '</div>' +
-            '<div class="tiles" id="cap-tiles-total"></div>'
+            '<div class="tiles" id="cap-tiles-total"></div>' +
+            '<h3 style="margin-top:16px;">Total Grams Received <span class="muted" style="font-weight:normal;">— per branch, by purity, same range as above</span></h3>' +
+            '<div id="cap-grams-list"></div>'
           : '') +
         (canFullView
           ? '<div class="card">' +
@@ -94,20 +106,37 @@ if (employee) {
   document.getElementById('purpose-type').addEventListener('change', (ev) => {
     document.getElementById('purpose-other-field').style.display = ev.target.value === 'Other' ? '' : 'none';
   });
+  document.getElementById('cap-metal').addEventListener('change', (ev) => {
+    const hasMetal = !!ev.target.value;
+    document.getElementById('cap-karat-field').style.display = hasMetal ? '' : 'none';
+    document.getElementById('cap-weight-field').style.display = hasMetal ? '' : 'none';
+    if (hasMetal) document.getElementById('cap-karat').innerHTML = karatOptionsFor(ev.target.value);
+    document.getElementById('cap-karat-other-field').style.display = 'none';
+  });
+  document.getElementById('cap-karat').addEventListener('change', (ev) => {
+    document.getElementById('cap-karat-other-field').style.display = ev.target.value === 'Other' ? '' : 'none';
+  });
   document.getElementById('cap-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const f = ev.target;
     try {
       const purpose = f.purposeType.value === 'Other' ? f.purposeOther.value.trim() : f.purposeType.value;
+      const metalType = f.metalType.value || null;
+      const karat = metalType ? (f.karat.value === 'Other' ? f.karatOther.value.trim() : f.karat.value) : null;
+      const weightGrams = metalType && f.weightGrams.value ? Number(f.weightGrams.value) : null;
       await createBranchCapitalEntry({
         branchId: Number(f.branchId.value), entryDate: f.entryDate.value,
         amount: Number(f.amount.value), purpose, notes: f.notes.value.trim(),
         status: isManagerial ? 'Approved' : 'Pending Approval',
+        metalType, karat, weightGrams,
       });
       toast('cap-msg', isManagerial ? 'Entry added.' : 'Entry added — pending approval.', false);
       f.reset();
       f.entryDate.value = new Date().toISOString().slice(0, 10);
       document.getElementById('purpose-other-field').style.display = 'none';
+      document.getElementById('cap-karat-field').style.display = 'none';
+      document.getElementById('cap-weight-field').style.display = 'none';
+      document.getElementById('cap-karat-other-field').style.display = 'none';
       await load();
     } catch (err) {
       toast('cap-msg', String(err.message || err), true);
@@ -128,13 +157,18 @@ if (employee) {
     });
   }
   if (canViewBalance) {
-    document.getElementById('cap-tot-from').addEventListener('change', loadTotalTiles);
-    document.getElementById('cap-tot-to').addEventListener('change', loadTotalTiles);
+    document.getElementById('cap-tot-from').addEventListener('change', refreshTotals);
+    document.getElementById('cap-tot-to').addEventListener('change', refreshTotals);
     document.getElementById('cap-tot-clear').addEventListener('click', () => {
       document.getElementById('cap-tot-from').value = '';
       document.getElementById('cap-tot-to').value = '';
-      loadTotalTiles();
+      refreshTotals();
     });
+  }
+
+  function refreshTotals() {
+    loadTotalTiles();
+    renderGramsByPurity();
   }
 
   async function load() {
@@ -144,11 +178,13 @@ if (employee) {
       if (canFullView) {
         const entries = await listBranchCapitalEntries();
         allEntries = entries;
-        await Promise.all([loadTotalTiles(), loadRemainingTiles()]);
+        await loadRemainingTiles();
+        refreshTotals();
       } else if (canViewBalance) {
         const entries = await listBranchCapitalEntries();
         allEntries = entries; // RLS still scopes this to just the caller's own rows -- only the tiles are company-wide
-        await Promise.all([loadTotalTiles(), loadRemainingTiles()]);
+        await loadRemainingTiles();
+        refreshTotals();
       } else {
         allEntries = await listBranchCapitalEntries(); // RLS already scopes this to just the caller's own rows
       }
@@ -169,6 +205,38 @@ if (employee) {
     box.innerHTML = balances.map((b) => tile(money(b.total_capital), branchById[b.branch_id] || 'Branch #' + b.branch_id)).join('');
   }
 
+  // Grams have no server-side rollup of their own (unlike Total Capital's RPC) --
+  // computed here from allEntries, which canFullView/canViewBalance both already have
+  // (RLS scopes it to just-my-branch for anyone who isn't Admin), same From/To range.
+  function renderGramsByPurity() {
+    const box = document.getElementById('cap-grams-list');
+    if (!box) return;
+    const fromDate = document.getElementById('cap-tot-from').value || null;
+    const toDate = document.getElementById('cap-tot-to').value || null;
+    let rows = allEntries.filter((r) => r.weight_grams != null && r.metal_type);
+    if (fromDate) rows = rows.filter((r) => r.entry_date >= fromDate);
+    if (toDate) rows = rows.filter((r) => r.entry_date <= toDate);
+
+    if (!rows.length) { box.innerHTML = '<p class="muted">No gold/silver capital entries for this range.</p>'; return; }
+
+    const byKey = {};
+    rows.forEach((r) => {
+      const key = r.branch_id + '|' + r.metal_type + '|' + (r.karat || '');
+      byKey[key] = (byKey[key] || 0) + Number(r.weight_grams);
+    });
+    const items = Object.keys(byKey).map((key) => {
+      const [branchId, metalType, karat] = key.split('|');
+      return { branchId: Number(branchId), metalType, karat: karat || '—', grams: byKey[key] };
+    }).sort((a, b) => (branchById[a.branchId] || '').localeCompare(branchById[b.branchId] || '') || a.metalType.localeCompare(b.metalType));
+
+    box.innerHTML = '<div class="table-scroll table-mini"><table><tr><th>Branch</th><th>Metal</th><th>Karat/Purity</th><th>Total Grams</th></tr>' +
+      items.map((it) => '<tr><td data-label="Branch">' + (branchById[it.branchId] ? branchBadge(esc, branchById[it.branchId], it.branchId, branches) : '') + '</td>' +
+        '<td data-label="Metal">' + esc(it.metalType) + '</td>' +
+        '<td data-label="Karat/Purity">' + esc(it.karat) + '</td>' +
+        '<td data-label="Total Grams">' + weight(it.grams) + '</td></tr>').join('') +
+      '</table></div>';
+  }
+
   async function loadRemainingTiles() {
     const remaining = await getBranchCapitalRemaining();
     const box = document.getElementById('cap-tiles-remaining');
@@ -187,7 +255,7 @@ if (employee) {
 
     const list = document.getElementById('cap-list');
     if (!rows.length) { list.innerHTML = '<p class="muted">No capital entries for this filter.</p>'; return; }
-    list.innerHTML = '<div class="table-scroll table-2col"><table><tr><th>Branch</th><th>Date</th><th>Amount</th><th>Purpose</th><th>Notes</th><th>Status</th><th></th></tr>' +
+    list.innerHTML = '<div class="table-scroll table-2col"><table><tr><th>Branch</th><th>Date</th><th>Amount</th><th>Metal / Grams</th><th>Purpose</th><th>Notes</th><th>Status</th><th></th></tr>' +
       rows.map((r) => {
         const pending = r.status === 'Pending Approval';
         return '<tr' + (pending ? ' style="background:#fff8e8;"' : '') + '>' +
@@ -196,6 +264,7 @@ if (employee) {
           '<td data-label="Amount">' + money(r.amount) +
             (r.creator ? '<div class="muted" style="font-size:10px;margin-top:2px;">Added by ' + esc(r.creator.full_name) + '</div>' : '') +
           '</td>' +
+          '<td data-label="Metal / Grams">' + (r.metal_type ? esc(r.metal_type) + ' ' + esc(r.karat || '') + '<div class="muted" style="font-size:10px;">' + weight(r.weight_grams) + '</div>' : '—') + '</td>' +
           '<td data-label="Purpose">' + esc(r.purpose || '') + '</td>' +
           '<td data-label="Notes" class="full-row">' + esc(r.notes || '') + '</td>' +
           '<td data-label="Status"><span class="badge ' + (pending ? 'pending' : 'ok') + '">' + esc(r.status) + '</span></td>' +

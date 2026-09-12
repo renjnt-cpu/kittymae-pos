@@ -834,12 +834,13 @@ export async function getBranchCapitalRemaining() {
   return data;
 }
 
-export async function createBranchCapitalEntry({ branchId, entryDate, amount, purpose, notes, status }) {
+export async function createBranchCapitalEntry({ branchId, entryDate, amount, purpose, notes, status, metalType, karat, weightGrams }) {
   const empId = await currentEmployeeId();
   const { error } = await supabase.from('branch_capital_entries').insert({
     branch_id: branchId, entry_date: entryDate || new Date().toISOString().slice(0, 10),
     amount, purpose: purpose || null, notes: notes || null, created_by: empId,
     status: status || 'Approved',
+    metal_type: metalType || null, karat: karat || null, weight_grams: weightGrams || null,
   });
   if (error) throw new Error(error.message);
 }
