@@ -187,7 +187,7 @@ if (employee) {
 
     const list = document.getElementById('cap-list');
     if (!rows.length) { list.innerHTML = '<p class="muted">No capital entries for this filter.</p>'; return; }
-    list.innerHTML = '<div class="table-scroll"><table><tr><th>Branch</th><th>Date</th><th>Amount</th><th>Purpose</th><th>Notes</th><th>Status</th><th></th></tr>' +
+    list.innerHTML = '<div class="table-scroll table-2col"><table><tr><th>Branch</th><th>Date</th><th>Amount</th><th>Purpose</th><th>Notes</th><th>Status</th><th></th></tr>' +
       rows.map((r) => {
         const pending = r.status === 'Pending Approval';
         return '<tr' + (pending ? ' style="background:#fff8e8;"' : '') + '>' +
@@ -197,9 +197,9 @@ if (employee) {
             (r.creator ? '<div class="muted" style="font-size:10px;margin-top:2px;">Added by ' + esc(r.creator.full_name) + '</div>' : '') +
           '</td>' +
           '<td data-label="Purpose">' + esc(r.purpose || '') + '</td>' +
-          '<td data-label="Notes">' + esc(r.notes || '') + '</td>' +
+          '<td data-label="Notes" class="full-row">' + esc(r.notes || '') + '</td>' +
           '<td data-label="Status"><span class="badge ' + (pending ? 'pending' : 'ok') + '">' + esc(r.status) + '</span></td>' +
-          '<td data-label="Actions" style="white-space:nowrap;">' +
+          '<td data-label="Actions" class="full-row" style="white-space:nowrap;">' +
             (pending && canApproveRow(r) ? '<button class="btn small" data-id="' + r.id + '" data-act="approve">Approve</button> ' : '') +
             (canDelete ? '<button class="btn small secondary" data-id="' + r.id + '" data-act="delete">Delete</button>' : '') +
           '</td>' +

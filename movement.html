@@ -414,7 +414,7 @@ if (employee) {
       '</div>'
     ) : '';
 
-    list.innerHTML = top5Line + subtotalLine + '<div class="table-scroll"><table><thead><tr>' +
+    list.innerHTML = top5Line + subtotalLine + '<div class="table-scroll table-mini"><table><thead><tr>' +
         sortTh('item_name', 'Item') + sortTh('qty', 'Qty') + sortTh('branch', 'Branch') + sortTh('status', 'Status') + sortTh('order_reference', 'Order / Customer') + sortTh('notes', 'Notes / By') + '<th></th>' +
       '</tr></thead><tbody>' +
       rows.map((r) =>

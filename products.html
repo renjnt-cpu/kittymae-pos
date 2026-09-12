@@ -109,7 +109,7 @@ if (employee) {
         '<tr class="edit-row" data-edit-for="' + esc(p.sku) + '" style="display:none;"><td colspan="7"></td></tr>';
     }
 
-    list.innerHTML = truncatedNotice + '<div class="table-scroll"><table><thead><tr style="white-space:nowrap;">' +
+    list.innerHTML = truncatedNotice + '<div class="table-scroll table-mini"><table><thead><tr style="white-space:nowrap;">' +
       '<th>SKU</th><th>Product Name</th><th>Sub SKU</th><th>Price</th><th>Est. Gram</th><th>Status</th><th></th>' +
       '</tr></thead><tbody>' + rows.map(rowHtml).join('') + '</tbody></table></div>';
 
