@@ -66,6 +66,14 @@ function readPaymentSlots(f) {
   }
   return payments;
 }
+// The "Hold an Item" form (and the On Hold list below it) can run much longer than one
+// screen -- if someone submits while scrolled down to the button, toast()'s message at
+// the very top of the page is invisible, so a real error (e.g. insufficient stock) looks
+// exactly like the button doing nothing at all. Scroll the message into view every time.
+function notify(text, isError) {
+  toast('lw-msg', text, isError);
+  document.getElementById('lw-msg').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
 
 const employee = await initShell();
 if (employee) {
@@ -196,14 +204,14 @@ if (employee) {
       for (const p of payments) {
         await addLayawayPayment(holdId, p.amount, p.method, p.reference);
       }
-      toast('lw-msg', 'Item held' + (payments.length ? ' with ' + payments.length + ' payment(s) recorded.' : '.'), false);
+      notify('Item held' + (payments.length ? ' with ' + payments.length + ' payment(s) recorded.' : '.'), false);
       f.reset();
       f.qty.value = 1;
       skuNamePreview.textContent = '';
       hideSkuSuggestions();
       await load();
     } catch (err) {
-      toast('lw-msg', String(err.message || err), true);
+      notify(String(err.message || err), true);
     } finally {
       btn.disabled = false;
     }
@@ -309,10 +317,10 @@ if (employee) {
       const f = ev.target;
       try {
         await addLayawayPayment(Number(f.dataset.holdId), Number(f.amount.value), f.method.value, f.reference.value.trim());
-        toast('lw-msg', 'Payment added.', false);
+        notify('Payment added.', false);
         await load();
       } catch (err) {
-        toast('lw-msg', String(err.message || err), true);
+        notify(String(err.message || err), true);
       }
     }));
 
@@ -322,20 +330,20 @@ if (employee) {
       if (hold && hold.total_price != null && paid < Number(hold.total_price)) {
         if (!confirm('Not fully paid yet (' + money(paid) + ' of ' + money(hold.total_price) + '). Complete anyway?')) return;
       } else if (!confirm('Mark this layaway as completed and sold?')) return;
-      try { await completeLayaway(Number(btn.dataset.id)); toast('lw-msg', 'Layaway completed.', false); await load(); }
-      catch (err) { toast('lw-msg', String(err.message || err), true); }
+      try { await completeLayaway(Number(btn.dataset.id)); notify('Layaway completed.', false); await load(); }
+      catch (err) { notify(String(err.message || err), true); }
     }));
 
     list.querySelectorAll('[data-act="cancel"]').forEach((btn) => btn.addEventListener('click', async () => {
       if (!confirm('Cancel this layaway? The item goes back to Available stock.')) return;
-      try { await cancelLayaway(Number(btn.dataset.id)); toast('lw-msg', 'Layaway cancelled.', false); await load(); }
-      catch (err) { toast('lw-msg', String(err.message || err), true); }
+      try { await cancelLayaway(Number(btn.dataset.id)); notify('Layaway cancelled.', false); await load(); }
+      catch (err) { notify(String(err.message || err), true); }
     }));
 
     list.querySelectorAll('[data-act="del-payment"]').forEach((btn) => btn.addEventListener('click', async () => {
       if (!confirm('Delete this payment entry?')) return;
-      try { await deleteLayawayPayment(Number(btn.dataset.id)); toast('lw-msg', 'Payment removed.', false); await load(); }
-      catch (err) { toast('lw-msg', String(err.message || err), true); }
+      try { await deleteLayawayPayment(Number(btn.dataset.id)); notify('Payment removed.', false); await load(); }
+      catch (err) { notify(String(err.message || err), true); }
     }));
   }
 
