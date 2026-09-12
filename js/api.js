@@ -889,18 +889,19 @@ export async function setAccessChecklistItem(employeeId, itemKey, checked, level
 export async function listLayaways(branchId) {
   let query = supabase.from('layaway_holds')
     .select('*, branches(name), layaway_payments(*)')
-    .order('hold_date', { ascending: false });
+    .order('hold_date', { ascending: false })
+    .order('id', { ascending: true }); // keeps items held together in one submission adjacent
   if (branchId != null) query = query.eq('branch_id', branchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   return attachEmployeeNames(data, { creator: 'created_by', handler: 'handled_by' });
 }
 
-export async function createLayawayHold({ sku, branchId, qty, customerName, contactNumber, unitPrice, notes, orderId, handledBy }) {
+export async function createLayawayHold({ sku, branchId, qty, customerName, contactNumber, unitPrice, notes, orderId, handledBy, groupId }) {
   const { data, error } = await supabase.rpc('create_layaway_hold', {
     p_sku: sku, p_branch_id: branchId, p_qty: qty, p_customer_name: customerName,
     p_contact_number: contactNumber || null, p_unit_price: unitPrice || null, p_notes: notes || null,
-    p_order_id: orderId || null, p_handled_by: handledBy || null,
+    p_order_id: orderId || null, p_handled_by: handledBy || null, p_group_id: groupId || null,
   });
   if (error) throw new Error(error.message);
   return data;
