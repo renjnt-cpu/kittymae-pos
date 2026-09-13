@@ -1038,12 +1038,15 @@ function sanitizeForOrFilter(s) {
  * takes an array for any tab that ever needs more than one). search: free text,
  * matched against item/SKU/order/customer/notes -- same fields the old client-side
  * filter checked, just done server-side now so a tab load only pulls what that tab
- * actually needs instead of the whole active dataset. */
-export async function listOrderItemStatuses({ statusKeys = null, search = '' } = {}) {
+ * actually needs instead of the whole active dataset. branchId: null for the
+ * company-wide board (movement.html), or one branch's id for the Branches page's
+ * Online Orders tab (92_order_item_status_branch_scope.sql). */
+export async function listOrderItemStatuses({ statusKeys = null, search = '', branchId = null } = {}) {
   let query = supabase.from('order_item_status')
     .select(ORDER_ITEM_STATUS_COLUMNS)
     .not('status', 'in', '(' + TERMINAL_STATUSES.join(',') + ')');
   if (statusKeys) query = query.in('status', statusKeys);
+  if (branchId != null) query = query.eq('branch_id', branchId);
   const term = sanitizeForOrFilter(search || '');
   if (term) {
     const pat = '%' + term + '%';
@@ -1058,11 +1061,12 @@ export async function listOrderItemStatuses({ statusKeys = null, search = '' } =
 }
 
 /** Per-status counts for the tab badges -- a lightweight aggregate (see
- * 80_order_item_status_counts_fn.sql) instead of counting a client-side array,
+ * 80_order_item_status_counts_fn.sql, extended to take an optional branch filter in
+ * 92_order_item_status_branch_scope.sql) instead of counting a client-side array,
  * since that array is now capped/scoped to one tab at a time and would give wrong
  * counts for every OTHER tab. */
-export async function getOrderItemStatusCounts() {
-  const { data, error } = await supabase.rpc('order_item_status_counts');
+export async function getOrderItemStatusCounts(branchId = null) {
+  const { data, error } = await supabase.rpc('order_item_status_counts', { p_branch_id: branchId });
   if (error) throw new Error(error.message);
   const counts = { all: 0 };
   (data || []).forEach((row) => { counts[row.status] = Number(row.cnt); counts.all += Number(row.cnt); });
