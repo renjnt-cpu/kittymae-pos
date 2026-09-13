@@ -16,6 +16,7 @@
 import { initShell, toast, esc } from './js/shell.js';
 import {
   getBranches, searchProducts,
+  createPosSale, listSales, listSalePayments,
   listSubastaItems, createSubastaItem, updateSubastaItem, deleteSubastaItem,
   listScrapEntries, getScrapCashBalances, createScrapEntry, deleteScrapEntry, uploadScrapAttachment, getScrapAttachmentUrl,
   subscribeToChanges,
@@ -28,6 +29,7 @@ const SUB_STATUSES = ['Pending', 'Listed', 'Sold', 'Cancelled'];
 const SUB_STATUS_OPTIONS = (selected) => SUB_STATUSES.map((s) => '<option' + (s === selected ? ' selected' : '') + '>' + s + '</option>').join('');
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + 'g';
+const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
 const GOLD_KARATS = ['24K', '22K', '21K', '18K', '16K', '14K', '10K', 'Other'];
 const SILVER_KARATS = ['999', '925', 'Other'];
@@ -118,41 +120,41 @@ if (employee) {
         '<div id="branch-buttons" style="display:flex;gap:8px;flex-wrap:wrap;"></div>' +
       '</div>' +
 
-      '<h2>Subasta <span class="muted" id="sub-branch-label" style="font-weight:normal;"></span></h2>' +
+      '<h2>POS (Walk-In) <span class="muted" id="pos-branch-label" style="font-weight:normal;"></span></h2>' +
       '<div class="layout-2col">' +
         '<div class="layout-2col-side">' +
           '<div class="card">' +
-            '<h3>Add Subasta Item</h3>' +
-            '<div id="sub-write-note"></div>' +
-            '<form id="sub-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
-              '<div class="field" style="position:relative;">' +
-                '<label>SKU</label>' +
-                '<input type="text" name="sku" id="sub-sku" autocomplete="off" placeholder="Type a SKU or item name…">' +
-                '<div id="sub-sku-name" class="muted" style="font-size:11px;"></div>' +
-                '<div id="sub-sku-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 10px rgba(0,0,0,0.12);max-height:220px;overflow-y:auto;"></div>' +
+            '<h3>New Sale</h3>' +
+            '<p class="muted" style="margin-top:-4px;">For a walk-in customer paying on the spot — add every item they\'re buying, take payment, then Complete Sale. Stock is deducted immediately.</p>' +
+            '<div id="pos-write-note"></div>' +
+            '<form id="pos-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
+              '<label style="font-size:13px;font-weight:600;">Items *</label>' +
+              '<div id="pos-items"></div>' +
+              '<button type="button" class="btn small secondary" id="pos-add-item" style="align-self:flex-start;margin:-4px 0 10px;">+ Add another item</button>' +
+              '<div class="field"><label>Order / Reference No.</label><input type="text" name="orderId"></div>' +
+              '<div class="field"><label>Customer Name</label><input type="text" name="customerName"></div>' +
+              '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
+              paymentSlotsHtml('pos', [], { label0: 'Payment Method', optional: true }) +
+              '<div class="card" style="background:#f7f5f0;margin:6px 0;padding:10px 14px;">' +
+                '<div style="display:flex;justify-content:space-between;font-size:13px;"><span>Subtotal</span><b id="pos-subtotal">₱0.00</b></div>' +
+                '<div style="display:flex;justify-content:space-between;font-size:13px;"><span>Paid</span><b id="pos-paid">₱0.00</b></div>' +
+                '<div style="display:flex;justify-content:space-between;font-size:13px;"><span id="pos-balance-label">Balance Due</span><b id="pos-balance">₱0.00</b></div>' +
               '</div>' +
-              '<div class="field"><label>Item Description *</label><input type="text" name="itemDescription" required></div>' +
-              '<div class="field"><label>Weight (grams)</label><input type="number" name="weightGrams" step="0.001" min="0"></div>' +
-              '<div class="field"><label>Pawn Reference</label><input type="text" name="pawnReference"></div>' +
-              '<div class="field"><label>Pawn Date</label><input type="date" name="pawnDate"></div>' +
-              '<div class="field"><label>Auction Eligible Date</label><input type="date" name="auctionEligibleDate"></div>' +
-              '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
-              '<button class="btn" type="submit">Add Item</button>' +
+              '<button class="btn" type="submit">Complete Sale</button>' +
             '</form>' +
           '</div>' +
         '</div>' +
         '<div class="layout-2col-main">' +
-          '<div class="tiles" id="sub-tiles"></div>' +
+          '<div class="tiles" id="pos-tiles"></div>' +
           '<div class="card">' +
             '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-              '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="sub-f-search" placeholder="Item, SKU, pawn ref, buyer, grams, date…"></div>' +
-              '<div class="field"><label>Status</label><select id="sub-f-status"><option value="all">All Statuses</option>' + SUB_STATUS_OPTIONS() + '</select></div>' +
-              '<div class="field"><label>Pawned From</label><input type="date" id="sub-f-from"></div>' +
-              '<div class="field"><label>Pawned To</label><input type="date" id="sub-f-to"></div>' +
-              '<button type="button" class="btn small secondary" id="sub-f-clear">Clear Filters</button>' +
+              '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="pos-f-search" placeholder="SKU, item, customer, order…"></div>' +
+              '<div class="field"><label>From</label><input type="date" id="pos-f-from"></div>' +
+              '<div class="field"><label>To</label><input type="date" id="pos-f-to"></div>' +
+              '<button type="button" class="btn small secondary" id="pos-f-clear">Clear Filters</button>' +
             '</div>' +
           '</div>' +
-          '<div id="sub-list"><div class="muted">Loading…</div></div>' +
+          '<div id="pos-list"><div class="muted">Loading…</div></div>' +
         '</div>' +
       '</div>' +
 
@@ -196,9 +198,267 @@ if (employee) {
           '</div>' +
           '<div id="scrap-list"><div class="muted">Loading…</div></div>' +
         '</div>' +
+      '</div>' +
+
+      '<h2 style="margin-top:30px;">Subasta <span class="muted" id="sub-branch-label" style="font-weight:normal;"></span></h2>' +
+      '<div class="layout-2col">' +
+        '<div class="layout-2col-side">' +
+          '<div class="card">' +
+            '<h3>Add Subasta Item</h3>' +
+            '<div id="sub-write-note"></div>' +
+            '<form id="sub-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
+              '<div class="field" style="position:relative;">' +
+                '<label>SKU</label>' +
+                '<input type="text" name="sku" id="sub-sku" autocomplete="off" placeholder="Type a SKU or item name…">' +
+                '<div id="sub-sku-name" class="muted" style="font-size:11px;"></div>' +
+                '<div id="sub-sku-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 10px rgba(0,0,0,0.12);max-height:220px;overflow-y:auto;"></div>' +
+              '</div>' +
+              '<div class="field"><label>Item Description *</label><input type="text" name="itemDescription" required></div>' +
+              '<div class="field"><label>Weight (grams)</label><input type="number" name="weightGrams" step="0.001" min="0"></div>' +
+              '<div class="field"><label>Pawn Reference</label><input type="text" name="pawnReference"></div>' +
+              '<div class="field"><label>Pawn Date</label><input type="date" name="pawnDate"></div>' +
+              '<div class="field"><label>Auction Eligible Date</label><input type="date" name="auctionEligibleDate"></div>' +
+              '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
+              '<button class="btn" type="submit">Add Item</button>' +
+            '</form>' +
+          '</div>' +
+        '</div>' +
+        '<div class="layout-2col-main">' +
+          '<div class="tiles" id="sub-tiles"></div>' +
+          '<div class="card">' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+              '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="sub-f-search" placeholder="Item, SKU, pawn ref, buyer, grams, date…"></div>' +
+              '<div class="field"><label>Status</label><select id="sub-f-status"><option value="all">All Statuses</option>' + SUB_STATUS_OPTIONS() + '</select></div>' +
+              '<div class="field"><label>Pawned From</label><input type="date" id="sub-f-from"></div>' +
+              '<div class="field"><label>Pawned To</label><input type="date" id="sub-f-to"></div>' +
+              '<button type="button" class="btn small secondary" id="sub-f-clear">Clear Filters</button>' +
+            '</div>' +
+          '</div>' +
+          '<div id="sub-list"><div class="muted">Loading…</div></div>' +
+        '</div>' +
       '</div>';
 
     renderBranchButtons();
+
+    // ---- POS (Walk-In): a repeatable item cart (SKU autocomplete + qty + unit price,
+    // same pattern as layaway.html's Hold Item(s) form) rung up under the currently
+    // selected branch above -- no branch field of its own, unlike Scrap/Subasta's forms
+    // this mirrors, since a walk-in sale never spans more than the one branch you're
+    // standing in front of right now. ----
+    function posItemRowHtml() {
+      return '<div class="pos-item-row" style="border:1px solid #e5e5e5;border-radius:8px;padding:8px;margin-bottom:6px;">' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+          '<div class="field" style="flex:2;min-width:150px;position:relative;">' +
+            '<label>SKU *</label>' +
+            '<input type="text" class="pos-item-sku" autocomplete="off" placeholder="Type a SKU or item name…">' +
+            '<div class="pos-item-sku-name muted" style="font-size:11px;"></div>' +
+            '<div class="pos-item-sku-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 10px rgba(0,0,0,0.12);max-height:220px;overflow-y:auto;"></div>' +
+          '</div>' +
+          '<div class="field" style="width:70px;"><label>Qty</label><input type="number" class="pos-item-qty" min="1" value="1"></div>' +
+          '<div class="field" style="width:110px;"><label>Unit Price</label><input type="number" class="pos-item-price" step="0.01" min="0" placeholder="PHP"></div>' +
+          '<button type="button" class="btn small secondary pos-item-remove" title="Remove this item">✕</button>' +
+        '</div>' +
+      '</div>';
+    }
+    function attachPosSkuAutocomplete(row) {
+      const skuInput = row.querySelector('.pos-item-sku');
+      const skuSuggest = row.querySelector('.pos-item-sku-suggest');
+      const skuNamePreview = row.querySelector('.pos-item-sku-name');
+      const priceInput = row.querySelector('.pos-item-price');
+      let searchToken = 0, searchTimer = null;
+      function hide() { skuSuggest.style.display = 'none'; skuSuggest.innerHTML = ''; }
+      function pick(p) {
+        skuInput.value = p.sku;
+        skuNamePreview.textContent = p.item_name + (p.category || p.product_line ? ' · ' + (p.category || p.product_line) : '');
+        if (!priceInput.value && p.system_selling_price != null) priceInput.value = p.system_selling_price;
+        hide();
+        updatePosTotals();
+      }
+      function renderSuggestions(matches) {
+        if (!matches.length) { hide(); return; }
+        skuSuggest.innerHTML = matches.map((p) =>
+          '<div data-sku="' + esc(p.sku) + '" style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:13px;">' +
+            '<strong>' + esc(p.sku) + '</strong> — ' + esc(p.item_name) + (p.system_selling_price != null ? ' · ' + money(p.system_selling_price) : '') +
+          '</div>'
+        ).join('');
+        skuSuggest.style.display = '';
+        skuSuggest.querySelectorAll('[data-sku]').forEach((el, i) => {
+          el.addEventListener('mousedown', (ev) => { ev.preventDefault(); pick(matches[i]); });
+        });
+      }
+      skuInput.addEventListener('input', () => {
+        skuNamePreview.textContent = '';
+        const q = skuInput.value.trim();
+        clearTimeout(searchTimer);
+        if (!q) { hide(); return; }
+        searchTimer = setTimeout(async () => {
+          const token = ++searchToken;
+          try {
+            const results = await searchProducts(q);
+            if (token !== searchToken) return;
+            renderSuggestions(results);
+          } catch (err) { /* a failed lookup shouldn't block typing a SKU by hand */ }
+        }, 200);
+      });
+      skuInput.addEventListener('blur', () => setTimeout(hide, 150));
+      skuInput.addEventListener('focus', () => { if (skuSuggest.innerHTML) skuSuggest.style.display = ''; });
+    }
+    const posItemsContainer = document.getElementById('pos-items');
+    function updatePosItemRemoveButtons() {
+      const rows = posItemsContainer.querySelectorAll('.pos-item-row');
+      rows.forEach((row) => { row.querySelector('.pos-item-remove').style.display = rows.length > 1 ? '' : 'none'; });
+    }
+    function addPosItemRow() {
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = posItemRowHtml();
+      const row = wrapper.firstElementChild;
+      posItemsContainer.appendChild(row);
+      attachPosSkuAutocomplete(row);
+      row.querySelector('.pos-item-remove').addEventListener('click', () => {
+        if (posItemsContainer.querySelectorAll('.pos-item-row').length <= 1) return;
+        row.remove();
+        updatePosItemRemoveButtons();
+        updatePosTotals();
+      });
+      updatePosItemRemoveButtons();
+    }
+    function resetPosItemRows() { posItemsContainer.innerHTML = ''; addPosItemRow(); }
+    addPosItemRow();
+    document.getElementById('pos-add-item').addEventListener('click', addPosItemRow);
+
+    function readPosItemRows() {
+      const items = [];
+      posItemsContainer.querySelectorAll('.pos-item-row').forEach((row) => {
+        const sku = row.querySelector('.pos-item-sku').value.trim();
+        if (!sku) return;
+        const qty = Number(row.querySelector('.pos-item-qty').value || 0);
+        const priceVal = row.querySelector('.pos-item-price').value;
+        items.push({ sku, qty, unitPrice: priceVal ? Number(priceVal) : null });
+      });
+      return items;
+    }
+
+    const posForm = document.getElementById('pos-form');
+    function updatePosTotals() {
+      const items = readPosItemRows();
+      const subtotal = items.reduce((s, it) => s + (it.unitPrice || 0) * (it.qty || 0), 0);
+      const paid = readPaymentSlots(posForm, 'pos').reduce((s, p) => s + p.amount, 0);
+      const balance = subtotal - paid;
+      document.getElementById('pos-subtotal').textContent = money(subtotal);
+      document.getElementById('pos-paid').textContent = money(paid);
+      document.getElementById('pos-balance-label').textContent = balance > 0 ? 'Balance Due' : 'Change Due';
+      document.getElementById('pos-balance').textContent = money(Math.abs(balance));
+      document.getElementById('pos-balance').style.color = balance > 0 ? '#b23c3c' : (balance < 0 ? '#2e7d4f' : '');
+    }
+    posForm.addEventListener('input', updatePosTotals);
+    updatePosTotals();
+
+    posForm.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      const btn = f.querySelector('button[type=submit]');
+      const items = readPosItemRows();
+      if (!items.length) { toast('br-msg', 'Add at least one item to sell.', true); return; }
+      const badQty = items.find((it) => !it.qty || it.qty <= 0);
+      if (badQty) { toast('br-msg', 'Qty must be a positive number for ' + badQty.sku + '.', true); return; }
+
+      const payments = readPaymentSlots(f, 'pos');
+      btn.disabled = true;
+      try {
+        await createPosSale({
+          branchId: selectedBranch, items,
+          customerName: f.customerName.value.trim(), contactNumber: f.contactNumber.value.trim(),
+          orderNumber: f.orderId.value.trim(), payments,
+        });
+        toast('br-msg', 'Sale completed — ' + items.length + ' item(s), ' + money(items.reduce((s, it) => s + (it.unitPrice || 0) * it.qty, 0)) + '.', false);
+        f.reset();
+        resetPosItemRows();
+        updatePosTotals();
+        await loadPos();
+      } catch (err) {
+        toast('br-msg', String(err.message || err), true);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    let allPosSales = [], posPaymentsByGroup = {};
+    document.getElementById('pos-f-search').addEventListener('input', renderPos);
+    document.getElementById('pos-f-from').addEventListener('change', renderPos);
+    document.getElementById('pos-f-to').addEventListener('change', renderPos);
+    document.getElementById('pos-f-clear').addEventListener('click', () => {
+      document.getElementById('pos-f-search').value = '';
+      document.getElementById('pos-f-from').value = '';
+      document.getElementById('pos-f-to').value = '';
+      renderPos();
+    });
+
+    async function loadPos() {
+      const list = document.getElementById('pos-list');
+      list.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        const rows = await listSales({ branchId: selectedBranch });
+        allPosSales = rows.filter((r) => r.sale_group_id);
+        const groupIds = [...new Set(allPosSales.map((r) => r.sale_group_id))];
+        const payments = await listSalePayments(groupIds);
+        posPaymentsByGroup = {};
+        payments.forEach((p) => { (posPaymentsByGroup[p.sale_group_id] || (posPaymentsByGroup[p.sale_group_id] = [])).push(p); });
+        renderPos();
+      } catch (err) {
+        list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
+      }
+    }
+
+    function groupPosSales(rows) {
+      const byGroup = {}, order = [];
+      rows.forEach((r) => {
+        if (!byGroup[r.sale_group_id]) { byGroup[r.sale_group_id] = []; order.push(r.sale_group_id); }
+        byGroup[r.sale_group_id].push(r);
+      });
+      return order.map((gid) => ({ groupId: gid, items: byGroup[gid] }));
+    }
+
+    function renderPos() {
+      const fSearch = document.getElementById('pos-f-search').value.trim().toLowerCase();
+      const fFrom = document.getElementById('pos-f-from').value;
+      const fTo = document.getElementById('pos-f-to').value;
+
+      let rows = allPosSales;
+      if (fFrom) rows = rows.filter((r) => r.sale_date >= fFrom);
+      if (fTo) rows = rows.filter((r) => r.sale_date <= fTo + 'T23:59:59');
+
+      let groups = groupPosSales(rows);
+      if (fSearch) groups = groups.filter((g) => g.items.some((r) =>
+        r.sku.toLowerCase().includes(fSearch) || (r.products?.item_name || '').toLowerCase().includes(fSearch) ||
+        (r.customer_name || '').toLowerCase().includes(fSearch) || (r.order_number || '').toLowerCase().includes(fSearch)));
+
+      const totalAmount = groups.reduce((s, g) => s + g.items.reduce((s2, r) => s2 + Number(r.unit_price || 0) * r.qty, 0), 0);
+      document.getElementById('pos-tiles').innerHTML = tile(groups.length, 'Sales') + tile(money(totalAmount), 'Total Amount');
+
+      const box = document.getElementById('pos-list');
+      if (!groups.length) { box.innerHTML = '<p class="muted">No walk-in sales for this filter.</p>'; return; }
+
+      box.innerHTML = groups.map((g) => {
+        const first = g.items[0];
+        const subtotal = g.items.reduce((s, r) => s + Number(r.unit_price || 0) * r.qty, 0);
+        const payments = posPaymentsByGroup[g.groupId] || [];
+        const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
+        return '<div class="card" style="margin-bottom:10px;">' +
+          '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:flex-start;">' +
+            '<div>' +
+              '<b>' + fmtDateTime(first.sale_date) + '</b>' + (first.customer_name ? ' · ' + esc(first.customer_name) : '') +
+              (first.order_number ? '<div class="muted" style="font-size:11px;">Order ' + esc(first.order_number) + '</div>' : '') +
+            '</div>' +
+            '<div style="text-align:right;"><b>' + money(subtotal) + '</b><div class="muted" style="font-size:11px;">' + (paid >= subtotal ? 'Paid in full' : money(paid) + ' paid') + '</div></div>' +
+          '</div>' +
+          '<div class="table-scroll table-mini" style="margin-top:8px;"><table><tr><th>SKU</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Total</th></tr>' +
+            g.items.map((r) => '<tr><td data-label="SKU">' + esc(r.sku) + '</td><td data-label="Item">' + esc(r.products?.item_name || '—') + '</td>' +
+              '<td data-label="Qty">' + r.qty + '</td><td data-label="Unit Price">' + money(r.unit_price) + '</td><td data-label="Line Total">' + money(Number(r.unit_price || 0) * r.qty) + '</td></tr>').join('') +
+          '</table></div>' +
+          (payments.length ? '<div class="muted" style="font-size:11px;margin-top:6px;">' + payments.map((p) => money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '')).join(' · ') + '</div>' : '') +
+        '</div>';
+      }).join('');
+    }
 
     // ---- SKU autocomplete for Subasta, same pattern as movement.html/layaway.html --
     // connects a pawned item back to a real SKU Catalog product (picking a suggestion
@@ -305,9 +565,10 @@ if (employee) {
     });
 
     let allSubasta = [], allScrap = [], scrapCashBalances = [];
-    await Promise.all([loadSubasta(), loadScrap()]);
+    await Promise.all([loadPos(), loadSubasta(), loadScrap()]);
     subscribeToChanges('subasta_items', loadSubasta);
     subscribeToChanges(['scrap_entries', 'branch_capital_entries'], loadScrap);
+    subscribeToChanges(['sales_inventory_movements', 'sale_payments'], loadPos);
 
     document.getElementById('sub-f-search').addEventListener('input', renderSubasta);
     document.getElementById('sub-f-status').addEventListener('change', renderSubasta);
@@ -345,17 +606,18 @@ if (employee) {
       box.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', async () => {
         selectedBranch = Number(btn.dataset.id);
         renderBranchButtons();
-        await Promise.all([loadSubasta(), loadScrap()]);
+        await Promise.all([loadPos(), loadSubasta(), loadScrap()]);
       }));
       const label = ' — ' + branchName(selectedBranch);
+      document.getElementById('pos-branch-label').textContent = label;
       document.getElementById('sub-branch-label').textContent = label;
       document.getElementById('scrap-branch-label').textContent = label;
 
-      document.querySelectorAll('#sub-form button[type="submit"], #scrap-form button[type="submit"]').forEach((btn) => { btn.disabled = !canAddHere(); });
+      document.querySelectorAll('#pos-form button[type="submit"], #sub-form button[type="submit"], #scrap-form button[type="submit"]').forEach((btn) => { btn.disabled = !canAddHere(); });
       const note = canAddHere() ? '' : employee.branch_id
         ? '<p class="muted" style="font-size:11px;">View only — you can only add items for ' + esc(branchName(employee.branch_id)) + '.</p>'
         : '<p class="muted" style="font-size:11px;">View only.</p>';
-      document.querySelectorAll('#sub-write-note, #scrap-write-note').forEach((el) => { el.innerHTML = note; });
+      document.querySelectorAll('#pos-write-note, #sub-write-note, #scrap-write-note').forEach((el) => { el.innerHTML = note; });
     }
 
     async function loadSubasta() {

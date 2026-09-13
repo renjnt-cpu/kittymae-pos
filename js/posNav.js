@@ -10,7 +10,6 @@ export function renderPosNav(employee, activeHref) {
     { href: 'index.html', label: 'Look Up a SKU' },
     { href: 'products.html', label: 'SKU Catalog' },
     { href: 'branches.html', label: 'Branches' },
-    { href: 'checkout.html', label: 'POS (Walk-In)' },
     { href: 'movement.html', label: 'Record Movement' },
     { href: 'layaway.html', label: 'Layaway' },
     { href: 'capital.html', label: 'Branch Capital' },
