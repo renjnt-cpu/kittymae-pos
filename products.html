@@ -50,6 +50,7 @@ if (employee) {
   // per-request cap) rather than fetching everything and filtering client-side.
   let allProducts = [];
   let qtyBySku = {}; // { sku: { branchId: qty_available } }, from listAllInventoryQty()
+  let filterBranchId = null; // set by clicking a branch column header -- only SKUs with pcs > 0 there
   let searchTimer = null;
   let realtimeTimer = null;
   await load();
@@ -74,6 +75,7 @@ if (employee) {
     document.getElementById('f-status').value = 'all';
     document.getElementById('f-sort-branch').value = 'none';
     document.getElementById('f-sort-dir').value = 'desc';
+    filterBranchId = null;
     load();
   });
 
@@ -102,9 +104,14 @@ if (employee) {
   function render() {
     let rows = allProducts; // already scoped to the current search + status at the query level
 
+    // Click a branch column header to filter down to just the SKUs actually stocked
+    // there (pcs > 0) -- click it again to clear. Applied before the tiles below so
+    // the subtotal/total reflect whatever's actually showing in the table.
+    if (filterBranchId != null) rows = rows.filter((p) => Number((qtyBySku[p.sku] || {})[filterBranchId] || 0) > 0);
+
     // Subtotal per branch + grand total across all of them -- reflects whatever's
-    // currently filtered (search/status), same as the SKU count notice below, and is
-    // independent of the sort (sorting only reorders these same rows).
+    // currently filtered (search/status/branch), same as the SKU count notice below,
+    // and is independent of the sort (sorting only reorders these same rows).
     let grandTotal = 0;
     const branchTiles = branches.map((b) => {
       const total = rows.reduce((s, p) => s + Number((qtyBySku[p.sku] || {})[b.id] || 0), 0);
@@ -125,7 +132,12 @@ if (employee) {
     }
 
     const list = document.getElementById('prod-list');
-    if (!rows.length) { list.innerHTML = '<p class="muted">No SKUs match this filter.</p>'; return; }
+    if (!rows.length) {
+      list.innerHTML = '<p class="muted">No SKUs match this filter.' +
+        (filterBranchId != null ? ' <button type="button" class="btn small secondary" id="f-clear-branch">Clear branch filter</button>' : '') + '</p>';
+      if (filterBranchId != null) document.getElementById('f-clear-branch').addEventListener('click', () => { filterBranchId = null; render(); });
+      return;
+    }
     const countNotice = '<p class="muted" style="margin:0 0 8px;">' + rows.length.toLocaleString('en-PH') + ' SKU(s)</p>';
 
     const colCount = 7 + branches.length;
@@ -154,12 +166,21 @@ if (employee) {
 
     const branchThs = branches.map((b) => {
       const c = branchColor(b.id, branches);
-      return '<th style="background:' + c.bg + ';color:' + c.text + ';">' + esc(b.name) + '</th>';
+      const active = filterBranchId === b.id;
+      return '<th data-branch-filter="' + b.id + '" title="Click to show only SKUs stocked at ' + esc(b.name) + '" style="cursor:pointer;background:' + c.bg + ';color:' + c.text + ';' +
+        (active ? 'outline:2px solid ' + c.text + ';outline-offset:-2px;' : '') + '">' + esc(b.name) + (active ? ' ✕' : '') + '</th>';
     }).join('');
 
-    list.innerHTML = countNotice + '<div class="table-scroll table-mini"><table><thead><tr style="white-space:nowrap;">' +
+    list.innerHTML = (filterBranchId != null ? '<p class="muted" style="margin:0 0 8px;">Showing only SKUs stocked at <b>' + esc((branches.find((b) => b.id === filterBranchId) || {}).name) + '</b> — click the column again to clear.</p>' : '') +
+      countNotice + '<div class="table-scroll table-mini"><table><thead><tr style="white-space:nowrap;">' +
       '<th>SKU</th><th>Product Name</th><th>Sub SKU</th><th>Price</th><th>Est. Gram</th><th>Status</th>' + branchThs + '<th></th>' +
       '</tr></thead><tbody>' + rows.map(rowHtml).join('') + '</tbody></table></div>';
+
+    list.querySelectorAll('[data-branch-filter]').forEach((th) => th.addEventListener('click', () => {
+      const id = Number(th.dataset.branchFilter);
+      filterBranchId = filterBranchId === id ? null : id;
+      render();
+    }));
 
     if (!canManage) return;
 
