@@ -7,9 +7,15 @@
 // No Branch column (unlike movement.html's board) since every row shown is already
 // scoped to the one currently-selected branch.
 import {
-  listOrderItemStatuses, listOrderHistoryForItem, getOrderItemStatusCounts,
+  listOrderItemStatuses, listOrderHistoryForItem, getOrderItemStatusCounts, listDeliveredOrders,
   ORDER_ITEM_STATUS_ROW_CAP, setOrderItemStatus, deleteOrderItemStatus, subscribeToChanges,
 } from './api.js';
+
+// Delivered is a terminal status, always excluded from the working board above (see
+// listOrderItemStatuses()'s TERMINAL_STATUSES filter) -- there are 40,000+ historical
+// rows after the Pancake backfill, most of them long-delivered, so Ren asked to only
+// ever show Delivered from this date onwards rather than the full history.
+const DELIVERED_FROM_DATE = '2026-09-01';
 
 // Same confirmed Pancake status_name -> tab mapping as movement.html (see that file's
 // comment for how these were derived) -- kept in sync by hand since each app has its
@@ -77,9 +83,27 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
     return mapped ? mapped.keys : [filterId];
   }
 
+  // Substring match against the same fields listOrderItemStatuses()'s server-side
+  // search covers -- used client-side only for the Delivered tab, since
+  // listDeliveredOrders() is a small, deliberately narrow query (one status, one
+  // date-bounded range) that doesn't need its own server-side search plumbing.
+  function matchesSearch(r, term) {
+    const t = term.toLowerCase();
+    return (r.item_name || '').toLowerCase().includes(t) || (r.sku || '').toLowerCase().includes(t) ||
+      (r.order_reference || '').toLowerCase().includes(t) || (r.customer_name || '').toLowerCase().includes(t) ||
+      (r.notes || '').toLowerCase().includes(t);
+  }
+
   async function load() {
     const branchId = getBranchId();
     try {
+      if (statusFilter === 'delivered') {
+        let items = await listDeliveredOrders({ branchId, fromDate: DELIVERED_FROM_DATE });
+        if (search) items = items.filter((r) => matchesSearch(r, search));
+        orderItems = items;
+        render();
+        return;
+      }
       const [items, counts] = await Promise.all([
         listOrderItemStatuses({ statusKeys: tabKeysFor(statusFilter), search, branchId }),
         getOrderItemStatusCounts(branchId),
@@ -119,9 +143,11 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
     const tabBtn = (id, label, keys) =>
       '<button type="button" class="btn small' + (statusFilter === id ? '' : ' secondary') + '" data-ol-tab="' + esc(id) + '">' +
         esc(label) + ' <span class="muted" style="font-weight:normal;">' + countFor(keys) + '</span></button>';
+    const deliveredBtn = '<button type="button" class="btn small' + (statusFilter === 'delivered' ? '' : ' secondary') + '" data-ol-tab="delivered">Delivered <span class="muted" style="font-weight:normal;">(Sep 2026+)</span></button>';
     tabs.innerHTML = tabBtn('all', 'All', null) +
       PANCAKE_STATUS_TABS.map((t) => tabBtn(t.label, t.label, t.keys)).join('') +
-      leftoverStatuses.map((s) => tabBtn(s, prettyStatus(s), [s])).join('');
+      leftoverStatuses.map((s) => tabBtn(s, prettyStatus(s), [s])).join('') +
+      deliveredBtn;
     tabs.querySelectorAll('[data-ol-tab]').forEach((btn) => btn.addEventListener('click', () => {
       statusFilter = btn.dataset.olTab;
       load();
@@ -129,7 +155,12 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
 
     let rows = orderItems;
     const list = document.getElementById('ol-list');
-    if (!rows.length) { list.innerHTML = '<p class="muted">No online orders match this search/filter for this branch.</p>'; return; }
+    if (!rows.length) {
+      list.innerHTML = '<p class="muted">' + (statusFilter === 'delivered'
+        ? 'No delivered orders for this branch from September 2026 onwards' + (search ? ' matching "' + esc(search) + '"' : '') + '.'
+        : 'No online orders match this search/filter for this branch.') + '</p>';
+      return;
+    }
 
     if (sortKey) {
       const dirMul = sortDir === 'desc' ? -1 : 1;
@@ -145,7 +176,14 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
       const arrow = active ? (sortDir === 'desc' ? ' ▼' : ' ▲') : '';
       return '<th><button type="button" class="btn small' + (active ? '' : ' secondary') + '" data-ol-sort="' + key + '" style="padding:2px 8px;">' + label + arrow + '</button></th>';
     };
-    const statusOptionsFor = (current) => distinctStatuses.map((s) => '<option value="' + esc(s) + '"' + (s === current ? ' selected' : '') + '>' + esc(prettyStatus(s)) + '</option>').join('');
+    // distinctStatuses comes from the active-board aggregate, which excludes every
+    // terminal status (including "delivered") -- so a Delivered-tab row's own current
+    // status must be added in by hand, or its dropdown would silently default to
+    // whatever option happens to sort first instead of showing "Delivered".
+    const statusOptionsFor = (current) => {
+      const opts = distinctStatuses.includes(current) ? distinctStatuses : [...distinctStatuses, current].sort();
+      return opts.map((s) => '<option value="' + esc(s) + '"' + (s === current ? ' selected' : '') + '>' + esc(prettyStatus(s)) + '</option>').join('');
+    };
     const truncated = rows.length >= ORDER_ITEM_STATUS_ROW_CAP;
     const subtotalQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
     const subtotalLine = '<p class="muted" style="margin:0 0 6px;">' + rows.length + (truncated ? '+' : '') + ' item' + (rows.length === 1 && !truncated ? '' : 's') +

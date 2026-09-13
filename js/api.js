@@ -1101,3 +1101,24 @@ export async function deleteOrderItemStatus(id) {
   const { error } = await supabase.from('order_item_status').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
+
+/** Delivered Online Orders for one branch, bounded to a start date -- there are
+ * 40,000+ historical order_item_status rows after the Pancake backfill, and most of
+ * them are long since delivered, so this is deliberately scoped to fromDate (Ren
+ * asked for "September 2026 onwards") rather than a general-purpose Delivered tab on
+ * listOrderItemStatuses(), which always excludes every terminal status including
+ * this one. Sorted/filtered on updated_at (when the row last changed status) since
+ * there's no dedicated delivered_at column -- the closest proxy for "when it was
+ * marked Delivered". */
+export async function listDeliveredOrders({ branchId, fromDate }) {
+  let query = supabase.from('order_item_status')
+    .select(ORDER_ITEM_STATUS_COLUMNS)
+    .eq('status', 'delivered')
+    .gte('updated_at', fromDate)
+    .order('updated_at', { ascending: false })
+    .limit(ORDER_ITEM_STATUS_ROW_CAP);
+  if (branchId != null) query = query.eq('branch_id', branchId);
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return attachEmployeeNames(data, { creator: 'created_by' });
+}

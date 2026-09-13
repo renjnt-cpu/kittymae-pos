@@ -26,6 +26,12 @@ if (employee) {
   renderPosNav(employee, 'products.html');
   const root = document.getElementById('products-root');
   const canManage = ['Admin', 'Manager'].includes(employee.role);
+  // Branch Supervisor gets just the Edit button (correcting name/sub-sku/price/
+  // weight) -- Discontinue/Reactivate stays canManage-only since it's a more
+  // consequential, catalog-wide action. 94_products_supervisor_update.sql grants
+  // this at the RLS level too (a single UPDATE policy, so it can't be split
+  // column-by-column the way this UI split is).
+  const canEdit = canManage || employee.role === 'Branch Supervisor';
   const branches = await getBranches();
 
   // New SKUs are added in the "SKU 2026" Google Sheet, not here -- this page only
@@ -153,9 +159,9 @@ if (employee) {
           '<td data-label="Status"><span class="badge ' + (p.product_status === 'Active' ? 'ok' : 'low') + '">' + esc(p.product_status) + '</span></td>' +
           branches.map((b) => '<td data-label="' + esc(b.name) + '" style="text-align:center;">' + (qtyForSku[b.id] ?? '—') + '</td>').join('') +
           '<td data-label="Actions" style="white-space:nowrap;">' +
+            (canEdit ? '<button class="btn small secondary" data-sku="' + esc(p.sku) + '" data-act="edit">Edit</button> ' : '') +
             (canManage
-              ? '<button class="btn small secondary" data-sku="' + esc(p.sku) + '" data-act="edit">Edit</button> ' +
-                (p.product_status === 'Active'
+              ? (p.product_status === 'Active'
                   ? '<button class="btn small secondary" data-sku="' + esc(p.sku) + '" data-act="discontinue">Discontinue</button>'
                   : '<button class="btn small secondary" data-sku="' + esc(p.sku) + '" data-act="reactivate">Reactivate</button>')
               : '') +
@@ -182,9 +188,11 @@ if (employee) {
       render();
     }));
 
-    if (!canManage) return;
+    if (!canEdit) return;
 
     list.querySelectorAll('[data-act="edit"]').forEach((btn) => btn.addEventListener('click', () => openEdit(btn.dataset.sku, rows)));
+
+    if (!canManage) return;
 
     list.querySelectorAll('[data-act="discontinue"]').forEach((btn) => btn.addEventListener('click', async () => {
       if (!confirm('Mark ' + btn.dataset.sku + ' as Discontinued? It stays visible in history, just hidden from the default Active view.')) return;
