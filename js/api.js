@@ -136,6 +136,22 @@ export async function listProducts({ search = '', status = 'Active' } = {}) {
   return all.sort((a, b) => skuCollator.compare(a.sku, b.sku));
 }
 
+/** Per-branch qty for the SKU Catalog's "how many pcs per branch" columns -- just the
+ * 3 fields needed (no product join; listProducts already has the product side), fetched
+ * once per catalog load and merged client-side by SKU. Same page-past-1000 pattern as
+ * listProducts -- inventory only has a couple of rows today but will grow with usage. */
+export async function listAllInventoryQty() {
+  const pageSize = 1000;
+  let all = [];
+  for (let offset = 0; offset < 20000; offset += pageSize) {
+    const { data, error } = await supabase.from('inventory').select('sku, branch_id, qty_available').range(offset, offset + pageSize - 1);
+    if (error) throw new Error(error.message);
+    all = all.concat(data);
+    if (data.length < pageSize) break;
+  }
+  return all;
+}
+
 /** New SKUs are added in the Google Sheet, not here — this only patches a detail on an
  * existing row. Keys are all optional camelCase — only the ones present are patched.
  * productStatus ('Active'/'Discontinued') also goes through this. */

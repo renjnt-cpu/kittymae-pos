@@ -14,8 +14,9 @@
 
 <script type="module">
 import { initShell, toast, esc } from './js/shell.js';
-import { listProducts, updateProduct, subscribeToChanges } from './js/api.js';
+import { listProducts, updateProduct, getBranches, listAllInventoryQty, subscribeToChanges } from './js/api.js';
 import { renderPosNav } from './js/posNav.js';
+import { branchColor } from './js/branchColors.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + ' g';
@@ -25,6 +26,7 @@ if (employee) {
   renderPosNav(employee, 'products.html');
   const root = document.getElementById('products-root');
   const canManage = ['Admin', 'Manager'].includes(employee.role);
+  const branches = await getBranches();
 
   // New SKUs are added in the "SKU 2026" Google Sheet, not here -- this page only
   // reflects that catalog (search/browse, plus correcting a detail already on file).
@@ -42,13 +44,15 @@ if (employee) {
   // pages through everything that matches instead of stopping at PostgREST's 1000-row
   // per-request cap) rather than fetching everything and filtering client-side.
   let allProducts = [];
+  let qtyBySku = {}; // { sku: { branchId: qty_available } }, from listAllInventoryQty()
   let searchTimer = null;
   let realtimeTimer = null;
   await load();
   // Debounced: an edit or the Active/Discontinued toggle firing on one row shouldn't
   // matter much here, but this keeps the same safety pattern as movement.html in
-  // case of another bulk import later.
-  subscribeToChanges('products', () => {
+  // case of another bulk import later. Inventory changes (a sale, a stock-in, a
+  // transfer) need the same debounce so the per-branch pcs columns stay live too.
+  subscribeToChanges(['products', 'inventory'], () => {
     clearTimeout(realtimeTimer);
     realtimeTimer = setTimeout(load, 500);
   });
@@ -68,9 +72,17 @@ if (employee) {
     const list = document.getElementById('prod-list');
     list.innerHTML = '<div class="muted">Loading…</div>';
     try {
-      allProducts = await listProducts({
-        search: document.getElementById('f-search').value.trim(),
-        status: document.getElementById('f-status').value,
+      const [products, qtyRows] = await Promise.all([
+        listProducts({
+          search: document.getElementById('f-search').value.trim(),
+          status: document.getElementById('f-status').value,
+        }),
+        listAllInventoryQty(),
+      ]);
+      allProducts = products;
+      qtyBySku = {};
+      qtyRows.forEach((r) => {
+        (qtyBySku[r.sku] || (qtyBySku[r.sku] = {}))[r.branch_id] = r.qty_available;
       });
       render();
     } catch (err) {
@@ -85,7 +97,10 @@ if (employee) {
     if (!rows.length) { list.innerHTML = '<p class="muted">No SKUs match this filter.</p>'; return; }
     const countNotice = '<p class="muted" style="margin:0 0 8px;">' + rows.length.toLocaleString('en-PH') + ' SKU(s)</p>';
 
+    const colCount = 7 + branches.length;
+
     function rowHtml(p) {
+      const qtyForSku = qtyBySku[p.sku] || {};
       return '<tr data-row-id="' + esc(p.sku) + '">' +
           '<td data-label="SKU"><b>' + esc(p.sku) + '</b></td>' +
           '<td data-label="Product Name">' + esc(p.item_name) + '</td>' +
@@ -93,6 +108,7 @@ if (employee) {
           '<td data-label="Price">' + money(p.system_selling_price) + '</td>' +
           '<td data-label="Est. Gram">' + weight(p.gross_weight_g) + '</td>' +
           '<td data-label="Status"><span class="badge ' + (p.product_status === 'Active' ? 'ok' : 'low') + '">' + esc(p.product_status) + '</span></td>' +
+          branches.map((b) => '<td data-label="' + esc(b.name) + '" style="text-align:center;">' + (qtyForSku[b.id] ?? '—') + '</td>').join('') +
           '<td data-label="Actions" style="white-space:nowrap;">' +
             (canManage
               ? '<button class="btn small secondary" data-sku="' + esc(p.sku) + '" data-act="edit">Edit</button> ' +
@@ -102,11 +118,16 @@ if (employee) {
               : '') +
           '</td>' +
         '</tr>' +
-        '<tr class="edit-row" data-edit-for="' + esc(p.sku) + '" style="display:none;"><td colspan="7"></td></tr>';
+        '<tr class="edit-row" data-edit-for="' + esc(p.sku) + '" style="display:none;"><td colspan="' + colCount + '"></td></tr>';
     }
 
+    const branchThs = branches.map((b) => {
+      const c = branchColor(b.id, branches);
+      return '<th style="background:' + c.bg + ';color:' + c.text + ';">' + esc(b.name) + '</th>';
+    }).join('');
+
     list.innerHTML = countNotice + '<div class="table-scroll table-mini"><table><thead><tr style="white-space:nowrap;">' +
-      '<th>SKU</th><th>Product Name</th><th>Sub SKU</th><th>Price</th><th>Est. Gram</th><th>Status</th><th></th>' +
+      '<th>SKU</th><th>Product Name</th><th>Sub SKU</th><th>Price</th><th>Est. Gram</th><th>Status</th>' + branchThs + '<th></th>' +
       '</tr></thead><tbody>' + rows.map(rowHtml).join('') + '</tbody></table></div>';
 
     if (!canManage) return;
