@@ -43,13 +43,22 @@ function historyKey(r) {
 }
 const fmtDate = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
+// Pacific Mall (2) and APM Mall (4) -- view only for everyone but Admin here, per
+// Ren's request (93_order_item_status_branch_admin_only.sql enforces the same rule
+// server-side via RLS, so this is just keeping the UI from showing a control that
+// would fail; every other branch keeps the normal any-employee-updates behavior).
+const ADMIN_ONLY_EDIT_BRANCHES = [2, 4];
+
 /** Mounts the Online Orders board into `root` (an empty container this owns
  * entirely) scoped to `getBranchId()` at call time -- read as a function rather than
  * a fixed value so switching branches elsewhere on the page (branches.html's own
  * branch picker) doesn't require re-mounting, just a reload() call. `esc`/`toast` are
  * the page's own shell.js helpers; `msgId` is the id of the page's toast container.
+ * `isAdmin`: whether the current employee's role is Admin, for the Pacific
+ * Mall/APM Mall view-only restriction above.
  * Returns { reload } for the host page to call after a branch switch. */
-export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCountsUpdate }) {
+export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCountsUpdate, isAdmin }) {
+  const canEdit = () => isAdmin || !ADMIN_ONLY_EDIT_BRANCHES.includes(getBranchId());
   root.innerHTML =
     '<div class="field" style="max-width:380px;"><label>Search</label><input type="text" id="ol-search" placeholder="Item, SKU, order #, customer, or notes…"></div>' +
     '<div id="ol-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>' +
@@ -170,7 +179,10 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
       '</div>'
     ) : '';
 
-    list.innerHTML = top5Line + subtotalLine + '<div class="table-scroll table-mini"><table><thead><tr>' +
+    const editable = canEdit();
+    list.innerHTML = top5Line + subtotalLine +
+      (editable ? '' : '<p class="muted" style="margin:0 0 6px;">View only for this branch — only Admin can change status or delete here.</p>') +
+      '<div class="table-scroll table-mini"><table><thead><tr>' +
         sortTh('item_name', 'Item') + sortTh('qty', 'Qty') + sortTh('status', 'Status') + sortTh('order_reference', 'Order / Customer') + sortTh('notes', 'Notes / By') + '<th></th>' +
       '</tr></thead><tbody>' +
       rows.map((r) =>
@@ -184,13 +196,15 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
           '</td>' +
           '<td data-label="Qty">' + r.qty + '</td>' +
           '<td data-label="Status">' +
-            '<select data-status-for="' + r.id + '" class="badge ' + statusBadgeClass(r.status) + '" style="border:none;font:inherit;">' + statusOptionsFor(r.status) + '</select>' +
+            (editable
+              ? '<select data-status-for="' + r.id + '" class="badge ' + statusBadgeClass(r.status) + '" style="border:none;font:inherit;">' + statusOptionsFor(r.status) + '</select>'
+              : '<span class="badge ' + statusBadgeClass(r.status) + '">' + esc(prettyStatus(r.status)) + '</span>') +
           '</td>' +
           '<td data-label="Order / Customer" style="font-size:11px;">' + esc(r.order_reference || '—') + (r.customer_name ? '<div class="muted">' + esc(r.customer_name) + '</div>' : '') + '</td>' +
           '<td data-label="Notes / By" style="font-size:11px;">' + esc(r.notes || '') +
             (r.creator ? '<div class="muted" style="font-size:10px;">Added by ' + esc(r.creator.full_name) + '</div>' : '') +
           '</td>' +
-          '<td><button class="btn small secondary" type="button" data-delete-id="' + r.id + '">Delete</button></td>' +
+          '<td>' + (editable ? '<button class="btn small secondary" type="button" data-delete-id="' + r.id + '">Delete</button>' : '') + '</td>' +
         '</tr>' +
         '<tr class="history-row" data-history-for="' + r.id + '" style="display:none;"><td colspan="6"></td></tr>'
       ).join('') +

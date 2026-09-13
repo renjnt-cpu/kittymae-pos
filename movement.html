@@ -72,6 +72,12 @@ const REMOVES = new Set(['Stock Out', 'Damage', 'Missing', 'Supplier Return', 'S
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const fmtDate = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
+// Pacific Mall (2) and APM Mall (4) -- view only for everyone but Admin here too,
+// same rule as the Branches page's Online Orders tab (both show this same table);
+// 93_order_item_status_branch_admin_only.sql enforces it server-side via RLS, this
+// just keeps the row from showing a control that would fail for a non-Admin viewer.
+const ADMIN_ONLY_EDIT_BRANCHES = [2, 4];
+
 // Pancake's own dashboard groups orders under a fixed set of tabs in this order
 // (screenshotted 2026-09-11). These mappings are CONFIRMED against Pancake's own
 // Orders API (numeric status code -> status_name, cross-checked against each tab's
@@ -128,6 +134,7 @@ const employee = await initShell();
 if (employee) {
   renderPosNav(employee, 'movement.html');
   const branches = await getBranches();
+  const isAdmin = employee.role === 'Admin';
   const isScoped = ['Admin', 'Manager'].includes(employee.role) ? false : !UNSCOPED_POSITIONS.includes(employee.position);
   const branchField = document.getElementById('branch-field');
   if (isScoped) {
@@ -417,8 +424,9 @@ if (employee) {
     list.innerHTML = top5Line + subtotalLine + '<div class="table-scroll table-mini"><table><thead><tr>' +
         sortTh('item_name', 'Item') + sortTh('qty', 'Qty') + sortTh('branch', 'Branch') + sortTh('status', 'Status') + sortTh('order_reference', 'Order / Customer') + sortTh('notes', 'Notes / By') + '<th></th>' +
       '</tr></thead><tbody>' +
-      rows.map((r) =>
-        '<tr>' +
+      rows.map((r) => {
+        const editable = isAdmin || !ADMIN_ONLY_EDIT_BRANCHES.includes(r.branch_id);
+        return '<tr>' +
           '<td data-label="Item">' +
             '<button type="button" data-history-toggle="' + r.id + '" data-history-sku="' + esc(r.sku || '') + '" data-history-name="' + esc(r.item_name) + '" ' +
               'style="background:none;border:none;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer;">' +
@@ -429,16 +437,18 @@ if (employee) {
           '<td data-label="Qty">' + r.qty + '</td>' +
           '<td data-label="Branch">' + (r.branches ? branchBadge(esc, r.branches.name, r.branch_id, branches) : '—') + '</td>' +
           '<td data-label="Status">' +
-            '<select data-status-for="' + r.id + '" class="badge ' + statusBadgeClass(r.status) + '" style="border:none;font:inherit;">' + statusOptionsFor(r.status) + '</select>' +
+            (editable
+              ? '<select data-status-for="' + r.id + '" class="badge ' + statusBadgeClass(r.status) + '" style="border:none;font:inherit;">' + statusOptionsFor(r.status) + '</select>'
+              : '<span class="badge ' + statusBadgeClass(r.status) + '" title="View only for this branch — only Admin can change status here.">' + esc(prettyStatus(r.status)) + '</span>') +
           '</td>' +
           '<td data-label="Order / Customer" style="font-size:11px;">' + esc(r.order_reference || '—') + (r.customer_name ? '<div class="muted">' + esc(r.customer_name) + '</div>' : '') + '</td>' +
           '<td data-label="Notes / By" style="font-size:11px;">' + esc(r.notes || '') +
             (r.creator ? '<div class="muted" style="font-size:10px;">Added by ' + esc(r.creator.full_name) + '</div>' : '') +
           '</td>' +
-          '<td><button class="btn small secondary" type="button" data-delete-id="' + r.id + '">Delete</button></td>' +
+          '<td>' + (editable ? '<button class="btn small secondary" type="button" data-delete-id="' + r.id + '">Delete</button>' : '') + '</td>' +
         '</tr>' +
-        '<tr class="history-row" data-history-for="' + r.id + '" style="display:none;"><td colspan="7"></td></tr>'
-      ).join('') +
+        '<tr class="history-row" data-history-for="' + r.id + '" style="display:none;"><td colspan="7"></td></tr>';
+      }).join('') +
       '</tbody></table></div>';
 
     list.querySelectorAll('[data-ois-sort]').forEach((btn) => btn.addEventListener('click', () => {

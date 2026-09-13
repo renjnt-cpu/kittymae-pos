@@ -593,6 +593,7 @@ if (employee) {
       root: document.getElementById('online-orders-root'), esc, toast, msgId: 'br-msg',
       getBranchId: () => selectedBranch,
       onCountsUpdate: (count) => { onlineOrdersCount = count; renderScrapSubTabs(); },
+      isAdmin: employee.role === 'Admin',
     });
     await Promise.all([loadPos(), loadSubasta(), loadScrap()]);
     subscribeToChanges('subasta_items', loadSubasta);
