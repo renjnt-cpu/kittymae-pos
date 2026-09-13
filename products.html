@@ -35,9 +35,14 @@ if (employee) {
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
         '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="f-search" placeholder="SKU, Sub SKU, or product name…"></div>' +
         '<div class="field"><label>Status</label><select id="f-status"><option value="all">All</option><option value="Active" selected>Active</option><option value="Discontinued">Discontinued</option></select></div>' +
+        '<div class="field"><label>Sort by Branch</label><select id="f-sort-branch"><option value="none">— none (SKU order) —</option>' +
+          branches.map((b) => '<option value="' + b.id + '">' + esc(b.name) + '</option>').join('') +
+        '</select></div>' +
+        '<div class="field"><label>Order</label><select id="f-sort-dir"><option value="desc">Most pcs first</option><option value="asc">Fewest pcs first</option></select></div>' +
         '<button type="button" class="btn small secondary" id="f-clear">Clear Filters</button>' +
       '</div>' +
     '</div>' +
+    '<div class="tiles" id="prod-tiles"></div>' +
     '<div id="prod-list"><div class="muted">Loading…</div></div>';
 
   // With 7,392 SKUs, search/status filters query the server directly (listProducts
@@ -62,9 +67,13 @@ if (employee) {
     searchTimer = setTimeout(load, 300);
   });
   document.getElementById('f-status').addEventListener('change', load);
+  document.getElementById('f-sort-branch').addEventListener('change', render);
+  document.getElementById('f-sort-dir').addEventListener('change', render);
   document.getElementById('f-clear').addEventListener('click', () => {
     document.getElementById('f-search').value = '';
     document.getElementById('f-status').value = 'all';
+    document.getElementById('f-sort-branch').value = 'none';
+    document.getElementById('f-sort-dir').value = 'desc';
     load();
   });
 
@@ -91,7 +100,29 @@ if (employee) {
   }
 
   function render() {
-    const rows = allProducts; // already scoped to the current search + status at the query level
+    let rows = allProducts; // already scoped to the current search + status at the query level
+
+    // Subtotal per branch + grand total across all of them -- reflects whatever's
+    // currently filtered (search/status), same as the SKU count notice below, and is
+    // independent of the sort (sorting only reorders these same rows).
+    let grandTotal = 0;
+    const branchTiles = branches.map((b) => {
+      const total = rows.reduce((s, p) => s + Number((qtyBySku[p.sku] || {})[b.id] || 0), 0);
+      grandTotal += total;
+      const c = branchColor(b.id, branches);
+      return '<div class="tile" style="background:' + c.bg + ';"><div class="num" style="color:' + c.text + ';">' + total.toLocaleString('en-PH') + '</div><div class="lbl" style="color:' + c.text + ';">' + esc(b.name) + '</div></div>';
+    });
+    document.getElementById('prod-tiles').innerHTML = tile(grandTotal.toLocaleString('en-PH'), 'Total Pcs (All Branches)') + branchTiles.join('');
+
+    const sortBranchId = document.getElementById('f-sort-branch').value;
+    if (sortBranchId !== 'none') {
+      const dirMul = document.getElementById('f-sort-dir').value === 'asc' ? 1 : -1;
+      const bId = Number(sortBranchId);
+      rows = rows.slice().sort((a, b) => {
+        const qa = Number((qtyBySku[a.sku] || {})[bId] || 0), qb = Number((qtyBySku[b.sku] || {})[bId] || 0);
+        return (qa - qb) * dirMul;
+      });
+    }
 
     const list = document.getElementById('prod-list');
     if (!rows.length) { list.innerHTML = '<p class="muted">No SKUs match this filter.</p>'; return; }
@@ -182,6 +213,8 @@ if (employee) {
       }
     });
   }
+
+  function tile(num, label) { return '<div class="tile"><div class="num">' + num + '</div><div class="lbl">' + esc(label) + '</div></div>'; }
 }
 </script>
 </body>
