@@ -94,7 +94,7 @@ if (employee) {
     // root.innerHTML is set, before those loaders have ever run.
     let allPosSales = [], posPaymentsByGroup = {};
     let allSubasta = [], allScrap = [], scrapCashBalances = [];
-    let activeSubTab = 'scrap';
+    let activeSubTab = 'pos';
 
     // Shared by every row's Edit/Delete buttons -- mirrors the backend RLS exactly
     // (Admin/Manager anywhere, Branch Supervisor only their own branch, or the
@@ -128,6 +128,9 @@ if (employee) {
         '<div id="branch-buttons" style="display:flex;gap:8px;flex-wrap:wrap;"></div>' +
       '</div>' +
 
+      '<div id="scrap-sub-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 14px;"></div>' +
+
+      '<div id="tab-panel-pos">' +
       '<h2>POS (Walk-In) <span class="muted" id="pos-branch-label" style="font-weight:normal;"></span></h2>' +
       '<div class="layout-2col">' +
         '<div class="layout-2col-side">' +
@@ -165,10 +168,9 @@ if (employee) {
           '<div id="pos-list"><div class="muted">Loading…</div></div>' +
         '</div>' +
       '</div>' +
+      '</div>' +
 
-      '<div id="scrap-sub-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:30px 0 14px;"></div>' +
-
-      '<div id="tab-panel-scrap">' +
+      '<div id="tab-panel-scrap" style="display:none;">' +
       '<h2 id="scrap-heading">Scrap <span class="muted" id="scrap-branch-label" style="font-weight:normal;"></span></h2>' +
       '<div class="layout-2col">' +
         '<div class="layout-2col-side">' +
@@ -433,6 +435,7 @@ if (employee) {
     }
 
     function renderPos() {
+      renderScrapSubTabs();
       const fSearch = document.getElementById('pos-f-search').value.trim().toLowerCase();
       const fFrom = document.getElementById('pos-f-from').value;
       const fTo = document.getElementById('pos-f-to').value;
@@ -608,12 +611,14 @@ if (employee) {
       renderScrap();
     });
 
-    // ---- Scrap/Subasta tab bar -- switching between the two full sections instead of
-    // stacking both, one after the other, on an ever-longer page. Scrap comes first
-    // (it's the more frequent of the two day to day); both sections stay fully loaded
-    // underneath regardless of which is showing, so switching back and forth never
-    // loses a filter or an open edit row. Pill styling/count-badge look mirrors the
-    // category tabs on a typical POS product screen. ----
+    // ---- POS/Scrap/Subasta tab bar -- switching between the three full sections
+    // instead of stacking them, one after another, on an ever-longer page. POS comes
+    // first (it's the main day-to-day action for a branch), Scrap next, Subasta last;
+    // all three sections stay fully loaded underneath regardless of which is showing,
+    // so switching back and forth never loses a filter or an open edit row. Pill
+    // styling/count-badge look mirrors the category tabs on a typical POS product
+    // screen. ----
+    const SUB_TABS = ['pos', 'scrap', 'subasta'];
     function renderScrapSubTabs() {
       const pill = (key, label, dot, count) => {
         const active = activeSubTab === key;
@@ -624,11 +629,11 @@ if (employee) {
         '</button>';
       };
       const box = document.getElementById('scrap-sub-tabs');
-      box.innerHTML = pill('scrap', 'Scrap', '#b06a1f', allScrap.length) + pill('subasta', 'Subasta', '#7c3aa8', allSubasta.length);
+      box.innerHTML = pill('pos', 'POS', '#2e7d32', groupPosSales(allPosSales).length) +
+        pill('scrap', 'Scrap', '#b06a1f', allScrap.length) + pill('subasta', 'Subasta', '#7c3aa8', allSubasta.length);
       box.querySelectorAll('[data-tab]').forEach((btn) => btn.addEventListener('click', () => {
         activeSubTab = btn.dataset.tab;
-        document.getElementById('tab-panel-scrap').style.display = activeSubTab === 'scrap' ? '' : 'none';
-        document.getElementById('tab-panel-subasta').style.display = activeSubTab === 'subasta' ? '' : 'none';
+        SUB_TABS.forEach((key) => { document.getElementById('tab-panel-' + key).style.display = activeSubTab === key ? '' : 'none'; });
         renderScrapSubTabs();
       }));
     }
