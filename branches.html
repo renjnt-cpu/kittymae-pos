@@ -172,12 +172,6 @@ if (employee) {
       '</div>' +
       '</div>' +
 
-      '<div id="tab-panel-online" style="display:none;">' +
-      '<h2>Online Orders <span class="muted" id="online-branch-label" style="font-weight:normal;"></span></h2>' +
-      '<p class="muted" style="margin-top:-4px;">Monitoring only — synced live from Pancake for this branch\'s online (Facebook/Messenger) orders. Status can be corrected by hand below if Pancake\'s own value is off.</p>' +
-      '<div id="online-orders-root"></div>' +
-      '</div>' +
-
       '<div id="tab-panel-scrap" style="display:none;">' +
       '<h2 id="scrap-heading">Scrap <span class="muted" id="scrap-branch-label" style="font-weight:normal;"></span></h2>' +
       '<div class="layout-2col">' +
@@ -260,6 +254,12 @@ if (employee) {
           '<div id="sub-list"><div class="muted">Loading…</div></div>' +
         '</div>' +
       '</div>' +
+      '</div>' +
+
+      '<div id="tab-panel-online" style="display:none;">' +
+      '<h2>Online Orders <span class="muted" id="online-branch-label" style="font-weight:normal;"></span></h2>' +
+      '<p class="muted" style="margin-top:-4px;">Monitoring only — synced live from Pancake for this branch\'s online (Facebook/Messenger) orders. Status can be corrected by hand below if Pancake\'s own value is off.</p>' +
+      '<div id="online-orders-root"></div>' +
       '</div>';
 
     renderBranchButtons();
@@ -624,15 +624,14 @@ if (employee) {
       renderScrap();
     });
 
-    // ---- POS/Online Orders/Scrap/Subasta tab bar -- switching between the four full
+    // ---- POS/Scrap/Subasta/Online Orders tab bar -- switching between the four full
     // sections instead of stacking them, one after another, on an ever-longer page.
-    // POS comes first (it's the main day-to-day action for a branch), Online Orders
-    // next (the other sales channel, grouped beside POS), then Scrap, then Subasta;
-    // all four sections stay fully loaded underneath regardless of which is showing,
-    // so switching back and forth never loses a filter or an open edit row. Pill
-    // styling/count-badge look mirrors the category tabs on a typical POS product
-    // screen. ----
-    const SUB_TABS = ['pos', 'online', 'scrap', 'subasta'];
+    // POS comes first (it's the main day-to-day action for a branch), then Scrap,
+    // then Subasta, then Online Orders last; all four sections stay fully loaded
+    // underneath regardless of which is showing, so switching back and forth never
+    // loses a filter or an open edit row. Pill styling/count-badge look mirrors the
+    // category tabs on a typical POS product screen. ----
+    const SUB_TABS = ['pos', 'scrap', 'subasta', 'online'];
     function renderScrapSubTabs() {
       const pill = (key, label, dot, count) => {
         const active = activeSubTab === key;
@@ -644,8 +643,8 @@ if (employee) {
       };
       const box = document.getElementById('scrap-sub-tabs');
       box.innerHTML = pill('pos', 'POS', '#2e7d32', groupPosSales(allPosSales).length) +
-        pill('online', 'Online Orders', '#1a56b0', onlineOrdersCount) +
-        pill('scrap', 'Scrap', '#b06a1f', allScrap.length) + pill('subasta', 'Subasta', '#7c3aa8', allSubasta.length);
+        pill('scrap', 'Scrap', '#b06a1f', allScrap.length) + pill('subasta', 'Subasta', '#7c3aa8', allSubasta.length) +
+        pill('online', 'Online Orders', '#1a56b0', onlineOrdersCount);
       box.querySelectorAll('[data-tab]').forEach((btn) => btn.addEventListener('click', () => {
         activeSubTab = btn.dataset.tab;
         SUB_TABS.forEach((key) => { document.getElementById('tab-panel-' + key).style.display = activeSubTab === key ? '' : 'none'; });
