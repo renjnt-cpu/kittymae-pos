@@ -88,6 +88,14 @@ if (employee) {
     let selectedBranch = isScoped ? employee.branch_id : branches[0].id;
     const branchName = (id) => (branches.find((b) => b.id === id) || {}).name || '';
 
+    // Declared up here (not near loadPos()/loadScrap()/loadSubasta() below) for the
+    // same reason as POSITION_MANAGERS above -- renderScrapSubTabs() reads
+    // allScrap.length/allSubasta.length and is called once immediately after
+    // root.innerHTML is set, before those loaders have ever run.
+    let allPosSales = [], posPaymentsByGroup = {};
+    let allSubasta = [], allScrap = [], scrapCashBalances = [];
+    let activeSubTab = 'scrap';
+
     // Shared by every row's Edit/Delete buttons -- mirrors the backend RLS exactly
     // (Admin/Manager anywhere, Branch Supervisor only their own branch, or the
     // Operations Supervisor/Inventory Supervisor/Admin Assistant position group
@@ -158,7 +166,10 @@ if (employee) {
         '</div>' +
       '</div>' +
 
-      '<h2 style="margin-top:30px;">Scrap <span class="muted" id="scrap-branch-label" style="font-weight:normal;"></span></h2>' +
+      '<div id="scrap-sub-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:30px 0 14px;"></div>' +
+
+      '<div id="tab-panel-scrap">' +
+      '<h2 id="scrap-heading">Scrap <span class="muted" id="scrap-branch-label" style="font-weight:normal;"></span></h2>' +
       '<div class="layout-2col">' +
         '<div class="layout-2col-side">' +
           '<div class="card">' +
@@ -199,8 +210,10 @@ if (employee) {
           '<div id="scrap-list"><div class="muted">Loading…</div></div>' +
         '</div>' +
       '</div>' +
+      '</div>' +
 
-      '<h2 style="margin-top:30px;">Subasta <span class="muted" id="sub-branch-label" style="font-weight:normal;"></span></h2>' +
+      '<div id="tab-panel-subasta" style="display:none;">' +
+      '<h2 id="subasta-heading">Subasta <span class="muted" id="sub-branch-label" style="font-weight:normal;"></span></h2>' +
       '<div class="layout-2col">' +
         '<div class="layout-2col-side">' +
           '<div class="card">' +
@@ -236,9 +249,11 @@ if (employee) {
           '</div>' +
           '<div id="sub-list"><div class="muted">Loading…</div></div>' +
         '</div>' +
+      '</div>' +
       '</div>';
 
     renderBranchButtons();
+    renderScrapSubTabs();
 
     // ---- POS (Walk-In): a repeatable item cart (SKU autocomplete + qty + unit price,
     // same pattern as layaway.html's Hold Item(s) form) rung up under the currently
@@ -382,7 +397,6 @@ if (employee) {
       }
     });
 
-    let allPosSales = [], posPaymentsByGroup = {};
     document.getElementById('pos-f-search').addEventListener('input', renderPos);
     document.getElementById('pos-f-from').addEventListener('change', renderPos);
     document.getElementById('pos-f-to').addEventListener('change', renderPos);
@@ -564,7 +578,6 @@ if (employee) {
       }
     });
 
-    let allSubasta = [], allScrap = [], scrapCashBalances = [];
     await Promise.all([loadPos(), loadSubasta(), loadScrap()]);
     subscribeToChanges('subasta_items', loadSubasta);
     subscribeToChanges(['scrap_entries', 'branch_capital_entries'], loadScrap);
@@ -594,6 +607,31 @@ if (employee) {
       document.getElementById('scrap-f-to').value = '';
       renderScrap();
     });
+
+    // ---- Scrap/Subasta tab bar -- switching between the two full sections instead of
+    // stacking both, one after the other, on an ever-longer page. Scrap comes first
+    // (it's the more frequent of the two day to day); both sections stay fully loaded
+    // underneath regardless of which is showing, so switching back and forth never
+    // loses a filter or an open edit row. Pill styling/count-badge look mirrors the
+    // category tabs on a typical POS product screen. ----
+    function renderScrapSubTabs() {
+      const pill = (key, label, dot, count) => {
+        const active = activeSubTab === key;
+        return '<button type="button" data-tab="' + key + '" style="cursor:pointer;font:inherit;padding:8px 16px;border-radius:20px;display:inline-flex;align-items:center;gap:7px;' +
+          (active ? 'background:var(--rose);border:1px solid var(--rose);color:var(--ink);font-weight:600;' : 'background:#fff;border:1px solid #ddd;color:#555;') + '">' +
+          '<span style="width:8px;height:8px;border-radius:50%;background:' + dot + ';display:inline-block;"></span>' + esc(label) +
+          '<span style="background:' + (active ? 'rgba(255,255,255,0.65)' : '#f0f0f0') + ';border-radius:10px;padding:1px 7px;font-size:11px;">' + count + '</span>' +
+        '</button>';
+      };
+      const box = document.getElementById('scrap-sub-tabs');
+      box.innerHTML = pill('scrap', 'Scrap', '#b06a1f', allScrap.length) + pill('subasta', 'Subasta', '#7c3aa8', allSubasta.length);
+      box.querySelectorAll('[data-tab]').forEach((btn) => btn.addEventListener('click', () => {
+        activeSubTab = btn.dataset.tab;
+        document.getElementById('tab-panel-scrap').style.display = activeSubTab === 'scrap' ? '' : 'none';
+        document.getElementById('tab-panel-subasta').style.display = activeSubTab === 'subasta' ? '' : 'none';
+        renderScrapSubTabs();
+      }));
+    }
 
     function renderBranchButtons() {
       const box = document.getElementById('branch-buttons');
@@ -632,6 +670,7 @@ if (employee) {
     }
 
     function renderSubasta() {
+      renderScrapSubTabs();
       let rows = allSubasta;
       const fSearch = document.getElementById('sub-f-search').value.trim().toLowerCase();
       const fStatus = document.getElementById('sub-f-status').value;
@@ -800,6 +839,7 @@ if (employee) {
     }
 
     function renderScrap() {
+      renderScrapSubTabs();
       let rows = allScrap;
       const fSearch = document.getElementById('scrap-f-search').value.trim().toLowerCase();
       const fMetal = document.getElementById('scrap-f-metal').value;
