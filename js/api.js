@@ -235,6 +235,30 @@ export async function listSales({ branchId, fromDate, toDate } = {}) {
   return data;
 }
 
+// ---- Walk-In POS Checkout (91_pos_walkin_sale.sql) -- rings up one or more items in
+// one go for one customer, under a shared sale_group_id, with one or more payment
+// methods. Reuses record_sale() per item under the hood inside create_pos_sale(),
+// which is why a later item failing (e.g. out of stock) rolls back everything already
+// rung up in that same checkout instead of leaving a half-completed sale.
+export async function createPosSale({ branchId, items, customerName, contactNumber, orderNumber, payments }) {
+  const { data, error } = await supabase.rpc('create_pos_sale', {
+    p_branch_id: branchId,
+    p_items: items.map((it) => ({ sku: it.sku, qty: it.qty, unit_price: it.unitPrice ?? null })),
+    p_customer_name: customerName || null, p_contact_number: contactNumber || null,
+    p_order_number: orderNumber || null,
+    p_payments: (payments || []).map((p) => ({ method: p.method, amount: p.amount, reference: p.reference || null })),
+  });
+  if (error) throw new Error(error.message);
+  return data; // the new sale_group_id
+}
+
+export async function listSalePayments(groupIds) {
+  if (!groupIds || !groupIds.length) return [];
+  const { data, error } = await supabase.from('sale_payments').select('*').in('sale_group_id', groupIds);
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 export async function getTransactionHistory(sku, branchId) {
   let query = supabase
     .from('inventory_transactions')

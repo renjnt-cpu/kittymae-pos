@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>POS (Walk-In) — Kittymae POS</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<main>
+  <div id="pos-msg"></div>
+  <div id="pos-root"></div>
+</main>
+
+<script type="module">
+import { initShell, toast, esc } from './js/shell.js';
+import {
+  getBranches, searchProducts, createPosSale, listSales, listSalePayments, subscribeToChanges,
+} from './js/api.js';
+import { renderPosNav } from './js/posNav.js';
+import { branchBadge, branchOptionStyle } from './js/branchColors.js';
+
+const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+const fmtDate = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+const PAYMENT_METHODS = ['Cash', 'GCash', 'Bank Transfer', 'Other'];
+// Same branch-scope rule as assert_can_act_on_branch()/create_pos_sale() -- whole
+// staff can ring up a sale for their own branch; this group can do it for any branch.
+const UNSCOPED_POSITIONS = ['Sales Executive', 'Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
+
+// A cart with several items plus payment slots runs long -- scroll the result message
+// into view every time so a real error (out of stock on item 3, say) is never invisible
+// just because the button was near the bottom (same fix as layaway.html).
+function notify(text, isError) {
+  toast('pos-msg', text, isError);
+  document.getElementById('pos-msg').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function paymentSlotsHtml() {
+  let html = '';
+  for (let i = 0; i < 3; i++) {
+    const label = i === 0 ? 'Payment' : 'Payment ' + (i + 1);
+    html +=
+      '<div class="field"><label>' + label + ' Method' + (i === 0 ? '' : ' (optional)') + '</label><select name="payMethod' + i + '">' +
+        '<option value="">— none —</option>' + PAYMENT_METHODS.map((m) => '<option>' + m + '</option>').join('') +
+      '</select></div>' +
+      '<div class="field"><label>' + label + ' Amount</label><input type="number" name="payAmount' + i + '" step="0.01" min="0"></div>' +
+      '<div class="field"><label>' + label + ' Reference</label><input type="text" name="payReference' + i + '"></div>';
+  }
+  return html;
+}
+function readPaymentSlots(f) {
+  const payments = [];
+  for (let i = 0; i < 3; i++) {
+    const method = f['payMethod' + i]?.value;
+    const amount = Number(f['payAmount' + i]?.value || 0);
+    if (method && amount > 0) payments.push({ method, amount, reference: f['payReference' + i]?.value.trim() || '' });
+  }
+  return payments;
+}
+
+function tile(num, label) { return '<div class="tile"><div class="num">' + esc(num) + '</div><div class="lbl">' + esc(label) + '</div></div>'; }
+
+const employee = await initShell();
+if (employee) {
+  renderPosNav(employee, 'checkout.html');
+  const root = document.getElementById('pos-root');
+  const branches = await getBranches();
+  const branchById = Object.fromEntries(branches.map((b) => [b.id, b.name]));
+  const isScoped = ['Admin', 'Manager'].includes(employee.role) ? false : !UNSCOPED_POSITIONS.includes(employee.position);
+
+  const branchFieldHtml = isScoped
+    ? '<div class="field"><label>Branch</label>' + (branchById[employee.branch_id] ? branchBadge(esc, branchById[employee.branch_id], employee.branch_id, branches) : '<input type="text" value="None assigned" disabled>') + '</div>'
+    : '<div class="field"><label>Branch *</label><select name="branchId" required>' + branches.map((b) => '<option value="' + b.id + '" style="' + branchOptionStyle(b.id, branches) + '">' + esc(b.name) + '</option>').join('') + '</select></div>';
+
+  root.innerHTML =
+    '<div class="layout-2col">' +
+      '<div class="layout-2col-side">' +
+        '<div class="card">' +
+          '<h3>New Sale</h3>' +
+          '<p class="muted" style="margin-top:-4px;">For a walk-in customer paying on the spot — add every item they\'re buying, take payment, then Complete Sale. Stock is deducted immediately.</p>' +
+          '<form id="pos-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
+            '<label style="font-size:13px;font-weight:600;">Items *</label>' +
+            '<div id="pos-items"></div>' +
+            '<button type="button" class="btn small secondary" id="pos-add-item" style="align-self:flex-start;margin:-4px 0 10px;">+ Add another item</button>' +
+            branchFieldHtml +
+            '<div class="field"><label>Order / Reference No.</label><input type="text" name="orderId"></div>' +
+            '<div class="field"><label>Customer Name</label><input type="text" name="customerName"></div>' +
+            '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
+            paymentSlotsHtml() +
+            '<div class="card" style="background:#f7f5f0;margin:6px 0;padding:10px 14px;">' +
+              '<div style="display:flex;justify-content:space-between;font-size:13px;"><span>Subtotal</span><b id="pos-subtotal">₱0.00</b></div>' +
+              '<div style="display:flex;justify-content:space-between;font-size:13px;"><span>Paid</span><b id="pos-paid">₱0.00</b></div>' +
+              '<div style="display:flex;justify-content:space-between;font-size:13px;"><span id="pos-balance-label">Balance Due</span><b id="pos-balance">₱0.00</b></div>' +
+            '</div>' +
+            '<button class="btn" type="submit">Complete Sale</button>' +
+          '</form>' +
+        '</div>' +
+      '</div>' +
+      '<div class="layout-2col-main">' +
+        '<div class="tiles" id="pos-tiles"></div>' +
+        '<div class="card">' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+            '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="f-search" placeholder="SKU, item, customer, order…"></div>' +
+            '<div class="field"><label>From</label><input type="date" id="f-from"></div>' +
+            '<div class="field"><label>To</label><input type="date" id="f-to"></div>' +
+            '<button type="button" class="btn small secondary" id="f-clear">Clear Filters</button>' +
+          '</div>' +
+        '</div>' +
+        '<h2 style="margin-top:0;">Recent Walk-In Sales</h2>' +
+        '<div id="sales-list"><div class="muted">Loading…</div></div>' +
+      '</div>' +
+    '</div>';
+
+  // ---- Item rows: SKU autocomplete + Qty + Unit Price, same repeatable pattern as
+  // layaway.html's Hold Item(s) form, generalized per row. Picking a SKU pre-fills its
+  // system selling price (still editable -- a walk-in price can differ). ----
+  function itemRowHtml() {
+    return '<div class="pos-item-row" style="border:1px solid #e5e5e5;border-radius:8px;padding:8px;margin-bottom:6px;">' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+        '<div class="field" style="flex:2;min-width:150px;position:relative;">' +
+          '<label>SKU *</label>' +
+          '<input type="text" class="pos-item-sku" autocomplete="off" placeholder="Type a SKU or item name…">' +
+          '<div class="pos-item-sku-name muted" style="font-size:11px;"></div>' +
+          '<div class="pos-item-sku-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 10px rgba(0,0,0,0.12);max-height:220px;overflow-y:auto;"></div>' +
+        '</div>' +
+        '<div class="field" style="width:70px;"><label>Qty</label><input type="number" class="pos-item-qty" min="1" value="1"></div>' +
+        '<div class="field" style="width:110px;"><label>Unit Price</label><input type="number" class="pos-item-price" step="0.01" min="0" placeholder="PHP"></div>' +
+        '<button type="button" class="btn small secondary pos-item-remove" title="Remove this item">✕</button>' +
+      '</div>' +
+    '</div>';
+  }
+  function attachSkuAutocomplete(row) {
+    const skuInput = row.querySelector('.pos-item-sku');
+    const skuSuggest = row.querySelector('.pos-item-sku-suggest');
+    const skuNamePreview = row.querySelector('.pos-item-sku-name');
+    const priceInput = row.querySelector('.pos-item-price');
+    let searchToken = 0, searchTimer = null;
+    function hide() { skuSuggest.style.display = 'none'; skuSuggest.innerHTML = ''; }
+    function pick(p) {
+      skuInput.value = p.sku;
+      skuNamePreview.textContent = p.item_name + (p.category || p.product_line ? ' · ' + (p.category || p.product_line) : '');
+      if (!priceInput.value && p.system_selling_price != null) priceInput.value = p.system_selling_price;
+      hide();
+      updateTotals();
+    }
+    function renderSuggestions(matches) {
+      if (!matches.length) { hide(); return; }
+      skuSuggest.innerHTML = matches.map((p) =>
+        '<div data-sku="' + esc(p.sku) + '" style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:13px;">' +
+          '<strong>' + esc(p.sku) + '</strong> — ' + esc(p.item_name) + (p.system_selling_price != null ? ' · ' + money(p.system_selling_price) : '') +
+        '</div>'
+      ).join('');
+      skuSuggest.style.display = '';
+      skuSuggest.querySelectorAll('[data-sku]').forEach((el, i) => {
+        el.addEventListener('mousedown', (ev) => { ev.preventDefault(); pick(matches[i]); });
+      });
+    }
+    skuInput.addEventListener('input', () => {
+      skuNamePreview.textContent = '';
+      const q = skuInput.value.trim();
+      clearTimeout(searchTimer);
+      if (!q) { hide(); return; }
+      searchTimer = setTimeout(async () => {
+        const token = ++searchToken;
+        try {
+          const results = await searchProducts(q);
+          if (token !== searchToken) return;
+          renderSuggestions(results);
+        } catch (err) { /* a failed lookup shouldn't block typing a SKU by hand */ }
+      }, 200);
+    });
+    skuInput.addEventListener('blur', () => setTimeout(hide, 150));
+    skuInput.addEventListener('focus', () => { if (skuSuggest.innerHTML) skuSuggest.style.display = ''; });
+    row.querySelector('.pos-item-qty').addEventListener('input', updateTotals);
+    priceInput.addEventListener('input', updateTotals);
+  }
+  const itemsContainer = document.getElementById('pos-items');
+  function updateItemRemoveButtons() {
+    const rows = itemsContainer.querySelectorAll('.pos-item-row');
+    rows.forEach((row) => { row.querySelector('.pos-item-remove').style.display = rows.length > 1 ? '' : 'none'; });
+  }
+  function addItemRow() {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = itemRowHtml();
+    const row = wrapper.firstElementChild;
+    itemsContainer.appendChild(row);
+    attachSkuAutocomplete(row);
+    row.querySelector('.pos-item-remove').addEventListener('click', () => {
+      if (itemsContainer.querySelectorAll('.pos-item-row').length <= 1) return;
+      row.remove();
+      updateItemRemoveButtons();
+      updateTotals();
+    });
+    updateItemRemoveButtons();
+  }
+  function resetItemRows() { itemsContainer.innerHTML = ''; addItemRow(); }
+  addItemRow();
+  document.getElementById('pos-add-item').addEventListener('click', addItemRow);
+
+  function readItemRows() {
+    const items = [];
+    itemsContainer.querySelectorAll('.pos-item-row').forEach((row) => {
+      const sku = row.querySelector('.pos-item-sku').value.trim();
+      if (!sku) return;
+      const qty = Number(row.querySelector('.pos-item-qty').value || 0);
+      const priceVal = row.querySelector('.pos-item-price').value;
+      items.push({ sku, qty, unitPrice: priceVal ? Number(priceVal) : null });
+    });
+    return items;
+  }
+
+  // ---- Live Subtotal/Paid/Balance so a walk-in customer's total (and change due, if
+  // they hand over more cash than owed) is visible before Complete Sale is clicked. ----
+  const form = document.getElementById('pos-form');
+  function updateTotals() {
+    const items = readItemRows();
+    const subtotal = items.reduce((s, it) => s + (it.unitPrice || 0) * (it.qty || 0), 0);
+    const paid = readPaymentSlots(form).reduce((s, p) => s + p.amount, 0);
+    const balance = subtotal - paid;
+    document.getElementById('pos-subtotal').textContent = money(subtotal);
+    document.getElementById('pos-paid').textContent = money(paid);
+    document.getElementById('pos-balance-label').textContent = balance > 0 ? 'Balance Due' : 'Change Due';
+    document.getElementById('pos-balance').textContent = money(Math.abs(balance));
+    document.getElementById('pos-balance').style.color = balance > 0 ? '#b23c3c' : (balance < 0 ? '#2e7d4f' : '');
+  }
+  form.addEventListener('input', updateTotals);
+  updateTotals();
+
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    const branchId = isScoped ? employee.branch_id : Number(f.branchId.value);
+    const btn = f.querySelector('button[type=submit]');
+    const items = readItemRows();
+    if (!items.length) { notify('Add at least one item to sell.', true); return; }
+    const badQty = items.find((it) => !it.qty || it.qty <= 0);
+    if (badQty) { notify('Qty must be a positive number for ' + badQty.sku + '.', true); return; }
+
+    const payments = readPaymentSlots(f);
+    btn.disabled = true;
+    try {
+      await createPosSale({
+        branchId, items,
+        customerName: f.customerName.value.trim(), contactNumber: f.contactNumber.value.trim(),
+        orderNumber: f.orderId.value.trim(), payments,
+      });
+      notify('Sale completed — ' + items.length + ' item(s), ' + money(items.reduce((s, it) => s + (it.unitPrice || 0) * it.qty, 0)) + '.', false);
+      f.reset();
+      resetItemRows();
+      updateTotals();
+      await load();
+    } catch (err) {
+      notify(String(err.message || err), true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  let recentSales = [];
+  let paymentsByGroup = {};
+  await load();
+  subscribeToChanges(['sales_inventory_movements', 'sale_payments'], load);
+
+  document.getElementById('f-search').addEventListener('input', render);
+  document.getElementById('f-from').addEventListener('change', render);
+  document.getElementById('f-to').addEventListener('change', render);
+  document.getElementById('f-clear').addEventListener('click', () => {
+    document.getElementById('f-search').value = '';
+    document.getElementById('f-from').value = '';
+    document.getElementById('f-to').value = '';
+    render();
+  });
+
+  async function load() {
+    const list = document.getElementById('sales-list');
+    try {
+      const rows = await listSales({ branchId: isScoped ? employee.branch_id : null });
+      recentSales = rows.filter((r) => r.sale_group_id);
+      const groupIds = [...new Set(recentSales.map((r) => r.sale_group_id))];
+      const payments = await listSalePayments(groupIds);
+      paymentsByGroup = {};
+      payments.forEach((p) => { (paymentsByGroup[p.sale_group_id] || (paymentsByGroup[p.sale_group_id] = [])).push(p); });
+      render();
+    } catch (err) {
+      list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
+    }
+  }
+
+  // Groups the flat per-item rows back into one receipt per sale_group_id, newest
+  // first (listSales already orders by sale_date desc, so the first row seen per
+  // group is that group's own date).
+  function groupSales(rows) {
+    const byGroup = {};
+    const order = [];
+    rows.forEach((r) => {
+      if (!byGroup[r.sale_group_id]) { byGroup[r.sale_group_id] = []; order.push(r.sale_group_id); }
+      byGroup[r.sale_group_id].push(r);
+    });
+    return order.map((gid) => ({ groupId: gid, items: byGroup[gid] }));
+  }
+
+  function render() {
+    const fSearch = document.getElementById('f-search').value.trim().toLowerCase();
+    const fFrom = document.getElementById('f-from').value;
+    const fTo = document.getElementById('f-to').value;
+
+    let rows = recentSales;
+    if (fFrom) rows = rows.filter((r) => r.sale_date >= fFrom);
+    if (fTo) rows = rows.filter((r) => r.sale_date <= fTo + 'T23:59:59');
+
+    let groups = groupSales(rows);
+    if (fSearch) groups = groups.filter((g) => g.items.some((r) =>
+      r.sku.toLowerCase().includes(fSearch) || (r.products?.item_name || '').toLowerCase().includes(fSearch) ||
+      (r.customer_name || '').toLowerCase().includes(fSearch) || (r.order_number || '').toLowerCase().includes(fSearch)));
+
+    const totalAmount = groups.reduce((s, g) => s + g.items.reduce((s2, r) => s2 + Number(r.unit_price || 0) * r.qty, 0), 0);
+    document.getElementById('pos-tiles').innerHTML = tile(groups.length, 'Sales') + tile(money(totalAmount), 'Total Amount');
+
+    const box = document.getElementById('sales-list');
+    if (!groups.length) { box.innerHTML = '<p class="muted">No walk-in sales for this filter.</p>'; return; }
+
+    box.innerHTML = groups.map((g) => {
+      const first = g.items[0];
+      const subtotal = g.items.reduce((s, r) => s + Number(r.unit_price || 0) * r.qty, 0);
+      const payments = paymentsByGroup[g.groupId] || [];
+      const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
+      return '<div class="card" style="margin-bottom:10px;">' +
+        '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:flex-start;">' +
+          '<div>' +
+            '<b>' + fmtDate(first.sale_date) + '</b> · ' + (first.branches ? branchBadge(esc, first.branches.name, first.branch_id, branches) : '') +
+            (first.customer_name ? ' · ' + esc(first.customer_name) : '') +
+            (first.order_number ? '<div class="muted" style="font-size:11px;">Order ' + esc(first.order_number) + '</div>' : '') +
+          '</div>' +
+          '<div style="text-align:right;"><b>' + money(subtotal) + '</b><div class="muted" style="font-size:11px;">' + (paid >= subtotal ? 'Paid in full' : money(paid) + ' paid') + '</div></div>' +
+        '</div>' +
+        '<div class="table-scroll table-mini" style="margin-top:8px;"><table><tr><th>SKU</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Total</th></tr>' +
+          g.items.map((r) => '<tr><td data-label="SKU">' + esc(r.sku) + '</td><td data-label="Item">' + esc(r.products?.item_name || '—') + '</td>' +
+            '<td data-label="Qty">' + r.qty + '</td><td data-label="Unit Price">' + money(r.unit_price) + '</td><td data-label="Line Total">' + money(Number(r.unit_price || 0) * r.qty) + '</td></tr>').join('') +
+        '</table></div>' +
+        (payments.length ? '<div class="muted" style="font-size:11px;margin-top:6px;">' + payments.map((p) => money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '')).join(' · ') + '</div>' : '') +
+      '</div>';
+    }).join('');
+  }
+}
+</script>
+</body>
+</html>
