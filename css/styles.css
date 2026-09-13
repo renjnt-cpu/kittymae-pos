@@ -9,7 +9,9 @@ header .who { font-size:13px; opacity:0.95; }
 nav { display:flex; gap:6px; padding:12px 20px; background:#fff; border-bottom:1px solid #eee; flex-wrap:wrap; }
 nav a { background:none; border:1px solid var(--rose-lt); color:var(--ink); padding:7px 14px; border-radius:20px; cursor:pointer; font-size:13px; text-decoration:none; }
 nav a.active { background:var(--rose); color:var(--ink); border-color:var(--rose); }
-main { padding:16px 20px 60px; max-width:1100px; margin:0 auto; }
+/* 1100px kept wide tables (SKU Catalog, Layaway, Branch Capital...) cramped next to a
+   layout-2col sidebar, forcing a horizontal drag just to reach the last column. */
+main { padding:16px 20px 60px; max-width:1400px; margin:0 auto; }
 .tiles { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
 .tile { background:#fff; border-radius:10px; padding:14px 18px; min-width:150px; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
 .tile .num { font-size:26px; font-weight:bold; color:var(--ink); }
