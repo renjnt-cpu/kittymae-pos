@@ -97,6 +97,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
             '<div class="field"><label>Order ID</label><input type="text" name="orderId"></div>' +
             '<div class="field"><label>Customer Name *</label><input type="text" name="customerName" required></div>' +
             '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
+            '<div class="field"><label>Forfeit Date (optional)</label><input type="date" name="forfeitDate"></div>' +
             '<div class="field"><label>Admin (Handled By)</label><select name="handledBy"><option value="">— none —</option>' +
               staff.map((s) => '<option value="' + s.id + '"' + (s.id === employee.id ? ' selected' : '') + '>' + esc(s.full_name) + '</option>').join('') +
             '</select></div>' +
@@ -253,7 +254,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           customerName: f.customerName.value.trim(), contactNumber: f.contactNumber.value.trim(),
           unitPrice: it.unitPrice, notes: f.notes.value.trim(),
           orderId: f.orderId.value.trim(), handledBy: f.handledBy.value || null, groupId,
-          stockStatus: it.stockStatus,
+          stockStatus: it.stockStatus, forfeitDate: f.forfeitDate.value || null,
         });
         created.push({ holdId, totalPrice: it.unitPrice != null ? it.unitPrice * it.qty : null });
       }
