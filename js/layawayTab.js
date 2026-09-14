@@ -137,6 +137,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         '</div>' +
         '<div class="field" style="width:70px;"><label>Qty</label><input type="number" class="lw-item-qty" min="1" value="1"></div>' +
         '<div class="field" style="width:110px;"><label>Unit Price</label><input type="number" class="lw-item-price" step="0.01" min="0" placeholder="PHP"></div>' +
+        '<div class="field" style="width:130px;"><label>Stock Status</label><select class="lw-item-stock"><option value="In Stock">In Stock</option><option value="Lacking">Lacking (source later)</option></select></div>' +
         '<button type="button" class="btn small secondary lw-item-remove" title="Remove this item">✕</button>' +
       '</div>' +
     '</div>';
@@ -213,7 +214,8 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       if (!sku) return;
       const qty = Number(row.querySelector('.lw-item-qty').value || 0);
       const priceVal = row.querySelector('.lw-item-price').value;
-      items.push({ sku, qty, unitPrice: priceVal ? Number(priceVal) : null });
+      const stockStatus = row.querySelector('.lw-item-stock').value;
+      items.push({ sku, qty, unitPrice: priceVal ? Number(priceVal) : null, stockStatus });
     });
     return items;
   }
@@ -240,6 +242,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           customerName: f.customerName.value.trim(), contactNumber: f.contactNumber.value.trim(),
           unitPrice: it.unitPrice, notes: f.notes.value.trim(),
           orderId: f.orderId.value.trim(), handledBy: f.handledBy.value || null, groupId,
+          stockStatus: it.stockStatus,
         });
         created.push({ holdId, totalPrice: it.unitPrice != null ? it.unitPrice * it.qty : null });
       }
@@ -358,7 +361,9 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         const groupIdx = group ? group.findIndex((x) => x.id === h.id) : -1;
         const groupOnHold = group ? group.filter((x) => x.status === 'On Hold') : [];
         return '<tr>' +
-          '<td data-label="SKU">' + esc(h.sku) + '</td>' +
+          '<td data-label="SKU">' + esc(h.sku) +
+            (h.stock_status === 'Lacking' ? ' <span class="badge low" title="Not physically in stock yet -- needs to be sourced before this can be completed">Lacking</span>' : '') +
+          '</td>' +
           '<td data-label="Order ID">' + esc(h.order_id || '—') +
             (group ? ' <span class="badge pending" style="font-size:9px;padding:1px 5px;" title="Part of a ' + group.length + '-item hold">' + (groupIdx + 1) + '/' + group.length + '</span>' : '') +
           '</td>' +
@@ -541,6 +546,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '<td data-label="Date Purchased">' + fmtDate(h.hold_date) + '</td>' +
           '<td data-label="Item">' + esc(h.sku) +
             (group ? ' <span class="badge pending" style="font-size:9px;padding:1px 5px;" title="Part of a ' + group.length + '-item hold">' + (groupIdx + 1) + '/' + group.length + '</span>' : '') +
+            (h.stock_status === 'Lacking' ? ' <span class="badge low" title="Not physically in stock yet -- needs to be sourced before this can be completed">Lacking</span>' : '') +
             (h.order_id ? '<div class="muted" style="font-size:10px;">Order ' + esc(h.order_id) + '</div>' : '') + '</td>' +
           '<td data-label="Customer">' + esc(h.customer_name) + (h.contact_number ? '<div class="muted" style="font-size:10px;">' + esc(h.contact_number) + '</div>' : '') + '</td>' +
           '<td data-label="Payments" class="full-row" style="font-size:11px;">' +

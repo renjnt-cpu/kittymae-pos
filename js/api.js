@@ -958,11 +958,16 @@ export async function listLayaways(branchId) {
   return attachEmployeeNames(data, { creator: 'created_by', handler: 'handled_by' });
 }
 
-export async function createLayawayHold({ sku, branchId, qty, customerName, contactNumber, unitPrice, notes, orderId, handledBy, groupId }) {
+/** stockStatus: 'In Stock' (default, reserves an existing piece immediately) or
+ * 'Lacking' (the item isn't physically on hand yet -- skips the reservation/stock
+ * check entirely; the real deduction happens later, in completeLayaway(), once the
+ * item has actually arrived -- see 98_layaway_stock_status.sql). */
+export async function createLayawayHold({ sku, branchId, qty, customerName, contactNumber, unitPrice, notes, orderId, handledBy, groupId, stockStatus }) {
   const { data, error } = await supabase.rpc('create_layaway_hold', {
     p_sku: sku, p_branch_id: branchId, p_qty: qty, p_customer_name: customerName,
     p_contact_number: contactNumber || null, p_unit_price: unitPrice || null, p_notes: notes || null,
     p_order_id: orderId || null, p_handled_by: handledBy || null, p_group_id: groupId || null,
+    p_stock_status: stockStatus || 'In Stock',
   });
   if (error) throw new Error(error.message);
   return data;
