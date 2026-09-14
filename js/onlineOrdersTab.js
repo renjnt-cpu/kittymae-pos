@@ -55,17 +55,34 @@ const fmtDate = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'med
 // would fail; every other branch keeps the normal any-employee-updates behavior).
 const ADMIN_ONLY_EDIT_BRANCHES = [2, 4];
 
+// Same branch-scope group as layawayTab.js's UNSCOPED_POSITIONS (kept in sync by
+// hand, same reasoning): Admin/Manager and this position group can browse any
+// branch's online orders via the page's branch picker like every other tab here.
+// Everyone else only ever sees their OWN branch's online orders -- unlike
+// POS/Scrap/Subasta, an online order carries a customer's name and phone number, so
+// Ren asked this one tab to be locked down rather than left "view any branch."
+const UNSCOPED_POSITIONS = ['Sales Executive', 'Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
+
 /** Mounts the Online Orders board into `root` (an empty container this owns
  * entirely) scoped to `getBranchId()` at call time -- read as a function rather than
  * a fixed value so switching branches elsewhere on the page (branches.html's own
  * branch picker) doesn't require re-mounting, just a reload() call. `esc`/`toast` are
  * the page's own shell.js helpers; `msgId` is the id of the page's toast container.
- * `isAdmin`: whether the current employee's role is Admin, for the Pacific
- * Mall/APM Mall view-only restriction above.
- * Returns { reload } for the host page to call after a branch switch. */
-export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCountsUpdate, isAdmin }) {
-  const canEdit = () => isAdmin || !ADMIN_ONLY_EDIT_BRANCHES.includes(getBranchId());
+ * `employee`: the signed-in employee record -- used both for the Pacific Mall/APM
+ * Mall edit restriction below and to lock non-managers to their own branch (see
+ * isViewRestricted/effectiveBranchId).
+ * Returns { reload, isViewRestricted, ownBranchId } for the host page to call after a
+ * branch switch and to know whether this tab ignores the shared branch picker. */
+export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCountsUpdate, employee }) {
+  const isAdmin = employee.role === 'Admin';
+  const isViewRestricted = !['Admin', 'Manager'].includes(employee.role) && !UNSCOPED_POSITIONS.includes(employee.position);
+  // Ignores the page-wide branch picker entirely for a restricted employee -- they
+  // always see their own branch's online orders no matter which branch button is
+  // highlighted for the other tabs.
+  const effectiveBranchId = () => isViewRestricted ? employee.branch_id : getBranchId();
+  const canEdit = () => isAdmin || !ADMIN_ONLY_EDIT_BRANCHES.includes(effectiveBranchId());
   root.innerHTML =
+    (isViewRestricted ? '<p class="muted" style="margin-top:0;">Locked to your own branch — the branch buttons above only affect the other tabs here.</p>' : '') +
     '<div class="field" style="max-width:380px;"><label>Search</label><input type="text" id="ol-search" placeholder="Item, SKU, order #, customer, or notes…"></div>' +
     '<div id="ol-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>' +
     '<div id="ol-list" style="margin-top:10px;"><div class="muted">Loading…</div></div>';
@@ -95,7 +112,7 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
   }
 
   async function load() {
-    const branchId = getBranchId();
+    const branchId = effectiveBranchId();
     try {
       if (statusFilter === 'delivered') {
         let items = await listDeliveredOrders({ branchId, fromDate: DELIVERED_FROM_DATE });
@@ -312,5 +329,5 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
       '</div>';
   }
 
-  return { reload: load, unsubscribe };
+  return { reload: load, unsubscribe, isViewRestricted, ownBranchId: employee.branch_id };
 }

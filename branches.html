@@ -602,8 +602,13 @@ if (employee) {
       root: document.getElementById('online-orders-root'), esc, toast, msgId: 'br-msg',
       getBranchId: () => selectedBranch,
       onCountsUpdate: (count) => { onlineOrdersCount = count; renderScrapSubTabs(); },
-      isAdmin: employee.role === 'Admin',
+      employee,
     });
+    // Re-render now that onlineOrders exists -- the very first renderBranchButtons()
+    // call above ran before this, so a view-restricted employee's Online Orders
+    // heading would otherwise show selectedBranch instead of their own branch until
+    // the next branch-button click.
+    renderBranchButtons();
     layaway = await initLayawayTab({
       root: document.getElementById('layaway-root'), esc, toast, msgId: 'br-msg',
       getBranchId: () => selectedBranch, employee,
@@ -686,7 +691,13 @@ if (employee) {
       document.getElementById('pos-branch-label').textContent = label;
       document.getElementById('sub-branch-label').textContent = label;
       document.getElementById('scrap-branch-label').textContent = label;
-      document.getElementById('online-branch-label').textContent = label;
+      // A view-restricted employee's Online Orders board always shows their own
+      // branch (see onlineOrdersTab.js's isViewRestricted), regardless of which
+      // button is highlighted above for the other tabs -- so its heading must say
+      // that branch, not selectedBranch, or the label would lie about what's shown.
+      document.getElementById('online-branch-label').textContent = onlineOrders?.isViewRestricted
+        ? ' — ' + branchName(onlineOrders.ownBranchId)
+        : label;
       document.getElementById('layaway-branch-label').textContent = label;
 
       document.querySelectorAll('#pos-form button[type="submit"], #sub-form button[type="submit"], #scrap-form button[type="submit"]').forEach((btn) => { btn.disabled = !canAddHere(); });

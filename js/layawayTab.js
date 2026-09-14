@@ -7,21 +7,32 @@
 // (getBranchId()), so every row it ever shows is that one branch by construction.
 import {
   listLayaways, createLayawayHold, addLayawayPayment, completeLayaway, cancelLayaway, deleteLayawayPayment,
-  searchProducts, listActiveEmployees, subscribeToChanges,
+  setLayawayForfeitDate, searchProducts, listActiveEmployees, subscribeToChanges,
 } from './api.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-PH', { dateStyle: 'medium' }) : '—';
+const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 const STATUS_BADGE = { 'On Hold': 'pending', 'Completed': 'ok', 'Cancelled': 'low' };
 const PAYMENT_METHODS = ['Cash', 'GCash', 'Bank Transfer', 'Other'];
 // A layaway with no activity forfeits 2 months (~60 days) after Date Purchased
-// (hold_date) -- WARN_DAYS gives a 2-week heads-up before that so staff can chase
-// payment before it's actually too late, not just after.
+// (hold_date) by default -- staff can override this per-hold with an explicit Forfeit
+// Date (99_layaway_forfeit_date.sql). WARN_LEAD_DAYS gives a 2-week heads-up before
+// whatever the effective forfeit date is, so staff can chase payment before it's
+// actually too late, not just after.
 const FORFEITURE_DAYS = 60;
-const FORFEITURE_WARN_DAYS = 45;
+const FORFEITURE_WARN_LEAD_DAYS = 15;
 function daysSince(dateStr) {
   if (!dateStr) return 0;
   return Math.floor((new Date() - new Date(dateStr + 'T00:00:00')) / 86400000);
+}
+/** The default Forfeit Date when staff hasn't set an explicit one -- 60 days after
+ * Date Purchased, same window this whole feature always used before it became
+ * editable. */
+function defaultForfeitDate(holdDateStr) {
+  const d = new Date(holdDateStr + 'T00:00:00');
+  d.setDate(d.getDate() + FORFEITURE_DAYS);
+  return d.toISOString().slice(0, 10);
 }
 // Same branch-scope rule as assert_can_act_on_branch()/record_sale() -- whole staff
 // can hold/pay/complete/cancel a layaway for their own branch; this group can do it
@@ -518,8 +529,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   // payment history (a layaway is paid in installments over time, so "how much so
   // far and when" matters more here than a single total) and a Date Purchased +
   // Forfeit Date pair so a row visibly turns red once it's close to or past the
-  // 2-month cutoff. Independent of the date-range filter above -- this is about
-  // what needs attention right now, not a historical range. ----
+  // cutoff. Forfeit Date defaults to hold_date + 60 days but staff who can act on the
+  // hold (same canAct gate as Complete/Cancel) can override it per-item -- every
+  // change is logged (layaway_forfeit_date_log, embedded by listLayaways()) and shown
+  // right there so it's always visible who moved a deadline and when, and whether it
+  // was ever moved at all. Independent of the date-range filter above -- this is
+  // about what needs attention right now, not a historical range. ----
   function renderForfeitureWatch() {
     const rows = allHolds
       .filter((h) => h.status === 'On Hold')
@@ -534,14 +549,17 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       rows.map(({ h, daysHeld }) => {
         const paid = paidSoFar(h);
         const remaining = h.total_price == null ? null : Number(h.total_price) - paid;
-        const forfeitDate = new Date(h.hold_date + 'T00:00:00');
-        forfeitDate.setDate(forfeitDate.getDate() + FORFEITURE_DAYS);
-        const isOverdue = daysHeld >= FORFEITURE_DAYS;
-        const isWarning = !isOverdue && daysHeld >= FORFEITURE_WARN_DAYS;
+        const effectiveForfeit = h.forfeit_date || defaultForfeitDate(h.hold_date);
+        const daysPastForfeit = daysSince(effectiveForfeit);
+        const isOverdue = daysPastForfeit >= 0;
+        const isWarning = !isOverdue && daysPastForfeit >= -FORFEITURE_WARN_LEAD_DAYS;
         const rowStyle = isOverdue ? 'background:#fdecea;' : isWarning ? 'background:#fff3f3;' : '';
         const payments = h.layaway_payments || [];
         const group = h.group_id ? groupMembers[h.group_id] : null;
         const groupIdx = group ? group.findIndex((x) => x.id === h.id) : -1;
+        const canAct = canManage || employee.branch_id === h.branch_id || UNSCOPED_POSITIONS.includes(employee.position);
+        const history = (h.layaway_forfeit_date_log || []).slice().sort((a, b) => new Date(a.changed_at) - new Date(b.changed_at));
+        const lastEdit = history.length ? history[history.length - 1] : null;
         return '<tr style="' + rowStyle + '">' +
           '<td data-label="Date Purchased">' + fmtDate(h.hold_date) + '</td>' +
           '<td data-label="Item">' + esc(h.sku) +
@@ -557,16 +575,50 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '<td data-label="Paid">' + money(paid) + '</td>' +
           '<td data-label="Remaining">' + (remaining !== null ? money(remaining) : '—') + '</td>' +
           '<td data-label="Days Held">' + daysHeld + '</td>' +
-          '<td data-label="Forfeit Date">' + fmtDate(forfeitDate.toISOString().slice(0, 10)) +
+          '<td data-label="Forfeit Date">' +
+            (canAct
+              ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">' +
+                  '<input type="date" class="fw-forfeit-input" data-hold-id="' + h.id + '" value="' + effectiveForfeit + '" style="font-size:12px;padding:3px 5px;border:1px solid #ddd;border-radius:6px;">' +
+                  '<button type="button" class="btn small secondary fw-forfeit-save" data-hold-id="' + h.id + '" style="padding:2px 8px;">Save</button>' +
+                '</div>'
+              : fmtDate(effectiveForfeit)) +
             (isOverdue ? ' <span class="badge low">FORFEITURE DUE</span>' : isWarning ? ' <span class="badge low">NEARING</span>' : '') +
+            (lastEdit
+              ? '<div class="muted" style="font-size:10px;margin-top:2px;">Edited by ' + esc(lastEdit.employees?.full_name || 'Unknown') + ' · ' + fmtDateTime(lastEdit.changed_at) + '</div>'
+              : '<div class="muted" style="font-size:10px;margin-top:2px;">Never edited (default 60-day date)</div>') +
+            (history.length
+              ? '<button type="button" class="btn small secondary fw-forfeit-history" data-hold-id="' + h.id + '" style="font-size:10px;padding:1px 6px;margin-top:2px;">History (' + history.length + ')</button>' +
+                '<div class="fw-forfeit-history-list" data-hold-id="' + h.id + '" style="display:none;font-size:10px;margin-top:4px;border-top:1px dashed #ddd;padding-top:4px;">' +
+                  history.map((l) => (l.old_date ? fmtDate(l.old_date) : '<span class="muted">default</span>') + ' → <strong>' + fmtDate(l.new_date) + '</strong> by ' + esc(l.employees?.full_name || 'Unknown') + ' · ' + fmtDateTime(l.changed_at)).join('<br>') +
+                '</div>'
+              : '') +
           '</td>' +
         '</tr>';
       }).join('') + '</tbody></table></div>';
+
+    box.querySelectorAll('.fw-forfeit-save').forEach((btn) => btn.addEventListener('click', async () => {
+      const holdId = Number(btn.dataset.holdId);
+      const input = box.querySelector('.fw-forfeit-input[data-hold-id="' + holdId + '"]');
+      if (!input.value) { notify('Pick a date first.', true); return; }
+      btn.disabled = true;
+      try {
+        await setLayawayForfeitDate(holdId, input.value);
+        notify('Forfeit date updated.', false);
+        await load();
+      } catch (err) {
+        notify(String(err.message || err), true);
+        btn.disabled = false;
+      }
+    }));
+    box.querySelectorAll('.fw-forfeit-history').forEach((btn) => btn.addEventListener('click', () => {
+      const div = box.querySelector('.fw-forfeit-history-list[data-hold-id="' + btn.dataset.holdId + '"]');
+      div.style.display = div.style.display === 'none' ? '' : 'none';
+    }));
   }
 
   function tile(num, label) { return '<div class="tile"><div class="num">' + esc(num) + '</div><div class="lbl">' + esc(label) + '</div></div>'; }
 
-  const unsubscribe = subscribeToChanges(['layaway_holds', 'layaway_payments'], load);
+  const unsubscribe = subscribeToChanges(['layaway_holds', 'layaway_payments', 'layaway_forfeit_date_log'], load);
   await load();
 
   return { reload: load, unsubscribe };

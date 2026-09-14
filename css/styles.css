@@ -33,6 +33,12 @@ tr:last-child td { border-bottom:none; }
 .field { display:flex; flex-direction:column; gap:4px; }
 .field label { font-size:11px; color:var(--muted); }
 .field input, .field select, .field textarea { padding:7px 8px; border:1px solid #ddd; border-radius:6px; font-size:13px; min-width:140px; }
+/* Item-row fields (POS cart, Layaway hold form) set their own narrow widths (Qty
+   70px, Unit Price 110px, Stock Status 130px) on the wrapping .field div -- the
+   140px min-width above otherwise forces those inputs wider than their container,
+   pushing them over the next field/button and making the row visually overlap. */
+.pos-item-row .field input, .pos-item-row .field select,
+.lw-item-row .field input, .lw-item-row .field select { min-width:0; width:100%; }
 button.btn { background:var(--rose); color:var(--ink); border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:13px; }
 button.btn.secondary { background:#eee; color:var(--ink); }
 button.btn.small { padding:4px 10px; font-size:12px; }
