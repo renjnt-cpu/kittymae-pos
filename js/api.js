@@ -973,12 +973,31 @@ export async function createLayawayHold({ sku, branchId, qty, customerName, cont
   return data;
 }
 
-export async function addLayawayPayment(holdId, amount, paymentMethod, referenceNumber) {
+export async function addLayawayPayment(holdId, amount, paymentMethod, referenceNumber, attachmentPath) {
   const { data, error } = await supabase.rpc('add_layaway_payment', {
     p_hold_id: holdId, p_amount: amount, p_payment_method: paymentMethod, p_reference_number: referenceNumber || null,
+    p_attachment_path: attachmentPath || null,
   });
   if (error) throw new Error(error.message);
   return data;
+}
+
+/** Path is "<branch_id>/<hold_id>/<timestamp>_<file>" -- same branch-scoped storage
+ * access shape as scrap-attachments. Uploaded BEFORE the payment row exists (unlike
+ * scrap's upload-then-update), since add_layaway_payment takes the path directly at
+ * insert time -- layaway_payments has no UPDATE policy for a client to patch it
+ * afterward (every write to that table goes through the RPC by design). */
+export async function uploadLayawayPaymentProof(branchId, holdId, file) {
+  const path = branchId + '/' + holdId + '/' + Date.now() + '_' + file.name;
+  const { error } = await supabase.storage.from('layaway-attachments').upload(path, file, { upsert: true });
+  if (error) throw new Error(error.message);
+  return path;
+}
+
+export async function getLayawayPaymentProofUrl(path) {
+  const { data, error } = await supabase.storage.from('layaway-attachments').createSignedUrl(path, 300);
+  if (error) throw new Error(error.message);
+  return data.signedUrl;
 }
 
 export async function completeLayaway(holdId, orderNumber) {
@@ -1013,6 +1032,10 @@ export async function setLayawayHoldDate(holdId, holdDate) {
 /** Managerial-only correction, matching scrap_payments_managerial_delete's pattern --
  * fixing a mistaken payment entry, not part of the normal add-payment flow. */
 export async function deleteLayawayPayment(paymentId) {
+  const { data: payment } = await supabase.from('layaway_payments').select('attachment_path').eq('id', paymentId).single();
+  if (payment && payment.attachment_path) {
+    await supabase.storage.from('layaway-attachments').remove([payment.attachment_path]);
+  }
   const { error } = await supabase.from('layaway_payments').delete().eq('id', paymentId);
   if (error) throw new Error(error.message);
 }

@@ -7,7 +7,8 @@
 // (getBranchId()), so every row it ever shows is that one branch by construction.
 import {
   listLayaways, createLayawayHold, addLayawayPayment, completeLayaway, cancelLayaway, deleteLayawayPayment,
-  setLayawayForfeitDate, setLayawayHoldDate, searchProducts, listActiveEmployees, subscribeToChanges,
+  setLayawayForfeitDate, setLayawayHoldDate, uploadLayawayPaymentProof, getLayawayPaymentProofUrl,
+  searchProducts, listActiveEmployees, subscribeToChanges,
 } from './api.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
@@ -53,7 +54,8 @@ function paymentSlotsHtml() {
         PAYMENT_METHODS.map((m) => '<option>' + m + '</option>').join('') +
       '</select></div>' +
       '<div class="field"><label>' + label + ' Amount</label><input type="number" name="lwPayAmount' + i + '" step="0.01" min="0"></div>' +
-      '<div class="field"><label>' + label + ' Reference Number</label><input type="text" name="lwPayReference' + i + '"></div>';
+      '<div class="field"><label>' + label + ' Reference Number</label><input type="text" name="lwPayReference' + i + '"></div>' +
+      '<div class="field"><label>' + label + ' Proof of Payment</label><input type="file" name="lwPayProof' + i + '" accept="image/*,.pdf"></div>';
   }
   return html;
 }
@@ -62,7 +64,10 @@ function readPaymentSlots(f) {
   for (let i = 0; i < 3; i++) {
     const method = f['lwPayMethod' + i]?.value;
     const amount = Number(f['lwPayAmount' + i]?.value || 0);
-    if (method && amount > 0) payments.push({ method, amount, reference: f['lwPayReference' + i]?.value.trim() || '' });
+    if (method && amount > 0) payments.push({
+      method, amount, reference: f['lwPayReference' + i]?.value.trim() || '',
+      file: f['lwPayProof' + i]?.files[0] || null,
+    });
   }
   return payments;
 }
@@ -272,8 +277,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       const grandTotal = created.reduce((s, h) => s + (h.totalPrice || 0), 0);
       const canProportion = created.length > 1 && grandTotal > 0 && created.every((h) => h.totalPrice != null);
       for (const p of payments) {
+        // Uploaded once per slot even when the payment is split below -- it's proof
+        // of the one transaction that happened, just recorded against more than one
+        // item's hold for bookkeeping.
+        const attachmentPath = p.file ? await uploadLayawayPaymentProof(branchId, created[0].holdId, p.file) : null;
         if (!canProportion) {
-          await addLayawayPayment(created[0].holdId, p.amount, p.method, p.reference);
+          await addLayawayPayment(created[0].holdId, p.amount, p.method, p.reference, attachmentPath);
           continue;
         }
         // Split one shared downpayment across each item's own hold, proportional to
@@ -285,7 +294,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           const isLast = i === created.length - 1;
           const share = isLast ? Math.round((p.amount - allocated) * 100) / 100 : Math.round((p.amount * h.totalPrice / grandTotal) * 100) / 100;
           if (!isLast) allocated += share;
-          if (share > 0) await addLayawayPayment(h.holdId, share, p.method, p.reference);
+          if (share > 0) await addLayawayPayment(h.holdId, share, p.method, p.reference, attachmentPath);
         }
       }
     } catch (err) {
@@ -389,6 +398,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '<td data-label="" style="font-size:11px;">' +
             (h.layaway_payments && h.layaway_payments.length
               ? h.layaway_payments.map((p) => '<div>' + money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '') +
+                  (p.attachment_path ? ' <button type="button" class="btn small secondary" data-act="view-proof" data-path="' + esc(p.attachment_path) + '" style="padding:1px 6px;">Proof</button>' : '') +
                   (canManage ? ' <button class="btn small secondary" data-act="del-payment" data-id="' + p.id + '" style="padding:1px 6px;">✕</button>' : '') + '</div>').join('')
               : '') +
             (groupIdx === 0 && groupOnHold.length > 1 && canAct
@@ -398,10 +408,11 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
                 '</div>'
               : '') +
             (h.status === 'On Hold' && canAct
-              ? '<form class="lw-pay-form" data-hold-id="' + h.id + '" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">' +
+              ? '<form class="lw-pay-form" data-hold-id="' + h.id + '" data-branch-id="' + h.branch_id + '" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">' +
                   '<input type="number" name="amount" step="0.01" min="0.01" placeholder="Amount" required style="width:70px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
                   '<select name="method" style="padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' + PAYMENT_METHODS.map((m) => '<option>' + m + '</option>').join('') + '</select>' +
                   '<input type="text" name="reference" placeholder="Reference" style="width:70px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
+                  '<input type="file" name="proof" accept="image/*,.pdf" style="max-width:110px;font-size:11px;" title="Proof of Payment">' +
                   '<button class="btn small" type="submit">Add Payment</button>' +
                 '</form>' +
                 '<div style="margin-top:4px;display:flex;gap:4px;">' +
@@ -417,10 +428,23 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     list.querySelectorAll('.lw-pay-form').forEach((form) => form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const f = ev.target;
+      const btn = f.querySelector('button[type=submit]');
+      btn.disabled = true;
       try {
-        await addLayawayPayment(Number(f.dataset.holdId), Number(f.amount.value), f.method.value, f.reference.value.trim());
+        const file = f.proof.files[0] || null;
+        const attachmentPath = file ? await uploadLayawayPaymentProof(Number(f.dataset.branchId), Number(f.dataset.holdId), file) : null;
+        await addLayawayPayment(Number(f.dataset.holdId), Number(f.amount.value), f.method.value, f.reference.value.trim(), attachmentPath);
         notify('Payment added.', false);
         await load();
+      } catch (err) {
+        notify(String(err.message || err), true);
+        btn.disabled = false;
+      }
+    }));
+    list.querySelectorAll('[data-act="view-proof"]').forEach((btn) => btn.addEventListener('click', async () => {
+      try {
+        const url = await getLayawayPaymentProofUrl(btn.dataset.path);
+        window.open(url, '_blank');
       } catch (err) {
         notify(String(err.message || err), true);
       }
@@ -588,7 +612,8 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '<td data-label="Customer">' + esc(h.customer_name) + (h.contact_number ? '<div class="muted" style="font-size:10px;">' + esc(h.contact_number) + '</div>' : '') + '</td>' +
           '<td data-label="Payments" class="full-row" style="font-size:11px;">' +
             (payments.length
-              ? payments.map((p) => money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '') + ' — ' + (p.paid_at || '')).join('<br>')
+              ? payments.map((p) => money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '') + ' — ' + (p.paid_at || '') +
+                  (p.attachment_path ? ' <button type="button" class="btn small secondary fw-view-proof" data-path="' + esc(p.attachment_path) + '" style="padding:0 5px;">Proof</button>' : '')).join('<br>')
               : '<span class="muted">No payments yet</span>') +
           '</td>' +
           '<td data-label="Paid">' + money(paid) + '</td>' +
@@ -650,6 +675,14 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     box.querySelectorAll('.fw-hold-date-history').forEach((btn) => btn.addEventListener('click', () => {
       const div = box.querySelector('.fw-hold-date-history-list[data-hold-id="' + btn.dataset.holdId + '"]');
       div.style.display = div.style.display === 'none' ? '' : 'none';
+    }));
+    box.querySelectorAll('.fw-view-proof').forEach((btn) => btn.addEventListener('click', async () => {
+      try {
+        const url = await getLayawayPaymentProofUrl(btn.dataset.path);
+        window.open(url, '_blank');
+      } catch (err) {
+        notify(String(err.message || err), true);
+      }
     }));
   }
 
