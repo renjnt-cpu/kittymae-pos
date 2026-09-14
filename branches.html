@@ -24,6 +24,7 @@ import {
 import { renderPosNav } from './js/posNav.js';
 import { branchButtonStyle } from './js/branchColors.js';
 import { initOnlineOrdersTab } from './js/onlineOrdersTab.js';
+import { initLayawayTab } from './js/layawayTab.js';
 
 const SUB_STATUS_BADGE = { Pending: 'pending', Listed: 'transit', Sold: 'ok', Cancelled: 'low' };
 const SUB_STATUSES = ['Pending', 'Listed', 'Sold', 'Cancelled'];
@@ -96,6 +97,7 @@ if (employee) {
     let allPosSales = [], posPaymentsByGroup = {};
     let allSubasta = [], allScrap = [], scrapCashBalances = [];
     let onlineOrdersCount = 0, onlineOrders = null;
+    let layawayCount = 0, layaway = null;
     let activeSubTab = 'pos';
 
     // Shared by every row's Edit/Delete buttons -- mirrors the backend RLS exactly
@@ -170,6 +172,11 @@ if (employee) {
           '<div id="pos-list"><div class="muted">Loading…</div></div>' +
         '</div>' +
       '</div>' +
+      '</div>' +
+
+      '<div id="tab-panel-layaway" style="display:none;">' +
+      '<h2>Layaway <span class="muted" id="layaway-branch-label" style="font-weight:normal;"></span></h2>' +
+      '<div id="layaway-root"></div>' +
       '</div>' +
 
       '<div id="tab-panel-scrap" style="display:none;">' +
@@ -595,6 +602,11 @@ if (employee) {
       onCountsUpdate: (count) => { onlineOrdersCount = count; renderScrapSubTabs(); },
       isAdmin: employee.role === 'Admin',
     });
+    layaway = await initLayawayTab({
+      root: document.getElementById('layaway-root'), esc, toast, msgId: 'br-msg',
+      getBranchId: () => selectedBranch, employee,
+      onCountUpdate: (count) => { layawayCount = count; renderScrapSubTabs(); },
+    });
     await Promise.all([loadPos(), loadSubasta(), loadScrap()]);
     subscribeToChanges('subasta_items', loadSubasta);
     subscribeToChanges(['scrap_entries', 'branch_capital_entries'], loadScrap);
@@ -625,14 +637,15 @@ if (employee) {
       renderScrap();
     });
 
-    // ---- POS/Scrap/Subasta/Online Orders tab bar -- switching between the four full
-    // sections instead of stacking them, one after another, on an ever-longer page.
-    // POS comes first (it's the main day-to-day action for a branch), then Scrap,
-    // then Subasta, then Online Orders last; all four sections stay fully loaded
-    // underneath regardless of which is showing, so switching back and forth never
-    // loses a filter or an open edit row. Pill styling/count-badge look mirrors the
-    // category tabs on a typical POS product screen. ----
-    const SUB_TABS = ['pos', 'scrap', 'subasta', 'online'];
+    // ---- POS/Layaway/Scrap/Subasta/Online Orders tab bar -- switching between the
+    // five full sections instead of stacking them, one after another, on an
+    // ever-longer page. POS comes first (it's the main day-to-day action for a
+    // branch), Layaway next (the other item-reservation flow, grouped beside POS),
+    // then Scrap, then Subasta, then Online Orders last; all five sections stay
+    // fully loaded underneath regardless of which is showing, so switching back and
+    // forth never loses a filter or an open edit row. Pill styling/count-badge look
+    // mirrors the category tabs on a typical POS product screen. ----
+    const SUB_TABS = ['pos', 'layaway', 'scrap', 'subasta', 'online'];
     function renderScrapSubTabs() {
       const pill = (key, label, dot, count) => {
         const active = activeSubTab === key;
@@ -644,6 +657,7 @@ if (employee) {
       };
       const box = document.getElementById('scrap-sub-tabs');
       box.innerHTML = pill('pos', 'POS', '#2e7d32', groupPosSales(allPosSales).length) +
+        pill('layaway', 'Layaway', '#c2185b', layawayCount) +
         pill('scrap', 'Scrap', '#b06a1f', allScrap.length) + pill('subasta', 'Subasta', '#7c3aa8', allSubasta.length) +
         pill('online', 'Online Orders', '#1a56b0', onlineOrdersCount);
       box.querySelectorAll('[data-tab]').forEach((btn) => btn.addEventListener('click', () => {
@@ -664,13 +678,14 @@ if (employee) {
       box.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', async () => {
         selectedBranch = Number(btn.dataset.id);
         renderBranchButtons();
-        await Promise.all([loadPos(), loadSubasta(), loadScrap(), onlineOrders?.reload()]);
+        await Promise.all([loadPos(), loadSubasta(), loadScrap(), onlineOrders?.reload(), layaway?.reload()]);
       }));
       const label = ' — ' + branchName(selectedBranch);
       document.getElementById('pos-branch-label').textContent = label;
       document.getElementById('sub-branch-label').textContent = label;
       document.getElementById('scrap-branch-label').textContent = label;
       document.getElementById('online-branch-label').textContent = label;
+      document.getElementById('layaway-branch-label').textContent = label;
 
       document.querySelectorAll('#pos-form button[type="submit"], #sub-form button[type="submit"], #scrap-form button[type="submit"]').forEach((btn) => { btn.disabled = !canAddHere(); });
       const note = canAddHere() ? '' : employee.branch_id
