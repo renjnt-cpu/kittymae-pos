@@ -18,24 +18,22 @@ import { listProducts, getBranches, listAllInventoryQty, subscribeToChanges } fr
 import { renderPosNav } from './js/posNav.js';
 import { branchColor } from './js/branchColors.js';
 
-const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
-const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + ' g';
-
 const employee = await initShell();
 if (employee) {
   renderPosNav(employee, 'products.html');
   const root = document.getElementById('products-root');
   const branches = await getBranches();
 
-  // View only here for every role -- editing a SKU (name/category/price/weight,
-  // adding a brand-new one) now happens only in the ERP's own SKU Catalog page, per
-  // Ren's request, so this page never renders an Edit/Discontinue/Add control at all.
+  // View only here for every role -- editing a SKU now happens only in the ERP's own
+  // SKU Catalog page, per Ren's request, so this page never renders an Edit/
+  // Discontinue/Add control at all. Also deliberately kept to just Product Name/SKU/
+  // branch pcs here -- category, price, weight, and every other detail live only in
+  // the ERP's fuller catalog view, per Ren's request.
   root.innerHTML =
     '<div class="card">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-        '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="f-search" placeholder="SKU, Sub SKU, or product name…"></div>' +
+        '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="f-search" placeholder="SKU or product name…"></div>' +
         '<div class="field"><label>Status</label><select id="f-status"><option value="all">All</option><option value="Active" selected>Active</option><option value="Discontinued">Discontinued</option></select></div>' +
-        '<div class="field"><label>Category</label><select id="f-category"><option value="all">All</option></select></div>' +
         '<div class="field"><label>Sort by Branch</label><select id="f-sort-branch"><option value="none">— none (SKU order) —</option>' +
           branches.map((b) => '<option value="' + b.id + '">' + esc(b.name) + '</option>').join('') +
         '</select></div>' +
@@ -55,7 +53,6 @@ if (employee) {
   let searchTimer = null;
   let realtimeTimer = null;
   await load();
-  document.getElementById('f-category').addEventListener('change', render);
   // Debounced: an edit or the Active/Discontinued toggle firing on one row shouldn't
   // matter much here, but this keeps the same safety pattern as movement.html in
   // case of another bulk import later. Inventory changes (a sale, a stock-in, a
@@ -75,7 +72,6 @@ if (employee) {
   document.getElementById('f-clear').addEventListener('click', () => {
     document.getElementById('f-search').value = '';
     document.getElementById('f-status').value = 'all';
-    document.getElementById('f-category').value = 'all';
     document.getElementById('f-sort-branch').value = 'none';
     document.getElementById('f-sort-dir').value = 'desc';
     filterBranchId = null;
@@ -106,16 +102,6 @@ if (employee) {
 
   function render() {
     let rows = allProducts; // already scoped to the current search + status at the query level
-
-    // Category options reflect whatever's currently loaded (search + status), same
-    // as every other filter here -- rebuilt on each render so a value that stops
-    // matching (e.g. after a search) drops out instead of pointing at nothing.
-    const categorySelect = document.getElementById('f-category');
-    const currentCategory = categorySelect.value || 'all';
-    const categories = [...new Set(allProducts.map((p) => p.category).filter(Boolean))].sort();
-    categorySelect.innerHTML = '<option value="all">All</option>' +
-      categories.map((c) => '<option value="' + esc(c) + '"' + (c === currentCategory ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
-    if (currentCategory !== 'all' && categories.includes(currentCategory)) rows = rows.filter((p) => p.category === currentCategory);
 
     // Click a branch column header to filter down to just the SKUs actually stocked
     // there (pcs > 0) -- click it again to clear. Applied before the tiles below so
@@ -155,16 +141,9 @@ if (employee) {
 
     function rowHtml(p) {
       const qtyForSku = qtyBySku[p.sku] || {};
-      const totalPcs = Object.values(qtyForSku).reduce((s, q) => s + Number(q || 0), 0);
       return '<tr data-row-id="' + esc(p.sku) + '">' +
           '<td data-label="SKU"><b>' + esc(p.sku) + '</b></td>' +
           '<td data-label="Product Name">' + esc(p.item_name) + '</td>' +
-          '<td data-label="Category">' + esc(p.category || '—') + '</td>' +
-          '<td data-label="Sub SKU">' + esc(p.sub_sku || '—') + '</td>' +
-          '<td data-label="Price">' + money(p.system_selling_price) + '</td>' +
-          '<td data-label="Est. Gram">' + weight(p.gross_weight_g) + '</td>' +
-          '<td data-label="Total Pcs"><b>' + totalPcs.toLocaleString('en-PH') + '</b></td>' +
-          '<td data-label="Status"><span class="badge ' + (p.product_status === 'Active' ? 'ok' : 'low') + '">' + esc(p.product_status) + '</span></td>' +
           branches.map((b) => '<td data-label="' + esc(b.name) + '" style="text-align:center;">' + (qtyForSku[b.id] ?? '—') + '</td>').join('') +
         '</tr>';
     }
@@ -178,7 +157,7 @@ if (employee) {
 
     list.innerHTML = (filterBranchId != null ? '<p class="muted" style="margin:0 0 8px;">Showing only SKUs stocked at <b>' + esc((branches.find((b) => b.id === filterBranchId) || {}).name) + '</b> — click the column again to clear.</p>' : '') +
       countNotice + '<div class="table-scroll table-mini"><table><thead><tr style="white-space:nowrap;">' +
-      '<th>SKU</th><th>Product Name</th><th>Category</th><th>Sub SKU</th><th>Price</th><th>Est. Gram</th><th>Total Pcs</th><th>Status</th>' + branchThs +
+      '<th>SKU</th><th>Product Name</th>' + branchThs +
       '</tr></thead><tbody>' + rows.map(rowHtml).join('') + '</tbody></table></div>';
 
     list.querySelectorAll('[data-branch-filter]').forEach((th) => th.addEventListener('click', () => {

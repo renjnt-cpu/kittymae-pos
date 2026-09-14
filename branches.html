@@ -281,7 +281,7 @@ if (employee) {
       return '<div class="pos-item-row" style="border:1px solid #e5e5e5;border-radius:8px;padding:8px;margin-bottom:6px;">' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
           '<div class="field" style="flex:2;min-width:150px;position:relative;">' +
-            '<label>SKU *</label>' +
+            '<label>SKU or Product Name *</label>' +
             '<input type="text" class="pos-item-sku" autocomplete="off" placeholder="Type a SKU or item name…">' +
             '<div class="pos-item-sku-name muted" style="font-size:11px;"></div>' +
             '<div class="pos-item-sku-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 10px rgba(0,0,0,0.12);max-height:220px;overflow-y:auto;"></div>' +
@@ -301,8 +301,10 @@ if (employee) {
       function hide() { skuSuggest.style.display = 'none'; skuSuggest.innerHTML = ''; }
       function pick(p) {
         skuInput.value = p.sku;
-        skuNamePreview.textContent = p.item_name + (p.category || p.product_line ? ' · ' + (p.category || p.product_line) : '');
-        if (!priceInput.value && p.system_selling_price != null) priceInput.value = p.system_selling_price;
+        const priceFilled = !priceInput.value && p.system_selling_price != null;
+        if (priceFilled) priceInput.value = p.system_selling_price;
+        skuNamePreview.textContent = p.item_name + (p.category || p.product_line ? ' · ' + (p.category || p.product_line) : '') +
+          (p.system_selling_price != null ? ' · ' + money(p.system_selling_price) : '');
         hide();
         updatePosTotals();
       }
