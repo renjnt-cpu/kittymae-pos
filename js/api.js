@@ -949,7 +949,7 @@ export async function setAccessChecklistItem(employeeId, itemKey, checked, level
 
 export async function listLayaways(branchId) {
   let query = supabase.from('layaway_holds')
-    .select('*, branches(name), layaway_payments(*), layaway_forfeit_date_log(id, old_date, new_date, changed_at, employees(full_name))')
+    .select('*, branches(name), layaway_payments(*), layaway_forfeit_date_log(id, old_date, new_date, changed_at, employees(full_name)), layaway_hold_date_log(id, old_date, new_date, changed_at, employees(full_name))')
     .order('hold_date', { ascending: false })
     .order('id', { ascending: true }); // keeps items held together in one submission adjacent
   if (branchId != null) query = query.eq('branch_id', branchId);
@@ -998,6 +998,15 @@ export async function cancelLayaway(holdId, reason) {
  * always visible who last moved a forfeiture deadline and when. */
 export async function setLayawayForfeitDate(holdId, forfeitDate) {
   const { error } = await supabase.rpc('set_layaway_forfeit_date', { p_hold_id: holdId, p_forfeit_date: forfeitDate });
+  if (error) throw new Error(error.message);
+}
+
+/** Sets (or corrects) a layaway hold's Date Purchased -- only allowed while On Hold
+ * (99_layaway_hold_date_editable.sql). Every change is logged in
+ * layaway_hold_date_log (returned via listLayaways()'s embed), same as Forfeit Date,
+ * since this date also drives the default forfeiture computation. */
+export async function setLayawayHoldDate(holdId, holdDate) {
+  const { error } = await supabase.rpc('set_layaway_hold_date', { p_hold_id: holdId, p_hold_date: holdDate });
   if (error) throw new Error(error.message);
 }
 

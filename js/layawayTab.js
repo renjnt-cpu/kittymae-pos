@@ -7,7 +7,7 @@
 // (getBranchId()), so every row it ever shows is that one branch by construction.
 import {
   listLayaways, createLayawayHold, addLayawayPayment, completeLayaway, cancelLayaway, deleteLayawayPayment,
-  setLayawayForfeitDate, searchProducts, listActiveEmployees, subscribeToChanges,
+  setLayawayForfeitDate, setLayawayHoldDate, searchProducts, listActiveEmployees, subscribeToChanges,
 } from './api.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
@@ -561,8 +561,26 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         const canAct = canManage || employee.branch_id === h.branch_id || UNSCOPED_POSITIONS.includes(employee.position);
         const history = (h.layaway_forfeit_date_log || []).slice().sort((a, b) => new Date(a.changed_at) - new Date(b.changed_at));
         const lastEdit = history.length ? history[history.length - 1] : null;
+        const hdHistory = (h.layaway_hold_date_log || []).slice().sort((a, b) => new Date(a.changed_at) - new Date(b.changed_at));
+        const hdLastEdit = hdHistory.length ? hdHistory[hdHistory.length - 1] : null;
         return '<tr style="' + rowStyle + '">' +
-          '<td data-label="Date Purchased">' + fmtDate(h.hold_date) + '</td>' +
+          '<td data-label="Date Purchased">' +
+            (canAct
+              ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">' +
+                  '<input type="date" class="fw-hold-date-input" data-hold-id="' + h.id + '" value="' + h.hold_date + '" style="font-size:12px;padding:3px 5px;border:1px solid #ddd;border-radius:6px;">' +
+                  '<button type="button" class="btn small secondary fw-hold-date-save" data-hold-id="' + h.id + '" style="padding:2px 8px;">Save</button>' +
+                '</div>'
+              : fmtDate(h.hold_date)) +
+            (hdLastEdit
+              ? '<div class="muted" style="font-size:10px;margin-top:2px;">Edited by ' + esc(hdLastEdit.employees?.full_name || 'Unknown') + ' · ' + fmtDateTime(hdLastEdit.changed_at) + '</div>'
+              : '<div class="muted" style="font-size:10px;margin-top:2px;">Never edited</div>') +
+            (hdHistory.length
+              ? '<button type="button" class="btn small secondary fw-hold-date-history" data-hold-id="' + h.id + '" style="font-size:10px;padding:1px 6px;margin-top:2px;">History (' + hdHistory.length + ')</button>' +
+                '<div class="fw-hold-date-history-list" data-hold-id="' + h.id + '" style="display:none;font-size:10px;margin-top:4px;border-top:1px dashed #ddd;padding-top:4px;">' +
+                  hdHistory.map((l) => (l.old_date ? fmtDate(l.old_date) : '<span class="muted">—</span>') + ' → <strong>' + fmtDate(l.new_date) + '</strong> by ' + esc(l.employees?.full_name || 'Unknown') + ' · ' + fmtDateTime(l.changed_at)).join('<br>') +
+                '</div>'
+              : '') +
+          '</td>' +
           '<td data-label="Item">' + esc(h.sku) +
             (group ? ' <span class="badge pending" style="font-size:9px;padding:1px 5px;" title="Part of a ' + group.length + '-item hold">' + (groupIdx + 1) + '/' + group.length + '</span>' : '') +
             (h.stock_status === 'Lacking' ? ' <span class="badge low" title="Not physically in stock yet -- needs to be sourced before this can be completed">Lacking</span>' : '') +
@@ -615,11 +633,29 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       const div = box.querySelector('.fw-forfeit-history-list[data-hold-id="' + btn.dataset.holdId + '"]');
       div.style.display = div.style.display === 'none' ? '' : 'none';
     }));
+    box.querySelectorAll('.fw-hold-date-save').forEach((btn) => btn.addEventListener('click', async () => {
+      const holdId = Number(btn.dataset.holdId);
+      const input = box.querySelector('.fw-hold-date-input[data-hold-id="' + holdId + '"]');
+      if (!input.value) { notify('Pick a date first.', true); return; }
+      btn.disabled = true;
+      try {
+        await setLayawayHoldDate(holdId, input.value);
+        notify('Date Purchased updated.', false);
+        await load();
+      } catch (err) {
+        notify(String(err.message || err), true);
+        btn.disabled = false;
+      }
+    }));
+    box.querySelectorAll('.fw-hold-date-history').forEach((btn) => btn.addEventListener('click', () => {
+      const div = box.querySelector('.fw-hold-date-history-list[data-hold-id="' + btn.dataset.holdId + '"]');
+      div.style.display = div.style.display === 'none' ? '' : 'none';
+    }));
   }
 
   function tile(num, label) { return '<div class="tile"><div class="num">' + esc(num) + '</div><div class="lbl">' + esc(label) + '</div></div>'; }
 
-  const unsubscribe = subscribeToChanges(['layaway_holds', 'layaway_payments', 'layaway_forfeit_date_log'], load);
+  const unsubscribe = subscribeToChanges(['layaway_holds', 'layaway_payments', 'layaway_forfeit_date_log', 'layaway_hold_date_log'], load);
   await load();
 
   return { reload: load, unsubscribe };
