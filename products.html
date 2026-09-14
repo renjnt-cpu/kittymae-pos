@@ -13,8 +13,8 @@
 </main>
 
 <script type="module">
-import { initShell, toast, esc } from './js/shell.js';
-import { listProducts, updateProduct, getBranches, listAllInventoryQty, subscribeToChanges } from './js/api.js';
+import { initShell, esc } from './js/shell.js';
+import { listProducts, getBranches, listAllInventoryQty, subscribeToChanges } from './js/api.js';
 import { renderPosNav } from './js/posNav.js';
 import { branchColor } from './js/branchColors.js';
 
@@ -25,22 +25,17 @@ const employee = await initShell();
 if (employee) {
   renderPosNav(employee, 'products.html');
   const root = document.getElementById('products-root');
-  const canManage = ['Admin', 'Manager'].includes(employee.role);
-  // Branch Supervisor gets just the Edit button (correcting name/sub-sku/price/
-  // weight) -- Discontinue/Reactivate stays canManage-only since it's a more
-  // consequential, catalog-wide action. 94_products_supervisor_update.sql grants
-  // this at the RLS level too (a single UPDATE policy, so it can't be split
-  // column-by-column the way this UI split is).
-  const canEdit = canManage || employee.role === 'Branch Supervisor';
   const branches = await getBranches();
 
-  // New SKUs are added in the "SKU 2026" Google Sheet, not here -- this page only
-  // reflects that catalog (search/browse, plus correcting a detail already on file).
+  // View only here for every role -- editing a SKU (name/category/price/weight,
+  // adding a brand-new one) now happens only in the ERP's own SKU Catalog page, per
+  // Ren's request, so this page never renders an Edit/Discontinue/Add control at all.
   root.innerHTML =
     '<div class="card">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
         '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="f-search" placeholder="SKU, Sub SKU, or product name…"></div>' +
         '<div class="field"><label>Status</label><select id="f-status"><option value="all">All</option><option value="Active" selected>Active</option><option value="Discontinued">Discontinued</option></select></div>' +
+        '<div class="field"><label>Category</label><select id="f-category"><option value="all">All</option></select></div>' +
         '<div class="field"><label>Sort by Branch</label><select id="f-sort-branch"><option value="none">— none (SKU order) —</option>' +
           branches.map((b) => '<option value="' + b.id + '">' + esc(b.name) + '</option>').join('') +
         '</select></div>' +
@@ -60,6 +55,7 @@ if (employee) {
   let searchTimer = null;
   let realtimeTimer = null;
   await load();
+  document.getElementById('f-category').addEventListener('change', render);
   // Debounced: an edit or the Active/Discontinued toggle firing on one row shouldn't
   // matter much here, but this keeps the same safety pattern as movement.html in
   // case of another bulk import later. Inventory changes (a sale, a stock-in, a
@@ -79,6 +75,7 @@ if (employee) {
   document.getElementById('f-clear').addEventListener('click', () => {
     document.getElementById('f-search').value = '';
     document.getElementById('f-status').value = 'all';
+    document.getElementById('f-category').value = 'all';
     document.getElementById('f-sort-branch').value = 'none';
     document.getElementById('f-sort-dir').value = 'desc';
     filterBranchId = null;
@@ -109,6 +106,16 @@ if (employee) {
 
   function render() {
     let rows = allProducts; // already scoped to the current search + status at the query level
+
+    // Category options reflect whatever's currently loaded (search + status), same
+    // as every other filter here -- rebuilt on each render so a value that stops
+    // matching (e.g. after a search) drops out instead of pointing at nothing.
+    const categorySelect = document.getElementById('f-category');
+    const currentCategory = categorySelect.value || 'all';
+    const categories = [...new Set(allProducts.map((p) => p.category).filter(Boolean))].sort();
+    categorySelect.innerHTML = '<option value="all">All</option>' +
+      categories.map((c) => '<option value="' + esc(c) + '"' + (c === currentCategory ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
+    if (currentCategory !== 'all' && categories.includes(currentCategory)) rows = rows.filter((p) => p.category === currentCategory);
 
     // Click a branch column header to filter down to just the SKUs actually stocked
     // there (pcs > 0) -- click it again to clear. Applied before the tiles below so
@@ -146,28 +153,20 @@ if (employee) {
     }
     const countNotice = '<p class="muted" style="margin:0 0 8px;">' + rows.length.toLocaleString('en-PH') + ' SKU(s)</p>';
 
-    const colCount = 7 + branches.length;
-
     function rowHtml(p) {
       const qtyForSku = qtyBySku[p.sku] || {};
+      const totalPcs = Object.values(qtyForSku).reduce((s, q) => s + Number(q || 0), 0);
       return '<tr data-row-id="' + esc(p.sku) + '">' +
           '<td data-label="SKU"><b>' + esc(p.sku) + '</b></td>' +
           '<td data-label="Product Name">' + esc(p.item_name) + '</td>' +
+          '<td data-label="Category">' + esc(p.category || '—') + '</td>' +
           '<td data-label="Sub SKU">' + esc(p.sub_sku || '—') + '</td>' +
           '<td data-label="Price">' + money(p.system_selling_price) + '</td>' +
           '<td data-label="Est. Gram">' + weight(p.gross_weight_g) + '</td>' +
+          '<td data-label="Total Pcs"><b>' + totalPcs.toLocaleString('en-PH') + '</b></td>' +
           '<td data-label="Status"><span class="badge ' + (p.product_status === 'Active' ? 'ok' : 'low') + '">' + esc(p.product_status) + '</span></td>' +
           branches.map((b) => '<td data-label="' + esc(b.name) + '" style="text-align:center;">' + (qtyForSku[b.id] ?? '—') + '</td>').join('') +
-          '<td data-label="Actions" style="white-space:nowrap;">' +
-            (canEdit ? '<button class="btn small secondary" data-sku="' + esc(p.sku) + '" data-act="edit">Edit</button> ' : '') +
-            (canManage
-              ? (p.product_status === 'Active'
-                  ? '<button class="btn small secondary" data-sku="' + esc(p.sku) + '" data-act="discontinue">Discontinue</button>'
-                  : '<button class="btn small secondary" data-sku="' + esc(p.sku) + '" data-act="reactivate">Reactivate</button>')
-              : '') +
-          '</td>' +
-        '</tr>' +
-        '<tr class="edit-row" data-edit-for="' + esc(p.sku) + '" style="display:none;"><td colspan="' + colCount + '"></td></tr>';
+        '</tr>';
     }
 
     const branchThs = branches.map((b) => {
@@ -179,7 +178,7 @@ if (employee) {
 
     list.innerHTML = (filterBranchId != null ? '<p class="muted" style="margin:0 0 8px;">Showing only SKUs stocked at <b>' + esc((branches.find((b) => b.id === filterBranchId) || {}).name) + '</b> — click the column again to clear.</p>' : '') +
       countNotice + '<div class="table-scroll table-mini"><table><thead><tr style="white-space:nowrap;">' +
-      '<th>SKU</th><th>Product Name</th><th>Sub SKU</th><th>Price</th><th>Est. Gram</th><th>Status</th>' + branchThs + '<th></th>' +
+      '<th>SKU</th><th>Product Name</th><th>Category</th><th>Sub SKU</th><th>Price</th><th>Est. Gram</th><th>Total Pcs</th><th>Status</th>' + branchThs +
       '</tr></thead><tbody>' + rows.map(rowHtml).join('') + '</tbody></table></div>';
 
     list.querySelectorAll('[data-branch-filter]').forEach((th) => th.addEventListener('click', () => {
@@ -187,60 +186,6 @@ if (employee) {
       filterBranchId = filterBranchId === id ? null : id;
       render();
     }));
-
-    if (!canEdit) return;
-
-    list.querySelectorAll('[data-act="edit"]').forEach((btn) => btn.addEventListener('click', () => openEdit(btn.dataset.sku, rows)));
-
-    if (!canManage) return;
-
-    list.querySelectorAll('[data-act="discontinue"]').forEach((btn) => btn.addEventListener('click', async () => {
-      if (!confirm('Mark ' + btn.dataset.sku + ' as Discontinued? It stays visible in history, just hidden from the default Active view.')) return;
-      try { await updateProduct(btn.dataset.sku, { productStatus: 'Discontinued' }); toast('prod-msg', 'SKU discontinued.', false); await load(); }
-      catch (err) { toast('prod-msg', String(err.message || err), true); }
-    }));
-
-    list.querySelectorAll('[data-act="reactivate"]').forEach((btn) => btn.addEventListener('click', async () => {
-      try { await updateProduct(btn.dataset.sku, { productStatus: 'Active' }); toast('prod-msg', 'SKU reactivated.', false); await load(); }
-      catch (err) { toast('prod-msg', String(err.message || err), true); }
-    }));
-  }
-
-  /** Opens an inline edit form pre-filled with the SKU's current values, same pattern
-   * as Bills' edit-in-place row. SKU itself is never editable — it's the primary key
-   * every other table (inventory, ledger, transfers) references by. */
-  function openEdit(sku, rows) {
-    const p = rows.find((r) => r.sku === sku);
-    const cell = document.querySelector('tr[data-edit-for="' + sku + '"]');
-    const isOpen = cell.style.display !== 'none';
-    document.querySelectorAll('.edit-row').forEach((r) => { r.style.display = 'none'; r.querySelector('td').innerHTML = ''; });
-    if (isOpen) return;
-    cell.style.display = '';
-    cell.querySelector('td').innerHTML =
-      '<form class="edit-form" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-        '<div class="field"><label>Product Name</label><input type="text" name="itemName" value="' + esc(p.item_name) + '" required></div>' +
-        '<div class="field"><label>Sub SKU</label><input type="text" name="subSku" value="' + esc(p.sub_sku || '') + '"></div>' +
-        '<div class="field"><label>Price (PHP)</label><input type="number" name="price" step="0.01" min="0" value="' + (p.system_selling_price ?? '') + '"></div>' +
-        '<div class="field"><label>Est. Gram</label><input type="number" name="grossWeightG" step="0.001" min="0" value="' + (p.gross_weight_g ?? '') + '"></div>' +
-        '<button class="btn small" type="submit">Save</button> ' +
-        '<button class="btn small secondary" type="button" data-cancel="1">Cancel</button>' +
-      '</form>';
-    const form = cell.querySelector('.edit-form');
-    form.querySelector('[data-cancel]').addEventListener('click', () => { cell.style.display = 'none'; form.remove(); });
-    form.addEventListener('submit', async (ev) => {
-      ev.preventDefault();
-      const f = ev.target;
-      try {
-        await updateProduct(sku, {
-          itemName: f.itemName.value.trim(), subSku: f.subSku.value.trim(),
-          price: f.price.value, grossWeightG: f.grossWeightG.value,
-        });
-        toast('prod-msg', 'SKU updated.', false);
-        await load();
-      } catch (err) {
-        toast('prod-msg', String(err.message || err), true);
-      }
-    });
   }
 
   function tile(num, label) { return '<div class="tile"><div class="num">' + num + '</div><div class="lbl">' + esc(label) + '</div></div>'; }
