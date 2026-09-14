@@ -37,7 +37,7 @@ const GOLD_KARATS = ['24K', '22K', '21K', '18K', '16K', '14K', '10K', 'Other'];
 const SILVER_KARATS = ['999', '925', 'Other'];
 const karatOptionsFor = (metal) => (metal === 'Silver' ? SILVER_KARATS : GOLD_KARATS).map((k) => '<option>' + k + '</option>').join('');
 
-const PAYMENT_METHODS = ['Cash', 'Store Sales Cash', 'GCash', 'Bank Transfer', 'Other'];
+const PAYMENT_METHODS = ['Cash', 'Terminal', 'Store Sales Cash', 'GCash', 'Bank Transfer', 'Other'];
 // 3 fixed slots instead of a dynamic add/remove list -- covers any real split (rarely
 // more than 2 methods on one transaction) without the complexity of managing rows
 // inside innerHTML-rendered forms. Slots left blank/zero are just ignored on submit.
