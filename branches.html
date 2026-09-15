@@ -44,6 +44,7 @@ const PAYMENT_METHODS = ['Cash', 'Terminal', 'Store Sales Cash', 'GCash', 'Bank 
 function paymentSlotsHtml(prefix, existing, opts) {
   const label0 = (opts && opts.label0) || 'Payment Method';
   const requireFirst = !(opts && opts.optional);
+  const withReference = opts && opts.withReference;
   const rows = existing && existing.length ? existing : [];
   let html = '';
   for (let i = 0; i < 3; i++) {
@@ -56,7 +57,8 @@ function paymentSlotsHtml(prefix, existing, opts) {
         (!isRequired ? '<option value="">— none —</option>' : '') +
         PAYMENT_METHODS.map((m) => '<option' + (row.method === m ? ' selected' : '') + '>' + m + '</option>').join('') +
       '</select></div>' +
-      '<div class="field"><label>' + amtLabel + '</label><input type="number" name="' + prefix + 'Amount' + i + '" step="0.01" min="0"' + (isRequired ? ' required' : '') + (row.amount ? ' value="' + row.amount + '"' : '') + '></div>';
+      '<div class="field"><label>' + amtLabel + '</label><input type="number" name="' + prefix + 'Amount' + i + '" step="0.01" min="0"' + (isRequired ? ' required' : '') + (row.amount ? ' value="' + row.amount + '"' : '') + '></div>' +
+      (withReference ? '<div class="field"><label>Reference Number</label><input type="text" name="' + prefix + 'Reference' + i + '"' + (row.reference ? ' value="' + row.reference + '"' : '') + '></div>' : '');
   }
   return html;
 }
@@ -65,7 +67,8 @@ function readPaymentSlots(f, prefix) {
   for (let i = 0; i < 3; i++) {
     const method = f[prefix + 'Method' + i]?.value;
     const amount = Number(f[prefix + 'Amount' + i]?.value || 0);
-    if (method && amount > 0) payments.push({ method, amount });
+    const reference = f[prefix + 'Reference' + i]?.value?.trim() || '';
+    if (method && amount > 0) payments.push({ method, amount, reference });
   }
   return payments;
 }
@@ -150,7 +153,7 @@ if (employee) {
               '<div class="field"><label>Date</label><input type="date" name="saleDate"></div>' +
               '<div class="field"><label>Customer Name</label><input type="text" name="customerName"></div>' +
               '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
-              paymentSlotsHtml('pos', [], { label0: 'Payment Method', optional: true }) +
+              paymentSlotsHtml('pos', [], { label0: 'Payment Method', optional: true, withReference: true }) +
               '<div class="card" style="background:#f7f5f0;margin:6px 0;padding:10px 14px;">' +
                 '<div style="display:flex;justify-content:space-between;font-size:13px;"><span>Subtotal</span><b id="pos-subtotal">₱0.00</b></div>' +
                 '<div style="display:flex;justify-content:space-between;font-size:13px;"><span>Paid</span><b id="pos-paid">₱0.00</b></div>' +
