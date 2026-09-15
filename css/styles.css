@@ -121,3 +121,38 @@ button.btn.small { padding:4px 10px; font-size:12px; }
   .table-2col td { border-bottom:1px solid #f5f5f5; }
   .table-2col td.full-row { grid-column:1 / -1; }
 }
+
+/* ---- App Shell (P0) -- sidebar + header + independently-scrolling main
+   workspace, replacing the old flat top header+nav. shell.js/posNav.js build
+   the .app-shell markup around each page's existing <main> at runtime; nothing
+   else about a page's own content/classes changes. ---- */
+.app-shell { display:flex; height:100dvh; overflow:hidden; }
+
+.app-sidebar { flex:0 0 280px; background:#fff; border-right:1px solid #eee; display:flex; flex-direction:column; overflow-y:auto; }
+.app-sidebar-brand { padding:16px 20px; font-size:16px; font-weight:bold; border-bottom:1px solid #eee; }
+.app-nav { padding:10px 12px; display:flex; flex-direction:column; gap:2px; }
+.app-nav-group { margin-bottom:10px; }
+.app-nav-group-label { font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted); padding:8px 10px 4px; }
+.app-nav a { display:block; padding:9px 12px; border-radius:8px; color:var(--ink); text-decoration:none; font-size:13.5px; }
+.app-nav a:hover { background:var(--rose-bg); }
+.app-nav a.active { background:var(--rose); font-weight:600; }
+
+.app-main-col { flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column; }
+.app-header { background:var(--rose); color:var(--ink); padding:12px 20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.app-page-title { font-size:17px; margin:0; flex:1 1 auto; }
+.app-menu-btn { display:none; background:none; border:none; font-size:20px; line-height:1; cursor:pointer; padding:2px 6px; color:var(--ink); }
+.app-backdrop { display:none; }
+
+/* The page's own <main> keeps its existing padding/max-width rule (defined
+   above) -- this just makes it the scrolling flex child of .app-main-col. */
+main { flex:1 1 auto; min-height:0; overflow-y:auto; }
+
+@media (max-width:1023px) {
+  .app-menu-btn { display:inline-block; }
+  .app-sidebar {
+    position:fixed; top:0; left:0; bottom:0; z-index:40; width:280px;
+    transform:translateX(-100%); transition:transform 0.2s ease; box-shadow:0 4px 10px rgba(0,0,0,0.12);
+  }
+  .app-shell.sidebar-open .app-sidebar { transform:translateX(0); }
+  .app-shell.sidebar-open .app-backdrop { display:block; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:30; }
+}

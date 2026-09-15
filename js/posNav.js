@@ -13,24 +13,43 @@ export function renderPosNav(employee, activeHref) {
     { href: 'movement.html', label: 'Record Movement' },
     { href: 'capital.html', label: 'Branch Capital' },
   ];
+  const active = links.find((l) => l.href === activeHref);
 
-  const header = document.createElement('header');
-  header.innerHTML = '<h1>💍 Kittymae POS</h1>' +
-    '<div class="who">' +
-      '<span id="pos-nav-who"></span>' +
+  // Same app-shell markup/behavior as the ERP's shell.js (App Shell, P0) --
+  // just a flat link list instead of grouped sections, since 5 items don't
+  // benefit from grouping.
+  const shell = document.createElement('div');
+  shell.className = 'app-shell';
+  shell.innerHTML =
+    '<div class="app-backdrop" id="app-backdrop"></div>' +
+    '<aside class="app-sidebar" id="app-sidebar">' +
+      '<div class="app-sidebar-brand">💍 Kittymae POS</div>' +
+      '<nav class="app-nav">' +
+        '<div class="app-nav-group">' +
+          links.map((l) => '<a href="' + l.href + '"' + (l.href === activeHref ? ' class="active"' : '') + '>' + l.label + '</a>').join('') +
+        '</div>' +
+      '</nav>' +
+    '</aside>' +
+    '<div class="app-main-col">' +
+      '<header class="app-header">' +
+        '<button type="button" class="app-menu-btn" id="app-menu-btn" aria-label="Open menu">☰</button>' +
+        '<h1 class="app-page-title">' + esc(active ? active.label : 'Kittymae POS') + '</h1>' +
+        '<div class="who" id="pos-nav-who"></div>' +
+      '</header>' +
     '</div>';
 
-  const nav = document.createElement('nav');
-  nav.innerHTML = links.map((l) =>
-    '<a href="' + l.href + '"' + (l.href === activeHref ? ' class="active"' : '') + '>' + l.label + '</a>'
-  ).join('');
-
-  document.body.prepend(nav);
-  document.body.prepend(header);
+  const existingMain = document.querySelector('main');
+  shell.querySelector('.app-main-col').appendChild(existingMain);
+  document.body.prepend(shell);
 
   document.getElementById('pos-nav-who').innerHTML =
     '<a class="btn small secondary" href="https://renjnt-cpu.github.io/kittymae-inventory-system/dashboard.html">Switch to ERP ↗</a> ' +
     esc(employee.full_name) + ' · ' + esc(employee.role) +
     ' <button class="btn small secondary" id="pos-nav-signout">Sign out</button>';
   document.getElementById('pos-nav-signout').addEventListener('click', signOut);
+
+  const closeDrawer = () => shell.classList.remove('sidebar-open');
+  shell.querySelector('#app-menu-btn').addEventListener('click', () => shell.classList.toggle('sidebar-open'));
+  shell.querySelector('#app-backdrop').addEventListener('click', closeDrawer);
+  shell.querySelectorAll('.app-nav a').forEach((a) => a.addEventListener('click', closeDrawer));
 }
