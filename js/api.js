@@ -87,7 +87,7 @@ export async function getInventory(branchId) {
 export async function searchProducts(query, branchId) {
   const term = sanitizeForOrFilter(query || '');
   const pat = '%' + term + '%';
-  let cols = 'sku, sub_sku, item_name, category, product_line, system_selling_price, gross_weight_g, product_status';
+  let cols = 'sku, sub_sku, item_name, category, product_line, metal_purity, system_selling_price, gross_weight_g, product_status';
   if (branchId) cols += ', inventory(qty_available)';
   let q = supabase
     .from('products')
