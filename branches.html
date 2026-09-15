@@ -147,6 +147,7 @@ if (employee) {
               '<div id="pos-items"></div>' +
               '<button type="button" class="btn small secondary" id="pos-add-item" style="align-self:flex-start;margin:-4px 0 10px;">+ Add another item</button>' +
               '<div class="field"><label>Order / Reference No.</label><input type="text" name="orderId"></div>' +
+              '<div class="field"><label>Date</label><input type="date" name="saleDate"></div>' +
               '<div class="field"><label>Customer Name</label><input type="text" name="customerName"></div>' +
               '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
               paymentSlotsHtml('pos', [], { label0: 'Payment Method', optional: true }) +
@@ -373,6 +374,7 @@ if (employee) {
     }
 
     const posForm = document.getElementById('pos-form');
+    posForm.saleDate.value = new Date().toISOString().slice(0, 10);
     function updatePosTotals() {
       const items = readPosItemRows();
       const subtotal = items.reduce((s, it) => s + (it.unitPrice || 0) * (it.qty || 0), 0);
@@ -402,10 +404,11 @@ if (employee) {
         await createPosSale({
           branchId: selectedBranch, items,
           customerName: f.customerName.value.trim(), contactNumber: f.contactNumber.value.trim(),
-          orderNumber: f.orderId.value.trim(), payments,
+          orderNumber: f.orderId.value.trim(), payments, saleDate: f.saleDate.value || null,
         });
         toast('br-msg', 'Sale completed — ' + items.length + ' item(s), ' + money(items.reduce((s, it) => s + (it.unitPrice || 0) * it.qty, 0)) + '.', false);
         f.reset();
+        posForm.saleDate.value = new Date().toISOString().slice(0, 10);
         resetPosItemRows();
         updatePosTotals();
         await loadPos();
