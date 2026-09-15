@@ -113,17 +113,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         '</div>' +
       '</div>' +
       '<div class="layout-2col-main">' +
-        '<div class="tiles" id="lw-tiles"></div>' +
-        '<div class="card">' +
-          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-            '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="lw-f-search" placeholder="SKU, customer, order ID, contact…"></div>' +
-            '<div class="field"><label>Status</label><select id="lw-f-status"><option value="all">All Statuses</option><option>On Hold</option><option>Completed</option><option>Cancelled</option></select></div>' +
-            '<button type="button" class="btn small secondary" id="lw-f-clear">Clear Filters</button>' +
-          '</div>' +
-        '</div>' +
-        '<div id="lw-list"><div class="muted">Loading…</div></div>' +
-
-        '<h2 style="margin-top:30px;">Monthly Monitoring</h2>' +
+        '<h2>Monthly Monitoring</h2>' +
         '<div class="card">' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
             '<div class="field"><label>From</label><input type="date" id="mm-from"></div>' +
@@ -133,6 +123,17 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         '</div>' +
         '<div class="tiles" id="mm-tiles"></div>' +
         '<div id="mm-table"></div>' +
+
+        '<h2 style="margin-top:30px;">On Hold</h2>' +
+        '<div class="tiles" id="lw-tiles"></div>' +
+        '<div class="card">' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+            '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="lw-f-search" placeholder="SKU, customer, order ID, contact…"></div>' +
+            '<div class="field"><label>Status</label><select id="lw-f-status"><option value="all">All Statuses</option><option>On Hold</option><option>Completed</option><option>Cancelled</option></select></div>' +
+            '<button type="button" class="btn small secondary" id="lw-f-clear">Clear Filters</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="lw-list"><div class="muted">Loading…</div></div>' +
 
         '<h3 style="margin-top:22px;">Forfeiture Watch <span class="muted" style="font-weight:normal;">— On Hold items, oldest first (not affected by the date range above)</span></h3>' +
         '<p class="muted" style="margin-top:-4px;">Unpaid holds are forfeited 2 months after Date Purchased. Rows turn red once an item is close to or past that.</p>' +
