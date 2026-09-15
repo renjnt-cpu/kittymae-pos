@@ -280,7 +280,7 @@ export async function listTransfers() {
     .order('created_at', { ascending: false })
     .limit(200);
   if (error) throw new Error(error.message);
-  return data;
+  return attachEmployeeNames(data, { requester: 'requested_by', approver: 'approved_by' });
 }
 
 /** items: [{ sku, qty }] */
