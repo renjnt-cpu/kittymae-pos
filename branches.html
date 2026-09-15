@@ -15,7 +15,7 @@
 <script type="module">
 import { initShell, toast, esc } from './js/shell.js';
 import {
-  getBranches, searchProducts,
+  getBranches, searchProducts, listActiveEmployees,
   createPosSale, listSales, listSalePayments,
   listSubastaItems, createSubastaItem, updateSubastaItem, deleteSubastaItem,
   listScrapEntries, getScrapCashBalances, createScrapEntry, deleteScrapEntry, uploadScrapAttachment, getScrapAttachmentUrl,
@@ -87,6 +87,10 @@ if (employee) {
     const branchOptions = (selected) => branches.map((b) =>
       '<option value="' + b.id + '"' + (b.id === selected ? ' selected' : '') + '>' + esc(b.name) + '</option>'
     ).join('');
+    // For the "Sales by Admin & Payment Method" pivot below -- sales_inventory_movements
+    // only carries employee_id, so this resolves it to a display name the same way
+    // every other admin-attributed list in this app does (get_employee_names()).
+    const employeeNameById = Object.fromEntries((await listActiveEmployees()).map((e) => [e.id, e.full_name]));
     // Branches are the primary lens here — always exactly one selected, no combined
     // "All Branches" view. Branch Supervisor is locked to their own; everyone else
     // starts on the first branch in the list.
@@ -139,6 +143,8 @@ if (employee) {
 
       '<div id="tab-panel-pos">' +
       '<h2>POS (Walk-In) <span class="muted" id="pos-branch-label" style="font-weight:normal;"></span></h2>' +
+      '<h3 style="margin-top:0;">Sales by Admin &amp; Payment Method <span class="muted" style="font-weight:normal;font-size:12px;">— reflects the From/To date range below, all admins for this branch</span></h3>' +
+      '<div id="pos-by-admin" style="margin-bottom:20px;"><div class="muted">Loading…</div></div>' +
       '<div class="layout-2col">' +
         '<div class="layout-2col-side">' +
           '<div class="card">' +
@@ -457,6 +463,50 @@ if (employee) {
       return order.map((gid) => ({ groupId: gid, items: byGroup[gid] }));
     }
 
+    // Pivot: rows = who processed the sale, columns = payment method, cell = sum of
+    // amounts actually paid that way (sale_payments.amount -- not the item subtotal,
+    // since a sale can split across methods) -- same shape as the "SUM of TOTAL by
+    // ADMIN x STATUS" pivot Ren already tracks in the old spreadsheet.
+    function renderPosByAdminPayment(rows) {
+      const box = document.getElementById('pos-by-admin');
+      const groups = groupPosSales(rows);
+      const totalsByAdmin = {}; // employeeId -> { [method]: sum }
+      const methodsSeen = [];
+      groups.forEach((g) => {
+        const empId = g.items[0].employee_id;
+        const bucket = totalsByAdmin[empId] || (totalsByAdmin[empId] = {});
+        (posPaymentsByGroup[g.groupId] || []).forEach((p) => {
+          if (!methodsSeen.includes(p.payment_method)) methodsSeen.push(p.payment_method);
+          bucket[p.payment_method] = (bucket[p.payment_method] || 0) + Number(p.amount);
+        });
+      });
+      const methods = PAYMENT_METHODS.filter((m) => methodsSeen.includes(m)).concat(methodsSeen.filter((m) => !PAYMENT_METHODS.includes(m)));
+      const adminIds = Object.keys(totalsByAdmin).sort((a, b) => (employeeNameById[a] || '').localeCompare(employeeNameById[b] || ''));
+
+      if (!adminIds.length) { box.innerHTML = '<p class="muted">No walk-in sales for this filter.</p>'; return; }
+
+      const colTotals = Object.fromEntries(methods.map((m) => [m, 0]));
+      let grandTotal = 0;
+
+      box.innerHTML = '<div class="table-scroll"><table><thead><tr><th>Admin</th>' +
+        methods.map((m) => '<th>' + esc(m) + '</th>').join('') + '<th>Grand Total</th></tr></thead><tbody>' +
+        adminIds.map((empId) => {
+          const bucket = totalsByAdmin[empId];
+          let rowTotal = 0;
+          const cells = methods.map((m) => {
+            const amt = bucket[m] || 0;
+            colTotals[m] += amt;
+            rowTotal += amt;
+            return '<td data-label="' + esc(m) + '">' + (amt ? money(amt) : '—') + '</td>';
+          }).join('');
+          grandTotal += rowTotal;
+          return '<tr><td data-label="Admin"><b>' + esc(employeeNameById[empId] || 'Unknown') + '</b></td>' + cells + '<td data-label="Grand Total"><b>' + money(rowTotal) + '</b></td></tr>';
+        }).join('') +
+        '</tbody><tfoot><tr><td data-label="Admin"><b>Grand Total</b></td>' +
+        methods.map((m) => '<td data-label="' + esc(m) + '"><b>' + money(colTotals[m]) + '</b></td>').join('') +
+        '<td data-label="Grand Total"><b>' + money(grandTotal) + '</b></td></tr></tfoot></table></div>';
+    }
+
     function renderPos() {
       renderScrapSubTabs();
       const fSearch = document.getElementById('pos-f-search').value.trim().toLowerCase();
@@ -466,6 +516,8 @@ if (employee) {
       let rows = allPosSales;
       if (fFrom) rows = rows.filter((r) => r.sale_date >= fFrom);
       if (fTo) rows = rows.filter((r) => r.sale_date <= fTo + 'T23:59:59');
+
+      renderPosByAdminPayment(rows); // date-filtered only -- not narrowed by the free-text search below
 
       let groups = groupPosSales(rows);
       if (fSearch) groups = groups.filter((g) => g.items.some((r) =>
