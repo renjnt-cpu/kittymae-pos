@@ -143,8 +143,13 @@ button.btn.small { padding:4px 10px; font-size:12px; }
 .app-backdrop { display:none; }
 
 /* The page's own <main> keeps its existing padding/max-width rule (defined
-   above) -- this just makes it the scrolling flex child of .app-main-col. */
-main { flex:1 1 auto; min-height:0; overflow-y:auto; }
+   above) -- this just makes it the scrolling flex child of .app-main-col.
+   width:100% is required here: main's own margin:0 auto is a *cross-axis*
+   auto-margin inside this column flex container, which per spec overrides
+   align-items:stretch and shrink-wraps main to its content instead of filling
+   the available width -- explicit width:100% (capped by the existing
+   max-width:1400px on very wide screens) sidesteps that entirely. */
+main { flex:1 1 auto; min-height:0; overflow-y:auto; width:100%; }
 
 @media (max-width:1023px) {
   .app-menu-btn { display:inline-block; }
