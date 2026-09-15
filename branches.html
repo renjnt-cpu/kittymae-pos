@@ -384,20 +384,22 @@ if (employee) {
       fab.innerHTML = '<span>Order</span><span>' + items + ' item' + (items === 1 ? '' : 's') + ' · ' + money(total) + '</span>';
     }
 
+    async function runPosCatalogSearch() {
+      const q = posCatalogQuery.trim();
+      if (!q) { posCatalogResults = []; renderPosCatalogGrid(); return; }
+      const token = ++posCatalogSearchToken;
+      try {
+        const results = await searchProducts(q, selectedBranch);
+        if (token !== posCatalogSearchToken) return;
+        posCatalogResults = results;
+        renderPosCatalogGrid();
+      } catch (err) { /* a failed lookup shouldn't block the rest of the page */ }
+    }
     document.getElementById('pos-cat-search').addEventListener('input', (ev) => {
       posCatalogQuery = ev.target.value;
       clearTimeout(posCatalogSearchTimer);
-      const q = posCatalogQuery.trim();
-      if (!q) { posCatalogResults = []; renderPosCatalogGrid(); return; }
-      posCatalogSearchTimer = setTimeout(async () => {
-        const token = ++posCatalogSearchToken;
-        try {
-          const results = await searchProducts(q, selectedBranch);
-          if (token !== posCatalogSearchToken) return;
-          posCatalogResults = results;
-          renderPosCatalogGrid();
-        } catch (err) { /* a failed lookup shouldn't block the rest of the page */ }
-      }, 200);
+      if (!posCatalogQuery.trim()) { posCatalogResults = []; renderPosCatalogGrid(); return; }
+      posCatalogSearchTimer = setTimeout(runPosCatalogSearch, 200);
     });
     document.getElementById('pos-cat-line').addEventListener('change', (ev) => { posCatalogLine = ev.target.value; renderPosCatalogGrid(); });
     document.getElementById('pos-cat-purity').addEventListener('change', (ev) => { posCatalogPurity = ev.target.value; renderPosCatalogGrid(); });
@@ -777,7 +779,7 @@ if (employee) {
       box.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', async () => {
         selectedBranch = Number(btn.dataset.id);
         renderBranchButtons();
-        await Promise.all([loadPos(), loadSubasta(), loadScrap(), onlineOrders?.reload(), layaway?.reload()]);
+        await Promise.all([loadPos(), loadSubasta(), loadScrap(), onlineOrders?.reload(), layaway?.reload(), runPosCatalogSearch()]);
       }));
       const label = ' — ' + branchName(selectedBranch);
       document.getElementById('pos-branch-label').textContent = label;
