@@ -10,12 +10,12 @@ import {
   setLayawayForfeitDate, setLayawayHoldDate, uploadLayawayPaymentProof, getLayawayPaymentProofUrl,
   searchProducts, listActiveEmployees, subscribeToChanges,
 } from './api.js';
+import { PAYMENT_METHODS } from './paymentMethods.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-PH', { dateStyle: 'medium' }) : '—';
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 const STATUS_BADGE = { 'On Hold': 'pending', 'Completed': 'ok', 'Cancelled': 'low' };
-const PAYMENT_METHODS = ['Cash', 'Terminal', 'GCash', 'Bank Transfer', 'Other'];
 // A layaway with no activity forfeits 2 months (~60 days) after Date Purchased
 // (hold_date) by default -- staff can override this per-hold with an explicit Forfeit
 // Date (99_layaway_forfeit_date.sql). WARN_LEAD_DAYS gives a 2-week heads-up before

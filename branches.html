@@ -25,6 +25,7 @@ import { renderPosNav } from './js/posNav.js';
 import { branchButtonStyle } from './js/branchColors.js';
 import { initOnlineOrdersTab } from './js/onlineOrdersTab.js';
 import { initLayawayTab } from './js/layawayTab.js';
+import { PAYMENT_METHODS } from './js/paymentMethods.js';
 
 const SUB_STATUS_BADGE = { Pending: 'pending', Listed: 'transit', Sold: 'ok', Cancelled: 'low' };
 const SUB_STATUSES = ['Pending', 'Listed', 'Sold', 'Cancelled'];
@@ -37,7 +38,11 @@ const GOLD_KARATS = ['24K', '22K', '21K', '18K', '16K', '14K', '10K', 'Other'];
 const SILVER_KARATS = ['999', '925', 'Other'];
 const karatOptionsFor = (metal) => (metal === 'Silver' ? SILVER_KARATS : GOLD_KARATS).map((k) => '<option>' + k + '</option>').join('');
 
-const PAYMENT_METHODS = ['Cash', 'Terminal', 'Store Sales Cash', 'GCash', 'Bank Transfer', 'Other'];
+// POS product-grid filters -- same CHECK-constrained values as products.product_line/
+// metal_purity (02_products_inventory.sql), not a separate free-text list.
+const POS_PRODUCT_LINES = ['18K Saudi Gold', '18K Coated', 'Moissanite', 'Silver 925/999', 'Stainless/Fashion'];
+const POS_METAL_PURITIES = ['24K', '21K', '18K', '925', '999', 'N/A'];
+
 // 3 fixed slots instead of a dynamic add/remove list -- covers any real split (rarely
 // more than 2 methods on one transaction) without the complexity of managing rows
 // inside innerHTML-rendered forms. Slots left blank/zero are just ignored on submit.
@@ -145,16 +150,31 @@ if (employee) {
       '<h2>POS (Walk-In) <span class="muted" id="pos-branch-label" style="font-weight:normal;"></span></h2>' +
       '<h3 style="margin-top:0;">Sales by Admin &amp; Payment Method <span class="muted" style="font-weight:normal;font-size:12px;">— reflects the From/To date range below, all admins for this branch</span></h3>' +
       '<div id="pos-by-admin" style="margin-bottom:20px;"><div class="muted">Loading…</div></div>' +
-      '<div class="layout-2col">' +
-        '<div class="layout-2col-side">' +
+
+      '<div class="pos-layout">' +
+        '<div class="pos-catalog">' +
+          '<div class="pos-toolbar">' +
+            '<div class="field" style="flex:1;min-width:180px;"><label>Search Products</label><input type="text" id="pos-cat-search" autocomplete="off" placeholder="SKU or item name…"></div>' +
+            '<div class="field"><label>Product Line</label><select id="pos-cat-line"><option value="">All</option>' + POS_PRODUCT_LINES.map((l) => '<option>' + l + '</option>').join('') + '</select></div>' +
+            '<button type="button" class="btn small secondary" id="pos-cat-more-toggle">More filters</button>' +
+          '</div>' +
+          '<div class="pos-toolbar-more" id="pos-cat-more" style="display:none;">' +
+            '<div class="field"><label>Purity</label><select id="pos-cat-purity"><option value="">All</option>' + POS_METAL_PURITIES.map((p) => '<option>' + p + '</option>').join('') + '</select></div>' +
+            '<label class="pos-check"><input type="checkbox" id="pos-cat-instock"> In stock at this branch</label>' +
+          '</div>' +
+          '<div id="pos-cat-grid" class="pos-grid"><p class="muted">Search a SKU or item name to start.</p></div>' +
+        '</div>' +
+        '<div class="pos-order" id="pos-order-panel">' +
           '<div class="card">' +
-            '<h3>New Sale</h3>' +
-            '<p class="muted" style="margin-top:-4px;">For a walk-in customer paying on the spot — add every item they\'re buying, take payment, then Complete Sale. Stock is deducted immediately.</p>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+              '<h3 style="margin:0;">New Sale</h3>' +
+              '<button type="button" class="btn small secondary pos-order-close" id="pos-order-close">✕ Close</button>' +
+            '</div>' +
+            '<p class="muted" style="margin-top:4px;">Tap a product on the left to add it. Stock is deducted immediately on Complete Sale.</p>' +
             '<div id="pos-write-note"></div>' +
             '<form id="pos-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
               '<label style="font-size:13px;font-weight:600;">Items *</label>' +
-              '<div id="pos-items"></div>' +
-              '<button type="button" class="btn small secondary" id="pos-add-item" style="align-self:flex-start;margin:-4px 0 10px;">+ Add another item</button>' +
+              '<div id="pos-cart-lines"><p class="muted" style="font-size:12px;">No items yet — tap a product to add it.</p></div>' +
               '<div class="field"><label>Order / Reference No.</label><input type="text" name="orderId"></div>' +
               '<div class="field"><label>Date</label><input type="date" name="saleDate"></div>' +
               '<div class="field"><label>Customer Name</label><input type="text" name="customerName"></div>' +
@@ -169,19 +189,19 @@ if (employee) {
             '</form>' +
           '</div>' +
         '</div>' +
-        '<div class="layout-2col-main">' +
-          '<div class="tiles" id="pos-tiles"></div>' +
-          '<div class="card">' +
-            '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-              '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="pos-f-search" placeholder="SKU, item, customer, order…"></div>' +
-              '<div class="field"><label>From</label><input type="date" id="pos-f-from"></div>' +
-              '<div class="field"><label>To</label><input type="date" id="pos-f-to"></div>' +
-              '<button type="button" class="btn small secondary" id="pos-f-clear">Clear Filters</button>' +
-            '</div>' +
-          '</div>' +
-          '<div id="pos-list"><div class="muted">Loading…</div></div>' +
+        '<button type="button" class="pos-order-fab" id="pos-order-fab"></button>' +
+      '</div>' +
+
+      '<div class="tiles" id="pos-tiles"></div>' +
+      '<div class="card">' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+          '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="pos-f-search" placeholder="SKU, item, customer, order…"></div>' +
+          '<div class="field"><label>From</label><input type="date" id="pos-f-from"></div>' +
+          '<div class="field"><label>To</label><input type="date" id="pos-f-to"></div>' +
+          '<button type="button" class="btn small secondary" id="pos-f-clear">Clear Filters</button>' +
         '</div>' +
       '</div>' +
+      '<div id="pos-list"><div class="muted">Loading…</div></div>' +
       '</div>' +
 
       '<div id="tab-panel-layaway" style="display:none;">' +
@@ -282,105 +302,118 @@ if (employee) {
     renderBranchButtons();
     renderScrapSubTabs();
 
-    // ---- POS (Walk-In): a repeatable item cart (SKU autocomplete + qty + unit price,
-    // same pattern as layaway.html's Hold Item(s) form) rung up under the currently
-    // selected branch above -- no branch field of its own, unlike Scrap/Subasta's forms
-    // this mirrors, since a walk-in sale never spans more than the one branch you're
-    // standing in front of right now. ----
-    function posItemRowHtml() {
-      return '<div class="pos-item-row" style="border:1px solid #e5e5e5;border-radius:8px;padding:8px;margin-bottom:6px;">' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-          '<div class="field" style="flex:2;min-width:150px;position:relative;">' +
-            '<label>SKU or Product Name *</label>' +
-            '<input type="text" class="pos-item-sku" autocomplete="off" placeholder="Type a SKU or item name…">' +
-            '<div class="pos-item-sku-name muted" style="font-size:11px;"></div>' +
-            '<div class="pos-item-sku-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 10px rgba(0,0,0,0.12);max-height:220px;overflow-y:auto;"></div>' +
-          '</div>' +
-          '<div class="field" style="width:70px;"><label>Qty</label><input type="number" class="pos-item-qty" min="1" value="1"></div>' +
-          '<div class="field" style="width:110px;"><label>Unit Price</label><input type="number" class="pos-item-price" step="0.01" min="0" placeholder="PHP"></div>' +
-          '<button type="button" class="btn small secondary pos-item-remove" title="Remove this item">✕</button>' +
-        '</div>' +
-      '</div>';
+    // ---- POS (Walk-In), P1 responsive redesign: search/filter a product grid,
+    // tap a card to add it to an in-memory cart, adjust qty/price in the order
+    // panel on the right (a floating "Order" button + full-screen sheet below
+    // 1024px, matching the app shell's own breakpoint). readPosItemRows()/
+    // resetPosItemRows() keep their original names/shapes since the submit
+    // handler below (and updatePosTotals()) were built against them -- only
+    // where the data comes from changed, not the contract. ----
+    let posCart = [];
+    let posCatalogResults = [];
+    let posCatalogQuery = '';
+    let posCatalogLine = '';
+    let posCatalogPurity = '';
+    let posCatalogInStockOnly = false;
+    let posCatalogSearchToken = 0, posCatalogSearchTimer = null;
+
+    function renderPosCatalogGrid() {
+      const grid = document.getElementById('pos-cat-grid');
+      if (!posCatalogQuery.trim()) { grid.innerHTML = '<p class="muted">Search a SKU or item name to start.</p>'; return; }
+      let rows = posCatalogResults;
+      if (posCatalogLine) rows = rows.filter((p) => p.product_line === posCatalogLine);
+      if (posCatalogPurity) rows = rows.filter((p) => p.metal_purity === posCatalogPurity);
+      if (posCatalogInStockOnly) rows = rows.filter((p) => (p.qty_available || 0) > 0);
+      if (!rows.length) { grid.innerHTML = '<p class="muted">No matching SKUs for this search/filter.</p>'; return; }
+      grid.innerHTML = rows.map((p) => {
+        const stock = p.qty_available;
+        return '<div class="pos-card" data-sku="' + esc(p.sku) + '">' +
+          '<div class="pos-card-thumb">💍</div>' +
+          '<div class="pos-card-name">' + esc(p.item_name) + '</div>' +
+          '<div class="pos-card-meta">' + esc(p.sku) + (p.product_line ? ' · ' + esc(p.product_line) : '') + (p.metal_purity ? ' · ' + esc(p.metal_purity) : '') + '</div>' +
+          (p.gross_weight_g != null ? '<div class="pos-card-meta">' + p.gross_weight_g + 'g</div>' : '') +
+          '<div class="pos-card-price">' + (p.system_selling_price != null ? money(p.system_selling_price) : '—') + '</div>' +
+          (stock != null ? '<div class="pos-card-stock' + (stock <= 0 ? ' low' : '') + '">' + (stock > 0 ? stock + ' in stock' : 'Out of stock') + '</div>' : '') +
+        '</div>';
+      }).join('');
+      grid.querySelectorAll('.pos-card').forEach((card) => {
+        card.addEventListener('click', () => addToPosCart(card.dataset.sku));
+      });
     }
-    function attachPosSkuAutocomplete(row) {
-      const skuInput = row.querySelector('.pos-item-sku');
-      const skuSuggest = row.querySelector('.pos-item-sku-suggest');
-      const skuNamePreview = row.querySelector('.pos-item-sku-name');
-      const priceInput = row.querySelector('.pos-item-price');
-      let searchToken = 0, searchTimer = null;
-      function hide() { skuSuggest.style.display = 'none'; skuSuggest.innerHTML = ''; }
-      function pick(p) {
-        skuInput.value = p.sku;
-        const priceFilled = !priceInput.value && p.system_selling_price != null;
-        if (priceFilled) priceInput.value = p.system_selling_price;
-        skuNamePreview.textContent = p.item_name + (p.category || p.product_line ? ' · ' + (p.category || p.product_line) : '') +
-          (p.system_selling_price != null ? ' · ' + money(p.system_selling_price) : '');
-        hide();
-        updatePosTotals();
-      }
-      function renderSuggestions(matches) {
-        if (!matches.length) { hide(); return; }
-        skuSuggest.innerHTML = matches.map((p) =>
-          '<div data-sku="' + esc(p.sku) + '" style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:13px;">' +
-            '<strong>' + esc(p.sku) + '</strong> — ' + esc(p.item_name) + (p.system_selling_price != null ? ' · ' + money(p.system_selling_price) : '') +
+
+    function addToPosCart(sku) {
+      const product = posCatalogResults.find((p) => p.sku === sku);
+      if (!product) return;
+      const existing = posCart.find((c) => c.sku === sku);
+      if (existing) existing.qty += 1;
+      else posCart.push({ sku: product.sku, itemName: product.item_name, qty: 1, unitPrice: product.system_selling_price ?? null });
+      renderPosCart();
+      updatePosTotals();
+    }
+
+    function renderPosCart() {
+      const box = document.getElementById('pos-cart-lines');
+      if (!posCart.length) {
+        box.innerHTML = '<p class="muted" style="font-size:12px;">No items yet — tap a product to add it.</p>';
+      } else {
+        box.innerHTML = posCart.map((it, i) =>
+          '<div class="pos-cart-line" data-i="' + i + '">' +
+            '<div style="flex:1;min-width:0;">' +
+              '<div class="pos-cart-line-name">' + esc(it.itemName) + '</div>' +
+              '<div class="pos-cart-line-sku">' + esc(it.sku) + '</div>' +
+            '</div>' +
+            '<input type="number" class="pos-cart-line-qty" min="1" value="' + it.qty + '" title="Qty">' +
+            '<input type="number" class="pos-cart-line-price" step="0.01" min="0" value="' + (it.unitPrice ?? '') + '" placeholder="PHP" title="Unit Price">' +
+            '<button type="button" class="pos-cart-remove" title="Remove">✕</button>' +
           '</div>'
         ).join('');
-        skuSuggest.style.display = '';
-        skuSuggest.querySelectorAll('[data-sku]').forEach((el, i) => {
-          el.addEventListener('mousedown', (ev) => { ev.preventDefault(); pick(matches[i]); });
+        box.querySelectorAll('.pos-cart-line').forEach((line) => {
+          const i = Number(line.dataset.i);
+          line.querySelector('.pos-cart-line-qty').addEventListener('input', (ev) => { posCart[i].qty = Number(ev.target.value || 0); updatePosTotals(); updatePosOrderFab(); });
+          line.querySelector('.pos-cart-line-price').addEventListener('input', (ev) => { posCart[i].unitPrice = ev.target.value ? Number(ev.target.value) : null; updatePosTotals(); updatePosOrderFab(); });
+          line.querySelector('.pos-cart-remove').addEventListener('click', () => { posCart.splice(i, 1); renderPosCart(); updatePosTotals(); });
         });
       }
-      skuInput.addEventListener('input', () => {
-        skuNamePreview.textContent = '';
-        const q = skuInput.value.trim();
-        clearTimeout(searchTimer);
-        if (!q) { hide(); return; }
-        searchTimer = setTimeout(async () => {
-          const token = ++searchToken;
-          try {
-            const results = await searchProducts(q);
-            if (token !== searchToken) return;
-            renderSuggestions(results);
-          } catch (err) { /* a failed lookup shouldn't block typing a SKU by hand */ }
-        }, 200);
-      });
-      skuInput.addEventListener('blur', () => setTimeout(hide, 150));
-      skuInput.addEventListener('focus', () => { if (skuSuggest.innerHTML) skuSuggest.style.display = ''; });
+      updatePosOrderFab();
     }
-    const posItemsContainer = document.getElementById('pos-items');
-    function updatePosItemRemoveButtons() {
-      const rows = posItemsContainer.querySelectorAll('.pos-item-row');
-      rows.forEach((row) => { row.querySelector('.pos-item-remove').style.display = rows.length > 1 ? '' : 'none'; });
+
+    function updatePosOrderFab() {
+      const fab = document.getElementById('pos-order-fab');
+      const items = posCart.reduce((s, it) => s + (it.qty || 0), 0);
+      const total = posCart.reduce((s, it) => s + (it.unitPrice || 0) * (it.qty || 0), 0);
+      fab.innerHTML = '<span>Order</span><span>' + items + ' item' + (items === 1 ? '' : 's') + ' · ' + money(total) + '</span>';
     }
-    function addPosItemRow() {
-      const wrapper = document.createElement('div');
-      wrapper.innerHTML = posItemRowHtml();
-      const row = wrapper.firstElementChild;
-      posItemsContainer.appendChild(row);
-      attachPosSkuAutocomplete(row);
-      row.querySelector('.pos-item-remove').addEventListener('click', () => {
-        if (posItemsContainer.querySelectorAll('.pos-item-row').length <= 1) return;
-        row.remove();
-        updatePosItemRemoveButtons();
-        updatePosTotals();
-      });
-      updatePosItemRemoveButtons();
-    }
-    function resetPosItemRows() { posItemsContainer.innerHTML = ''; addPosItemRow(); }
-    addPosItemRow();
-    document.getElementById('pos-add-item').addEventListener('click', addPosItemRow);
+
+    document.getElementById('pos-cat-search').addEventListener('input', (ev) => {
+      posCatalogQuery = ev.target.value;
+      clearTimeout(posCatalogSearchTimer);
+      const q = posCatalogQuery.trim();
+      if (!q) { posCatalogResults = []; renderPosCatalogGrid(); return; }
+      posCatalogSearchTimer = setTimeout(async () => {
+        const token = ++posCatalogSearchToken;
+        try {
+          const results = await searchProducts(q, selectedBranch);
+          if (token !== posCatalogSearchToken) return;
+          posCatalogResults = results;
+          renderPosCatalogGrid();
+        } catch (err) { /* a failed lookup shouldn't block the rest of the page */ }
+      }, 200);
+    });
+    document.getElementById('pos-cat-line').addEventListener('change', (ev) => { posCatalogLine = ev.target.value; renderPosCatalogGrid(); });
+    document.getElementById('pos-cat-purity').addEventListener('change', (ev) => { posCatalogPurity = ev.target.value; renderPosCatalogGrid(); });
+    document.getElementById('pos-cat-instock').addEventListener('change', (ev) => { posCatalogInStockOnly = ev.target.checked; renderPosCatalogGrid(); });
+    document.getElementById('pos-cat-more-toggle').addEventListener('click', () => {
+      const more = document.getElementById('pos-cat-more');
+      more.style.display = more.style.display === 'none' ? '' : 'none';
+    });
+    document.getElementById('pos-order-fab').addEventListener('click', () => document.getElementById('pos-order-panel').classList.add('open'));
+    document.getElementById('pos-order-close').addEventListener('click', () => document.getElementById('pos-order-panel').classList.remove('open'));
 
     function readPosItemRows() {
-      const items = [];
-      posItemsContainer.querySelectorAll('.pos-item-row').forEach((row) => {
-        const sku = row.querySelector('.pos-item-sku').value.trim();
-        if (!sku) return;
-        const qty = Number(row.querySelector('.pos-item-qty').value || 0);
-        const priceVal = row.querySelector('.pos-item-price').value;
-        items.push({ sku, qty, unitPrice: priceVal ? Number(priceVal) : null });
-      });
-      return items;
+      return posCart.filter((it) => it.sku && it.qty > 0).map((it) => ({ sku: it.sku, qty: it.qty, unitPrice: it.unitPrice }));
     }
+    function resetPosItemRows() { posCart = []; renderPosCart(); }
+    renderPosCart();
 
     const posForm = document.getElementById('pos-form');
     posForm.saleDate.value = new Date().toISOString().slice(0, 10);
@@ -420,6 +453,7 @@ if (employee) {
         posForm.saleDate.value = new Date().toISOString().slice(0, 10);
         resetPosItemRows();
         updatePosTotals();
+        document.getElementById('pos-order-panel').classList.remove('open');
         await loadPos();
       } catch (err) {
         toast('br-msg', String(err.message || err), true);

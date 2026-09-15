@@ -80,16 +80,25 @@ export async function getInventory(branchId) {
 // hence the fuller column list below -- extra fields a caller doesn't need are
 // harmless to select. sanitizeForOrFilter() guards the same PostgREST .or()
 // injection risk documented in listOrderItemStatuses() further down this file.
-export async function searchProducts(query) {
+// branchId is optional and additive -- existing callers (layawayTab.js, transfers.html,
+// movement.html) that pass just a query see no change at all. The POS product grid
+// passes it to get a per-branch qty_available back on each result, flattened out of
+// the embedded inventory row so callers don't need to know it's a to-many relation.
+export async function searchProducts(query, branchId) {
   const term = sanitizeForOrFilter(query || '');
   const pat = '%' + term + '%';
-  const { data, error } = await supabase
+  let cols = 'sku, sub_sku, item_name, category, product_line, system_selling_price, gross_weight_g, product_status';
+  if (branchId) cols += ', inventory(qty_available)';
+  let q = supabase
     .from('products')
-    .select('sku, sub_sku, item_name, category, product_line, system_selling_price, gross_weight_g, product_status')
+    .select(cols)
     .or('sku.ilike.' + pat + ',item_name.ilike.' + pat)
     .limit(50);
+  if (branchId) q = q.eq('inventory.branch_id', branchId);
+  const { data, error } = await q;
   if (error) throw new Error(error.message);
-  return data;
+  if (!branchId) return data;
+  return data.map((p) => ({ ...p, qty_available: p.inventory && p.inventory[0] ? p.inventory[0].qty_available : 0 }));
 }
 
 // Same lesson as ORDER_ITEM_STATUS_ROW_CAP below: with 7,392 SKUs (nearly all
