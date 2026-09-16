@@ -589,32 +589,41 @@ if (employee) {
       const box = document.getElementById('pos-list');
       if (!groups.length) { box.innerHTML = '<p class="muted">No walk-in sales for this filter.</p>'; return; }
 
-      box.innerHTML = groups.map((g) => {
-        const first = g.items[0];
-        const subtotal = g.items.reduce((s, r) => s + Number(r.unit_price || 0) * r.qty, 0);
-        const payments = posPaymentsByGroup[g.groupId] || [];
-        const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
-        return '<div class="card" style="margin-bottom:10px;">' +
-          '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:flex-start;">' +
-            '<div>' +
-              '<b>' + fmtDateTime(first.sale_date) + '</b>' + (first.customer_name ? ' · ' + esc(first.customer_name) : '') +
-              (first.order_number ? '<div class="muted" style="font-size:11px;">Order ' + esc(first.order_number) + '</div>' : '') +
-            '</div>' +
-            '<div style="text-align:right;"><b>' + money(subtotal) + '</b><div class="muted" style="font-size:11px;">' + (paid >= subtotal ? 'Paid in full' : money(paid) + ' paid') +
-              (canEditSale ? ' <button type="button" class="btn small secondary" data-act="delete-sale" data-group="' + esc(g.groupId) + '" style="margin-top:4px;">Delete Sale</button>' : '') +
-            '</div>' +
-          '</div>' +
-          '<div class="table-scroll table-mini" style="margin-top:8px;"><table><tr><th>SKU</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Total</th>' + (canEditSale ? '<th></th>' : '') + '</tr>' +
-            g.items.map((r) => '<tr><td data-label="SKU">' + esc(r.sku) + '</td><td data-label="Item">' + esc(r.products?.item_name || '—') +
-              (r.notes ? '<div class="muted" style="font-size:10px;">Note: ' + esc(r.notes) + '</div>' : '') + '</td>' +
-              '<td data-label="Qty">' + r.qty + '</td><td data-label="Unit Price">' + money(r.unit_price) + '</td><td data-label="Line Total">' + money(Number(r.unit_price || 0) * r.qty) + '</td>' +
-              (canEditSale ? '<td><button type="button" class="btn small secondary" data-act="edit-sale-item" data-id="' + r.id + '">Edit</button></td>' : '') +
-            '</tr>' +
-            (canEditSale ? posSaleEditRowHtml(r) : '')).join('') +
-          '</table></div>' +
-          (payments.length ? '<div class="muted" style="font-size:11px;margin-top:6px;">' + payments.map((p) => money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '')).join(' · ') + '</div>' : '') +
-        '</div>';
-      }).join('');
+      // One flat, formal ledger table for every sale instead of a card-per-sale with a
+      // nested mini-table inside it (Ren, 2026-09-16: "arrange this POS as formal line
+      // those records easily find it" / "still looking the record like this its not
+      // normal make it organized"). One row per line item; Date/Order/Customer/Payment
+      // repeat on every row of a multi-item sale rather than using rowspan, so the
+      // existing data-label mobile-stacking CSS (which has no concept of rowspan)
+      // keeps working unchanged on narrow screens.
+      box.innerHTML = '<div class="table-scroll"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
+        '<thead><tr><th>Date &amp; Time</th><th>Order</th><th>Customer</th><th>SKU</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Total</th><th>Payment</th><th></th></tr></thead>' +
+        '<tbody>' +
+        groups.map((g) => {
+          const subtotal = g.items.reduce((s, r) => s + Number(r.unit_price || 0) * r.qty, 0);
+          const payments = posPaymentsByGroup[g.groupId] || [];
+          const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
+          const paidLabel = (paid >= subtotal ? 'Paid in full' : money(paid) + ' paid') +
+            (payments.length ? '<div class="muted" style="font-size:10px;">' + payments.map((p) => esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '')).join(', ') + '</div>' : '');
+          return g.items.map((r, i) => '<tr>' +
+            '<td data-label="Date &amp; Time">' + fmtDateTime(r.sale_date) + '</td>' +
+            '<td data-label="Order">' + esc(r.order_number || '—') + '</td>' +
+            '<td data-label="Customer">' + esc(r.customer_name || '—') + '</td>' +
+            '<td data-label="SKU">' + esc(r.sku) + '</td>' +
+            '<td data-label="Item">' + esc(r.products?.item_name || '—') + (r.notes ? '<div class="muted" style="font-size:10px;">Note: ' + esc(r.notes) + '</div>' : '') + '</td>' +
+            '<td data-label="Qty">' + r.qty + '</td>' +
+            '<td data-label="Unit Price">' + money(r.unit_price) + '</td>' +
+            '<td data-label="Line Total">' + money(Number(r.unit_price || 0) * r.qty) + '</td>' +
+            '<td data-label="Payment">' + paidLabel + '</td>' +
+            '<td style="white-space:nowrap;">' +
+              (canEditSale ? '<button type="button" class="btn small secondary" data-act="edit-sale-item" data-id="' + r.id + '">Edit</button>' : '') +
+              // Delete Sale removes the whole group regardless of which line's button is
+              // clicked, so it only needs to appear once -- shown on this group's first row.
+              (canEditSale && i === 0 ? ' <button type="button" class="btn small secondary" data-act="delete-sale" data-group="' + esc(g.groupId) + '">Delete Sale</button>' : '') +
+            '</td>' +
+          '</tr>' + (canEditSale ? posSaleEditRowHtml(r) : '')).join('');
+        }).join('') +
+        '</tbody></table></div>';
 
       if (!canEditSale) return;
       box.querySelectorAll('[data-act="delete-sale"]').forEach((btn) => btn.addEventListener('click', async () => {
@@ -656,10 +665,10 @@ if (employee) {
 
     // Correct a mistake on one line of a completed sale (Admin/Manager/Branch
     // Supervisor only, matching update_pos_sale_item's own server-side gate) -- hidden
-    // by default, toggled open by that row's "Edit" button. colspan=6 covers all 5 data
-    // columns plus the actions column added when canEditSale is true.
+    // by default, toggled open by that row's "Edit" button. colspan=10 spans every
+    // column of the formal ledger table above.
     function posSaleEditRowHtml(r) {
-      return '<tr class="edit-row pos-sale-edit-row" data-move-id="' + r.id + '" style="display:none;"><td colspan="6">' +
+      return '<tr class="edit-row pos-sale-edit-row" data-move-id="' + r.id + '" style="display:none;"><td colspan="10">' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;padding:8px 0;">' +
           '<div class="field" style="width:110px;"><label>SKU</label><input type="text" name="sku" value="' + esc(r.sku) + '"></div>' +
           '<div class="field" style="width:70px;"><label>Qty</label><input type="number" name="qty" min="1" value="' + r.qty + '"></div>' +
