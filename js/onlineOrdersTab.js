@@ -318,11 +318,11 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
         '<div class="table-scroll"><table><thead><tr><th>Order / Customer</th><th>Status</th><th>Qty</th><th>Notes</th><th>Date</th></tr></thead><tbody>' +
         matches.map((m) =>
           '<tr>' +
-            '<td>' + esc(m.order_reference || '—') + (m.customer_name ? '<div class="muted" style="font-size:11px;">' + esc(m.customer_name) + '</div>' : '') + '</td>' +
-            '<td><span class="badge ' + statusBadgeClass(m.status) + '">' + esc(prettyStatus(m.status)) + '</span></td>' +
-            '<td>' + m.qty + '</td>' +
-            '<td style="font-size:11px;">' + esc(m.notes || '—') + '</td>' +
-            '<td style="font-size:11px;white-space:nowrap;">' + fmtDate(m.created_at) + '</td>' +
+            '<td data-label="Order / Customer">' + esc(m.order_reference || '—') + (m.customer_name ? '<div class="muted" style="font-size:11px;">' + esc(m.customer_name) + '</div>' : '') + '</td>' +
+            '<td data-label="Status"><span class="badge ' + statusBadgeClass(m.status) + '">' + esc(prettyStatus(m.status)) + '</span></td>' +
+            '<td data-label="Qty">' + m.qty + '</td>' +
+            '<td data-label="Notes" style="font-size:11px;">' + esc(m.notes || '—') + '</td>' +
+            '<td data-label="Date" style="font-size:11px;white-space:nowrap;">' + fmtDate(m.created_at) + '</td>' +
           '</tr>'
         ).join('') +
         '</tbody></table></div>' +
