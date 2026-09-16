@@ -157,7 +157,19 @@ if (employee) {
 
       '<div id="tab-panel-pos">' +
       '<h2>POS (Walk-In) <span class="muted" id="pos-branch-label" style="font-weight:normal;"></span></h2>' +
-      '<h3 style="margin-top:0;">Sales by Admin &amp; Payment Method <span class="muted" style="font-weight:normal;font-size:12px;">— reflects the From/To date range below, all admins for this branch</span></h3>' +
+      // Filter card moved above both the pivot and the sales list it drives (Ren,
+      // 2026-09-16: "the date range must be put above so once they filter it also
+      // reflect all the data") -- fFrom/fTo in renderPos() filter both; fSearch only
+      // narrows the list below, but lives in the same toolbar since it's one filter UI.
+      '<div class="card">' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+          '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="pos-f-search" placeholder="SKU, item, customer, order…"></div>' +
+          '<div class="field"><label>From</label><input type="date" id="pos-f-from"></div>' +
+          '<div class="field"><label>To</label><input type="date" id="pos-f-to"></div>' +
+          '<button type="button" class="btn small secondary" id="pos-f-clear">Clear Filters</button>' +
+        '</div>' +
+      '</div>' +
+      '<h3 style="margin-top:0;">Sales by Admin &amp; Payment Method <span class="muted" style="font-weight:normal;font-size:12px;">— reflects the From/To date range above, all admins for this branch</span></h3>' +
       '<div id="pos-by-admin" style="margin-bottom:20px;"><div class="muted">Loading…</div></div>' +
 
       '<div class="pos-layout">' +
@@ -204,14 +216,6 @@ if (employee) {
       '</div>' +
 
       '<div class="tiles" id="pos-tiles"></div>' +
-      '<div class="card">' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-          '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="pos-f-search" placeholder="SKU, item, customer, order…"></div>' +
-          '<div class="field"><label>From</label><input type="date" id="pos-f-from"></div>' +
-          '<div class="field"><label>To</label><input type="date" id="pos-f-to"></div>' +
-          '<button type="button" class="btn small secondary" id="pos-f-clear">Clear Filters</button>' +
-        '</div>' +
-      '</div>' +
       '<div id="pos-list"><div class="muted">Loading…</div></div>' +
       '</div>' +
 
