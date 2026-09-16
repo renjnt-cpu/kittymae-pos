@@ -249,27 +249,28 @@ export async function listSales({ branchId, fromDate, toDate } = {}) {
 // methods. Reuses record_sale() per item under the hood inside create_pos_sale(),
 // which is why a later item failing (e.g. out of stock) rolls back everything already
 // rung up in that same checkout instead of leaving a half-completed sale.
-export async function createPosSale({ branchId, items, customerName, contactNumber, orderNumber, payments, saleDate }) {
+export async function createPosSale({ branchId, items, customerName, contactNumber, orderNumber, payments, saleDate, notes }) {
   const { data, error } = await supabase.rpc('create_pos_sale', {
     p_branch_id: branchId,
     p_items: items.map((it) => ({ sku: it.sku, qty: it.qty, unit_price: it.unitPrice ?? null })),
     p_customer_name: customerName || null, p_contact_number: contactNumber || null,
     p_order_number: orderNumber || null,
     p_payments: (payments || []).map((p) => ({ method: p.method, amount: p.amount, reference: p.reference || null })),
-    p_sale_date: saleDate || null,
+    p_sale_date: saleDate || null, p_notes: notes || null,
   });
   if (error) throw new Error(error.message);
   return data; // the new sale_group_id
 }
 
 /** Correct a mistake on one line of a completed sale (wrong SKU/qty/price/customer/
- * order ref) -- Admin/Manager/Branch Supervisor only (update_pos_sale_item enforces
- * this server-side too). Reverses the original item's stock effect and applies the
- * corrected one so qty_available stays accurate. */
-export async function updatePosSaleItem({ movementId, sku, qty, unitPrice, customerName, contactNumber, orderNumber }) {
+ * order ref/notes) -- Admin/Manager/Branch Supervisor only (update_pos_sale_item
+ * enforces this server-side too). Reverses the original item's stock effect and
+ * applies the corrected one so qty_available stays accurate. */
+export async function updatePosSaleItem({ movementId, sku, qty, unitPrice, customerName, contactNumber, orderNumber, notes }) {
   const { error } = await supabase.rpc('update_pos_sale_item', {
     p_movement_id: movementId, p_sku: sku, p_qty: qty, p_unit_price: unitPrice ?? null,
     p_customer_name: customerName || null, p_contact_number: contactNumber || null, p_order_number: orderNumber || null,
+    p_notes: notes || null,
   });
   if (error) throw new Error(error.message);
 }

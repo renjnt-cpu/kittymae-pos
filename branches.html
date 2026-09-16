@@ -184,6 +184,7 @@ if (employee) {
               '<div class="field"><label>Date</label><input type="date" name="saleDate"></div>' +
               '<div class="field"><label>Customer Name</label><input type="text" name="customerName"></div>' +
               '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
+              '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
               paymentSlotsHtml('pos', [], { label0: 'Payment Method', optional: true, withReference: true }) +
               '<div class="card" style="background:#f7f5f0;margin:6px 0;padding:10px 14px;">' +
                 '<div style="display:flex;justify-content:space-between;font-size:13px;"><span>Subtotal</span><b id="pos-subtotal">₱0.00</b></div>' +
@@ -454,6 +455,7 @@ if (employee) {
           branchId: selectedBranch, items,
           customerName: f.customerName.value.trim(), contactNumber: f.contactNumber.value.trim(),
           orderNumber: f.orderId.value.trim(), payments, saleDate: f.saleDate.value || null,
+          notes: f.notes.value.trim(),
         });
         toast('br-msg', 'Sale completed — ' + items.length + ' item(s), ' + money(items.reduce((s, it) => s + (it.unitPrice || 0) * it.qty, 0)) + '.', false);
         f.reset();
@@ -587,7 +589,8 @@ if (employee) {
             '</div>' +
           '</div>' +
           '<div class="table-scroll table-mini" style="margin-top:8px;"><table><tr><th>SKU</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Total</th>' + (canEditSale ? '<th></th>' : '') + '</tr>' +
-            g.items.map((r) => '<tr><td data-label="SKU">' + esc(r.sku) + '</td><td data-label="Item">' + esc(r.products?.item_name || '—') + '</td>' +
+            g.items.map((r) => '<tr><td data-label="SKU">' + esc(r.sku) + '</td><td data-label="Item">' + esc(r.products?.item_name || '—') +
+              (r.notes ? '<div class="muted" style="font-size:10px;">Note: ' + esc(r.notes) + '</div>' : '') + '</td>' +
               '<td data-label="Qty">' + r.qty + '</td><td data-label="Unit Price">' + money(r.unit_price) + '</td><td data-label="Line Total">' + money(Number(r.unit_price || 0) * r.qty) + '</td>' +
               (canEditSale ? '<td><button type="button" class="btn small secondary" data-act="edit-sale-item" data-id="' + r.id + '">Edit</button></td>' : '') +
             '</tr>' +
@@ -623,9 +626,10 @@ if (employee) {
         const customerName = row.querySelector('[name=customerName]').value.trim();
         const contactNumber = row.querySelector('[name=contactNumber]').value.trim();
         const orderNumber = row.querySelector('[name=orderNumber]').value.trim();
+        const notes = row.querySelector('[name=notes]').value.trim();
         if (!sku || !qty || qty <= 0) { toast('br-msg', 'SKU and a positive Qty are required.', true); return; }
         try {
-          await updatePosSaleItem({ movementId: Number(btn.dataset.id), sku, qty, unitPrice, customerName, contactNumber, orderNumber });
+          await updatePosSaleItem({ movementId: Number(btn.dataset.id), sku, qty, unitPrice, customerName, contactNumber, orderNumber, notes });
           toast('br-msg', 'Sale item updated.', false);
           await loadPos();
         } catch (err) {
@@ -647,6 +651,7 @@ if (employee) {
           '<div class="field" style="width:130px;"><label>Customer Name</label><input type="text" name="customerName" value="' + esc(r.customer_name || '') + '"></div>' +
           '<div class="field" style="width:110px;"><label>Contact Number</label><input type="text" name="contactNumber" value="' + esc(r.contact_number || '') + '"></div>' +
           '<div class="field" style="width:110px;"><label>Order / Ref No.</label><input type="text" name="orderNumber" value="' + esc(r.order_number || '') + '"></div>' +
+          '<div class="field" style="width:150px;"><label>Notes</label><input type="text" name="notes" value="' + esc(r.notes || '') + '"></div>' +
           '<button type="button" class="btn small" data-act="save-sale-item" data-id="' + r.id + '">Save</button>' +
           '<button type="button" class="btn small secondary" data-act="close-sale-item" data-id="' + r.id + '">Cancel</button>' +
         '</div>' +

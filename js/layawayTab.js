@@ -430,7 +430,8 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '</td>' +
           '<td data-label="Qty">' + h.qty + '</td>' +
           '<td data-label="Customer">' + esc(h.customer_name) + (h.contact_number ? '<div class="muted" style="font-size:10px;">' + esc(h.contact_number) + '</div>' : '') +
-            (h.handler ? '<div class="muted" style="font-size:10px;">Handled by ' + esc(h.handler.full_name) + '</div>' : '') + '</td>' +
+            (h.handler ? '<div class="muted" style="font-size:10px;">Handled by ' + esc(h.handler.full_name) + '</div>' : '') +
+            (h.notes ? '<div class="muted" style="font-size:10px;">Note: ' + esc(h.notes) + '</div>' : '') + '</td>' +
           '<td data-label="Amount">' + money(h.unit_price) + '</td>' +
           '<td data-label="Total">' + money(h.total_price) + '</td>' +
           '<td data-label="Paid">' + money(paid) + (remaining !== null ? '<div class="muted" style="font-size:10px;">' + money(remaining) + ' left</div>' : '') + '</td>' +
