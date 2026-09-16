@@ -102,9 +102,13 @@ if (employee) {
     // every other admin-attributed list in this app does (get_employee_names()).
     const employeeNameById = Object.fromEntries((await listActiveEmployees()).map((e) => [e.id, e.full_name]));
     // Branches are the primary lens here — always exactly one selected, no combined
-    // "All Branches" view. Branch Supervisor is locked to their own; everyone else
-    // starts on the first branch in the list.
-    let selectedBranch = isScoped ? employee.branch_id : branches[0].id;
+    // "All Branches" view. Branch Supervisor is locked to their own; anyone else with
+    // a fixed branch_id (regular branch-tied staff) still starts on their own branch
+    // too, just not locked there -- landing on someone else's branch by default meant
+    // canAddHere()'s own-branch check read false until they noticed and switched tabs,
+    // making Complete Sale look broken. Only truly company-wide employees (Admin/
+    // Manager/Sales Executive-position staff, branch_id null) start on the first branch.
+    let selectedBranch = employee.branch_id ?? branches[0].id;
     const branchName = (id) => (branches.find((b) => b.id === id) || {}).name || '';
 
     // Declared up here (not near loadPos()/loadScrap()/loadSubasta() below) for the
