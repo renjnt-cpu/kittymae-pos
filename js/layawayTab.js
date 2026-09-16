@@ -134,7 +134,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         '<div class="card">' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
             '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="lw-f-search" placeholder="SKU, customer, order ID, contact…"></div>' +
-            '<div class="field"><label>Status</label><select id="lw-f-status"><option value="all">All Statuses</option><option>On Hold</option><option>Completed</option><option>Cancelled</option></select></div>' +
+            '<div class="field"><label>Status</label><select id="lw-f-status"><option value="all">All Statuses</option><option>On Hold</option><option>Completed</option></select></div>' +
             '<button type="button" class="btn small secondary" id="lw-f-clear">Clear Filters</button>' +
           '</div>' +
         '</div>' +
@@ -393,7 +393,11 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   function render() {
     const fSearch = document.getElementById('lw-f-search').value.trim().toLowerCase();
     const fStatus = document.getElementById('lw-f-status').value;
-    let rows = allHolds;
+    // Cancelled holds are hidden from this list for now (Ren, 2026-09-16: "remove
+    // cancelled in layaway per branch for now") -- cancel_layaway() itself is
+    // untouched, and Monthly Monitoring's own Cancelled count below still reflects
+    // them; they're just not shown as individual rows here.
+    let rows = allHolds.filter((h) => h.status !== 'Cancelled');
     if (fSearch) rows = rows.filter((h) =>
       h.sku.toLowerCase().includes(fSearch) || h.customer_name.toLowerCase().includes(fSearch) ||
       (h.contact_number || '').toLowerCase().includes(fSearch) || (h.order_id || '').toLowerCase().includes(fSearch));
