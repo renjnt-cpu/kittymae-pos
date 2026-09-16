@@ -8,7 +8,7 @@
 import {
   listLayaways, createLayawayHold, addLayawayPayment, completeLayaway, cancelLayaway, deleteLayawayPayment,
   setLayawayForfeitDate, setLayawayHoldDate, uploadLayawayPaymentProof, getLayawayPaymentProofUrl,
-  searchProducts, listActiveEmployees, subscribeToChanges, editLayawayHold,
+  searchProducts, listActiveEmployees, subscribeToChanges, editLayawayHold, deleteLayawayHold,
 } from './api.js';
 import { PAYMENT_METHODS } from './paymentMethods.js';
 
@@ -137,11 +137,23 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         '<div class="card">' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
             '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="lw-f-search" placeholder="SKU, customer, order ID, contact…"></div>' +
-            '<div class="field"><label>Status</label><select id="lw-f-status"><option value="all">All Statuses</option><option>On Hold</option><option>Completed</option></select></div>' +
             '<button type="button" class="btn small secondary" id="lw-f-clear">Clear Filters</button>' +
           '</div>' +
         '</div>' +
         '<div id="lw-list"><div class="muted">Loading…</div></div>' +
+
+        // One folder per status besides On Hold (Ren, 2026-09-16: "make a folder per
+        // layaway status for cancelled, delete, completed, on hold") -- collapsed by
+        // default, same pattern as Transfers' own status folders. Search above still
+        // narrows what shows inside each folder.
+        '<details class="card" style="margin-top:16px;">' +
+          '<summary style="cursor:pointer;font-weight:bold;">Completed <span class="muted" id="lw-completed-count" style="font-weight:normal;"></span></summary>' +
+          '<div id="lw-list-completed" style="margin-top:10px;"></div>' +
+        '</details>' +
+        '<details class="card" style="margin-top:10px;">' +
+          '<summary style="cursor:pointer;font-weight:bold;">Cancelled <span class="muted" id="lw-cancelled-count" style="font-weight:normal;"></span></summary>' +
+          '<div id="lw-list-cancelled" style="margin-top:10px;"></div>' +
+        '</details>' +
 
         '<h3 style="margin-top:22px;">Forfeiture Watch <span class="muted" style="font-weight:normal;">— On Hold items, oldest first (not affected by the date range above)</span></h3>' +
         '<p class="muted" style="margin-top:-4px;">Unpaid holds are forfeited 2 months after Date Purchased. Rows turn red once an item is close to or past that.</p>' +
@@ -360,10 +372,8 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   let groupMembers = {};
 
   document.getElementById('lw-f-search').addEventListener('input', render);
-  document.getElementById('lw-f-status').addEventListener('change', render);
   document.getElementById('lw-f-clear').addEventListener('click', () => {
     document.getElementById('lw-f-search').value = '';
-    document.getElementById('lw-f-status').value = 'all';
     render();
   });
   document.getElementById('mm-from').addEventListener('change', renderMonthly);
@@ -393,30 +403,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
 
   function paidSoFar(h) { return (h.layaway_payments || []).reduce((s, p) => s + Number(p.amount), 0); }
 
-  function render() {
-    const fSearch = document.getElementById('lw-f-search').value.trim().toLowerCase();
-    const fStatus = document.getElementById('lw-f-status').value;
-    // Cancelled holds are hidden from this list for now (Ren, 2026-09-16: "remove
-    // cancelled in layaway per branch for now") -- cancel_layaway() itself is
-    // untouched, and Monthly Monitoring's own Cancelled count below still reflects
-    // them; they're just not shown as individual rows here.
-    let rows = allHolds.filter((h) => h.status !== 'Cancelled');
-    if (fSearch) rows = rows.filter((h) =>
-      h.sku.toLowerCase().includes(fSearch) || h.customer_name.toLowerCase().includes(fSearch) ||
-      (h.contact_number || '').toLowerCase().includes(fSearch) || (h.order_id || '').toLowerCase().includes(fSearch));
-    if (fStatus !== 'all') rows = rows.filter((h) => h.status === fStatus);
-
-    const onHold = rows.filter((h) => h.status === 'On Hold');
-    const totalHeld = onHold.reduce((s, h) => s + Number(h.total_price || 0), 0);
-    const totalPaid = onHold.reduce((s, h) => s + paidSoFar(h), 0);
-    document.getElementById('lw-tiles').innerHTML =
-      tile(onHold.length, 'On Hold') +
-      tile(rows.filter((h) => h.status === 'Completed').length, 'Completed') +
-      tile(money(totalHeld), 'Value On Hold') +
-      tile(money(totalPaid), 'Paid So Far');
-
-    const list = document.getElementById('lw-list');
-    if (!rows.length) { list.innerHTML = '<p class="muted">No layaway holds for this filter.</p>'; return; }
+  // One table per status folder (Ren, 2026-09-16: "make a folder per layaway status
+  // for cancelled, delete, completed, on hold") -- render() below computes the 3
+  // search-filtered buckets and the tiles, then calls this once per folder.
+  function renderHoldTable(containerId, rows) {
+    const list = document.getElementById(containerId);
+    if (!rows.length) { list.innerHTML = '<p class="muted">None' + (containerId === 'lw-list' ? ' for this filter.' : '.') + '</p>'; return; }
 
     list.innerHTML = '<div class="table-scroll"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
       '<colgroup><col style="width:13%"><col style="width:9%"><col style="width:7%"><col style="width:12%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:23%"></colgroup>' +
@@ -473,8 +465,17 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
                   (canAct ? '<button class="btn small secondary" data-act="complete" data-id="' + h.id + '">Complete</button>' : '') +
                   (canManage ? '<button class="btn small secondary" data-act="edit-hold" data-id="' + h.id + '">Edit</button>' : '') +
                   (canFinalDelete ? '<button class="btn small secondary" data-act="cancel" data-id="' + h.id + '">Cancel</button>' : '') +
+                  // Delete is distinct from Cancel -- permanently erases the row
+                  // (blocked server-side if it has any payments, or is Completed),
+                  // for pure data-entry mistakes rather than a real customer
+                  // cancellation (Ren, 2026-09-16: "make a folder ... for cancelled,
+                  // delete, completed, on hold").
+                  (canFinalDelete ? '<button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '">Delete</button>' : '') +
                 '</div>' +
                 (canManage ? editHoldFormHtml(h) : '')
+              : '') +
+            (h.status === 'Cancelled' && canFinalDelete
+              ? '<button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '" style="margin-top:4px;">Delete</button>'
               : '') +
           '</td>' +
         '</tr>';
@@ -535,6 +536,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       }
     }));
 
+    list.querySelectorAll('[data-act="delete-hold"]').forEach((btn) => btn.addEventListener('click', async () => {
+      if (!confirm('Permanently delete this layaway? This cannot be undone (blocked automatically if it has any payments recorded).')) return;
+      try { await deleteLayawayHold(Number(btn.dataset.id)); notify('Layaway deleted.', false); await load(); }
+      catch (err) { notify(String(err.message || err), true); }
+    }));
+
     list.querySelectorAll('[data-act="cancel-group"]').forEach((btn) => btn.addEventListener('click', async () => {
       const members = (groupMembers[btn.dataset.group] || []).filter((h) => h.status === 'On Hold');
       if (!confirm('Cancel all ' + members.length + ' items in this order? They all go back to Available stock.')) return;
@@ -584,6 +591,31 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         notify(String(err.message || err), true);
       }
     }));
+  }
+
+  function render() {
+    const fSearch = document.getElementById('lw-f-search').value.trim().toLowerCase();
+    let rows = allHolds;
+    if (fSearch) rows = rows.filter((h) =>
+      h.sku.toLowerCase().includes(fSearch) || h.customer_name.toLowerCase().includes(fSearch) ||
+      (h.contact_number || '').toLowerCase().includes(fSearch) || (h.order_id || '').toLowerCase().includes(fSearch));
+
+    const onHold = rows.filter((h) => h.status === 'On Hold');
+    const completed = rows.filter((h) => h.status === 'Completed');
+    const cancelled = rows.filter((h) => h.status === 'Cancelled');
+    const totalHeld = onHold.reduce((s, h) => s + Number(h.total_price || 0), 0);
+    const totalPaid = onHold.reduce((s, h) => s + paidSoFar(h), 0);
+    document.getElementById('lw-tiles').innerHTML =
+      tile(onHold.length, 'On Hold') +
+      tile(completed.length, 'Completed') +
+      tile(money(totalHeld), 'Value On Hold') +
+      tile(money(totalPaid), 'Paid So Far');
+    document.getElementById('lw-completed-count').textContent = '(' + completed.length + ')';
+    document.getElementById('lw-cancelled-count').textContent = '(' + cancelled.length + ')';
+
+    renderHoldTable('lw-list', onHold);
+    renderHoldTable('lw-list-completed', completed);
+    renderHoldTable('lw-list-cancelled', cancelled);
   }
 
   // ---- Monthly Monitoring: a wide, per-month rollup with a date-range-filtered

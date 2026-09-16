@@ -1054,6 +1054,15 @@ export async function editLayawayHold({ holdId, sku, qty, customerName, contactN
   if (error) throw new Error(error.message);
 }
 
+/** Permanently erases a layaway hold (for data-entry mistakes/duplicates) -- distinct
+ * from cancelLayaway, which keeps the row and its payment history. Admin only
+ * (delete_layaway_hold enforces this server-side too), and blocked entirely if the
+ * hold has any payments recorded or is already Completed -- cancel instead there. */
+export async function deleteLayawayHold(holdId) {
+  const { error } = await supabase.rpc('delete_layaway_hold', { p_hold_id: holdId });
+  if (error) throw new Error(error.message);
+}
+
 /** Sets (or changes) a layaway hold's Forfeit Date -- staff can override the default
  * computed hold_date + 60 days with an explicit one (e.g. a customer asked for more
  * time). Only allowed while still On Hold (99_layaway_forfeit_date.sql). Every change
