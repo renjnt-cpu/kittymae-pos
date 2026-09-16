@@ -194,6 +194,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     '</div>';
   }
   function attachSkuAutocomplete(row) {
+    // Idempotent: addItemRow() only ever calls this on a freshly-created node, but the
+    // edit-hold form is a persistent node re-shown (not re-created) on every "Edit"
+    // click -- without this guard, repeated open/close cycles would stack duplicate
+    // input/blur/focus listeners on the same SKU field.
+    if (row.dataset.skuAutocompleteAttached) return;
+    row.dataset.skuAutocompleteAttached = '1';
     const skuInput = row.querySelector('.lw-item-sku');
     const skuSuggest = row.querySelector('.lw-item-sku-suggest');
     const skuNamePreview = row.querySelector('.lw-item-sku-name');
