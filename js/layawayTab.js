@@ -8,7 +8,7 @@
 import {
   listLayaways, createLayawayHold, addLayawayPayment, completeLayaway, cancelLayaway, deleteLayawayPayment,
   setLayawayForfeitDate, setLayawayHoldDate, uploadLayawayPaymentProof, getLayawayPaymentProofUrl,
-  searchProducts, listActiveEmployees, subscribeToChanges,
+  searchProducts, listActiveEmployees, subscribeToChanges, editLayawayHold,
 } from './api.js';
 import { PAYMENT_METHODS } from './paymentMethods.js';
 
@@ -81,7 +81,12 @@ function readPaymentSlots(f) {
  * the Hold form needs the active-staff list (for "Handled By") before it can render. */
 export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, employee, onCountUpdate }) {
   const isScoped = ['Admin', 'Manager'].includes(employee.role) ? false : !UNSCOPED_POSITIONS.includes(employee.position);
-  const canManage = ['Admin', 'Manager'].includes(employee.role) || POSITION_MANAGERS.includes(employee.position);
+  // Branch Supervisor was missing from this line despite being a manager-level role
+  // everywhere else in the app -- it now covers deleting a payment, editing a hold's
+  // details, and cancelling/removing a hold (Ren, 2026-09-16: "the once who can
+  // remove only me supervisor, manager"), matching edit_layaway_hold/cancel_layaway's
+  // own server-side gate exactly.
+  const canManage = ['Admin', 'Manager', 'Branch Supervisor'].includes(employee.role) || POSITION_MANAGERS.includes(employee.position);
   const staff = await listActiveEmployees();
 
   function notify(text, isError) {
@@ -157,6 +162,34 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         '<div class="field" style="width:110px;"><label>Unit Price</label><input type="number" class="lw-item-price" step="0.01" min="0" placeholder="PHP"></div>' +
         '<div class="field" style="width:130px;"><label>Stock Status</label><select class="lw-item-stock"><option value="In Stock">In Stock</option><option value="Lacking">Lacking (source later)</option></select></div>' +
         '<button type="button" class="btn small secondary lw-item-remove" title="Remove this item">✕</button>' +
+      '</div>' +
+    '</div>';
+  }
+  // Correct a mistake on an On Hold layaway (Admin/Manager/Branch Supervisor only,
+  // matching edit_layaway_hold's own server-side gate) -- hidden by default, toggled
+  // open by the row's "Edit" button. Reuses the exact same .lw-item-sku/-suggest/-name
+  // class names as itemRowHtml() so attachSkuAutocomplete() works on it unmodified.
+  function editHoldFormHtml(h) {
+    return '<div class="lw-edit-form" data-hold-id="' + h.id + '" style="display:none;border:1px solid #e5e5e5;border-radius:8px;padding:8px;margin-top:6px;background:#fafafa;">' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+        '<div class="field" style="flex:2;min-width:150px;position:relative;">' +
+          '<label>SKU *</label>' +
+          '<input type="text" class="lw-item-sku" name="sku" autocomplete="off" value="' + esc(h.sku) + '">' +
+          '<div class="lw-item-sku-name muted" style="font-size:11px;"></div>' +
+          '<div class="lw-item-sku-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 10px rgba(0,0,0,0.12);max-height:220px;overflow-y:auto;"></div>' +
+        '</div>' +
+        '<div class="field" style="width:70px;"><label>Qty</label><input type="number" name="qty" min="1" value="' + h.qty + '"></div>' +
+        '<div class="field" style="width:110px;"><label>Unit Price</label><input type="number" name="unitPrice" step="0.01" min="0" value="' + (h.unit_price ?? '') + '"></div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:6px;">' +
+        '<div class="field" style="flex:1;min-width:120px;"><label>Customer Name *</label><input type="text" name="customerName" value="' + esc(h.customer_name) + '"></div>' +
+        '<div class="field" style="width:120px;"><label>Contact Number</label><input type="text" name="contactNumber" value="' + esc(h.contact_number || '') + '"></div>' +
+        '<div class="field" style="width:120px;"><label>Order ID</label><input type="text" name="orderId" value="' + esc(h.order_id || '') + '"></div>' +
+      '</div>' +
+      '<div class="field" style="margin-top:6px;"><label>Notes</label><input type="text" name="notes" value="' + esc(h.notes || '') + '"></div>' +
+      '<div style="display:flex;gap:4px;margin-top:6px;">' +
+        '<button type="button" class="btn small" data-act="save-edit-hold" data-id="' + h.id + '">Save</button>' +
+        '<button type="button" class="btn small secondary" data-act="close-edit-hold" data-id="' + h.id + '">Cancel</button>' +
       '</div>' +
     '</div>';
   }
@@ -402,24 +435,31 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
                   (p.attachment_path ? ' <button type="button" class="btn small secondary" data-act="view-proof" data-path="' + esc(p.attachment_path) + '" style="padding:1px 6px;">Proof</button>' : '') +
                   (canManage ? ' <button class="btn small secondary" data-act="del-payment" data-id="' + p.id + '" style="padding:1px 6px;">✕</button>' : '') + '</div>').join('')
               : '') +
-            (groupIdx === 0 && groupOnHold.length > 1 && canAct
+            (groupIdx === 0 && groupOnHold.length > 1 && (canAct || canManage)
               ? '<div style="margin-bottom:4px;display:flex;gap:4px;">' +
-                  '<button class="btn small secondary" data-act="complete-group" data-group="' + esc(h.group_id) + '">Complete All (' + groupOnHold.length + ')</button>' +
-                  '<button class="btn small secondary" data-act="cancel-group" data-group="' + esc(h.group_id) + '">Cancel All (' + groupOnHold.length + ')</button>' +
+                  (canAct ? '<button class="btn small secondary" data-act="complete-group" data-group="' + esc(h.group_id) + '">Complete All (' + groupOnHold.length + ')</button>' : '') +
+                  // Cancelling/removing a hold is intentionally narrower than the rest of
+                  // this group's actions -- Admin/Manager/Branch Supervisor only, matching
+                  // cancel_layaway's own server-side gate (Ren, 2026-09-16).
+                  (canManage ? '<button class="btn small secondary" data-act="cancel-group" data-group="' + esc(h.group_id) + '">Cancel All (' + groupOnHold.length + ')</button>' : '') +
                 '</div>'
               : '') +
-            (h.status === 'On Hold' && canAct
-              ? '<form class="lw-pay-form" data-hold-id="' + h.id + '" data-branch-id="' + h.branch_id + '" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">' +
-                  '<input type="number" name="amount" step="0.01" min="0.01" placeholder="Amount" required style="width:70px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
-                  '<select name="method" style="padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' + PAYMENT_METHODS.map((m) => '<option>' + m + '</option>').join('') + '</select>' +
-                  '<input type="text" name="reference" placeholder="Reference" style="width:70px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
-                  '<input type="file" name="proof" accept="image/*,.pdf" style="max-width:110px;font-size:11px;" title="Proof of Payment">' +
-                  '<button class="btn small" type="submit">Add Payment</button>' +
-                '</form>' +
+            (h.status === 'On Hold' && (canAct || canManage)
+              ? (canAct
+                  ? '<form class="lw-pay-form" data-hold-id="' + h.id + '" data-branch-id="' + h.branch_id + '" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">' +
+                      '<input type="number" name="amount" step="0.01" min="0.01" placeholder="Amount" required style="width:70px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
+                      '<select name="method" style="padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' + PAYMENT_METHODS.map((m) => '<option>' + m + '</option>').join('') + '</select>' +
+                      '<input type="text" name="reference" placeholder="Reference" style="width:70px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
+                      '<input type="file" name="proof" accept="image/*,.pdf" style="max-width:110px;font-size:11px;" title="Proof of Payment">' +
+                      '<button class="btn small" type="submit">Add Payment</button>' +
+                    '</form>'
+                  : '') +
                 '<div style="margin-top:4px;display:flex;gap:4px;">' +
-                  '<button class="btn small secondary" data-act="complete" data-id="' + h.id + '">Complete</button>' +
-                  '<button class="btn small secondary" data-act="cancel" data-id="' + h.id + '">Cancel</button>' +
-                '</div>'
+                  (canAct ? '<button class="btn small secondary" data-act="complete" data-id="' + h.id + '">Complete</button>' : '') +
+                  (canManage ? '<button class="btn small secondary" data-act="edit-hold" data-id="' + h.id + '">Edit</button>' : '') +
+                  (canManage ? '<button class="btn small secondary" data-act="cancel" data-id="' + h.id + '">Cancel</button>' : '') +
+                '</div>' +
+                (canManage ? editHoldFormHtml(h) : '')
               : '') +
           '</td>' +
         '</tr>';
@@ -497,6 +537,37 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       if (!confirm('Delete this payment entry?')) return;
       try { await deleteLayawayPayment(Number(btn.dataset.id)); notify('Payment removed.', false); await load(); }
       catch (err) { notify(String(err.message || err), true); }
+    }));
+
+    list.querySelectorAll('[data-act="edit-hold"]').forEach((btn) => btn.addEventListener('click', () => {
+      const form = list.querySelector('.lw-edit-form[data-hold-id="' + btn.dataset.id + '"]');
+      if (!form) return;
+      const opening = form.style.display === 'none';
+      list.querySelectorAll('.lw-edit-form').forEach((f) => { f.style.display = 'none'; });
+      if (opening) { form.style.display = ''; attachSkuAutocomplete(form); }
+    }));
+    list.querySelectorAll('[data-act="close-edit-hold"]').forEach((btn) => btn.addEventListener('click', () => {
+      const form = list.querySelector('.lw-edit-form[data-hold-id="' + btn.dataset.id + '"]');
+      if (form) form.style.display = 'none';
+    }));
+    list.querySelectorAll('[data-act="save-edit-hold"]').forEach((btn) => btn.addEventListener('click', async () => {
+      const form = list.querySelector('.lw-edit-form[data-hold-id="' + btn.dataset.id + '"]');
+      if (!form) return;
+      const sku = form.querySelector('[name=sku]').value.trim();
+      const qty = Number(form.querySelector('[name=qty]').value);
+      const unitPrice = form.querySelector('[name=unitPrice]').value ? Number(form.querySelector('[name=unitPrice]').value) : null;
+      const customerName = form.querySelector('[name=customerName]').value.trim();
+      const contactNumber = form.querySelector('[name=contactNumber]').value.trim();
+      const orderId = form.querySelector('[name=orderId]').value.trim();
+      const notes = form.querySelector('[name=notes]').value.trim();
+      if (!sku || !qty || qty <= 0 || !customerName) { notify('SKU, a positive Qty, and Customer Name are required.', true); return; }
+      try {
+        await editLayawayHold({ holdId: Number(btn.dataset.id), sku, qty, unitPrice, customerName, contactNumber, orderId, notes });
+        notify('Layaway updated.', false);
+        await load();
+      } catch (err) {
+        notify(String(err.message || err), true);
+      }
     }));
   }
 

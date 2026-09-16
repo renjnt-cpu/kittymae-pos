@@ -262,6 +262,26 @@ export async function createPosSale({ branchId, items, customerName, contactNumb
   return data; // the new sale_group_id
 }
 
+/** Correct a mistake on one line of a completed sale (wrong SKU/qty/price/customer/
+ * order ref) -- Admin/Manager/Branch Supervisor only (update_pos_sale_item enforces
+ * this server-side too). Reverses the original item's stock effect and applies the
+ * corrected one so qty_available stays accurate. */
+export async function updatePosSaleItem({ movementId, sku, qty, unitPrice, customerName, contactNumber, orderNumber }) {
+  const { error } = await supabase.rpc('update_pos_sale_item', {
+    p_movement_id: movementId, p_sku: sku, p_qty: qty, p_unit_price: unitPrice ?? null,
+    p_customer_name: customerName || null, p_contact_number: contactNumber || null, p_order_number: orderNumber || null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Fully delete a completed sale (every line + its payments), restoring the stock
+ * each line took -- for a sale that should never have existed at all. Admin/Manager/
+ * Branch Supervisor only. */
+export async function deletePosSale(saleGroupId) {
+  const { error } = await supabase.rpc('delete_pos_sale', { p_sale_group_id: saleGroupId });
+  if (error) throw new Error(error.message);
+}
+
 export async function listSalePayments(groupIds) {
   if (!groupIds || !groupIds.length) return [];
   const { data, error } = await supabase.from('sale_payments').select('*').in('sale_group_id', groupIds);
@@ -1017,6 +1037,19 @@ export async function completeLayaway(holdId, orderNumber) {
 
 export async function cancelLayaway(holdId, reason) {
   const { error } = await supabase.rpc('cancel_layaway', { p_hold_id: holdId, p_reason: reason || null });
+  if (error) throw new Error(error.message);
+}
+
+/** Correct a mistake on an On Hold layaway (wrong SKU/qty/price/customer/order ref/
+ * notes) without cancelling and re-creating it -- Admin/Manager/Branch Supervisor
+ * only (edit_layaway_hold enforces this server-side too). Keeps qty_available/
+ * qty_reserved and the linked reservation transaction consistent with the correction. */
+export async function editLayawayHold({ holdId, sku, qty, customerName, contactNumber, unitPrice, orderId, notes }) {
+  const { error } = await supabase.rpc('edit_layaway_hold', {
+    p_hold_id: holdId, p_sku: sku, p_qty: qty, p_customer_name: customerName,
+    p_contact_number: contactNumber || null, p_unit_price: unitPrice ?? null,
+    p_order_id: orderId || null, p_notes: notes || null,
+  });
   if (error) throw new Error(error.message);
 }
 
