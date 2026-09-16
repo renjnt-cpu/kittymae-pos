@@ -181,6 +181,7 @@ if (employee) {
             '</div>' +
             '<p class="muted" style="margin-top:4px;">Tap a product on the left to add it. Stock is deducted immediately on Complete Sale.</p>' +
             '<div id="pos-write-note"></div>' +
+            '<div id="pos-order-msg"></div>' +
             '<form id="pos-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
               '<label style="font-size:13px;font-weight:600;">Items *</label>' +
               '<div id="pos-cart-lines"><p class="muted" style="font-size:12px;">No items yet — tap a product to add it.</p></div>' +
@@ -448,9 +449,16 @@ if (employee) {
       const f = ev.target;
       const btn = f.querySelector('button[type=submit]');
       const items = readPosItemRows();
-      if (!items.length) { toast('br-msg', 'Add at least one item to sell.', true); return; }
+      // pos-order-msg (not br-msg) so this is visible on mobile, where the order
+      // panel is a full-screen sheet (position:fixed;inset:0;z-index:50) that
+      // otherwise completely covers br-msg at the top of <main> -- Complete Sale
+      // looked like it silently did nothing, when it was actually failing (or
+      // succeeding) behind an invisible message (Ren, 2026-09-16: "everyone cannot
+      // save an entry in POS"). Success still toasts to br-msg since the sheet
+      // closes on success, returning to the now-visible main view.
+      if (!items.length) { toast('pos-order-msg', 'Add at least one item to sell.', true); return; }
       const badQty = items.find((it) => !it.qty || it.qty <= 0);
-      if (badQty) { toast('br-msg', 'Qty must be a positive number for ' + badQty.sku + '.', true); return; }
+      if (badQty) { toast('pos-order-msg', 'Qty must be a positive number for ' + badQty.sku + '.', true); return; }
 
       const payments = readPaymentSlots(f, 'pos');
       btn.disabled = true;
@@ -469,7 +477,7 @@ if (employee) {
         document.getElementById('pos-order-panel').classList.remove('open');
         await loadPos();
       } catch (err) {
-        toast('br-msg', String(err.message || err), true);
+        toast('pos-order-msg', String(err.message || err), true);
       } finally {
         btn.disabled = false;
       }
