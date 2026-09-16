@@ -82,11 +82,14 @@ function readPaymentSlots(f) {
 export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, employee, onCountUpdate }) {
   const isScoped = ['Admin', 'Manager'].includes(employee.role) ? false : !UNSCOPED_POSITIONS.includes(employee.position);
   // Branch Supervisor was missing from this line despite being a manager-level role
-  // everywhere else in the app -- it now covers deleting a payment, editing a hold's
-  // details, and cancelling/removing a hold (Ren, 2026-09-16: "the once who can
-  // remove only me supervisor, manager"), matching edit_layaway_hold/cancel_layaway's
-  // own server-side gate exactly.
+  // everywhere else in the app -- it now covers deleting a payment and editing a
+  // hold's details, matching edit_layaway_hold's own server-side gate exactly.
   const canManage = ['Admin', 'Manager', 'Branch Supervisor'].includes(employee.role) || POSITION_MANAGERS.includes(employee.position);
+  // Cancelling (the "final delete" of a layaway) is narrower still -- Admin only
+  // (Ren, 2026-09-16: "i will be the one to final delete not supervisor or manager
+  // now"), reversing the same-day-earlier change that let Manager/Branch Supervisor
+  // do it too. Matches cancel_layaway's own server-side gate exactly.
+  const canFinalDelete = employee.role === 'Admin';
   const staff = await listActiveEmployees();
 
   function notify(text, isError) {
@@ -449,10 +452,11 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
             (groupIdx === 0 && groupOnHold.length > 1 && (canAct || canManage)
               ? '<div style="margin-bottom:4px;display:flex;gap:4px;">' +
                   (canAct ? '<button class="btn small secondary" data-act="complete-group" data-group="' + esc(h.group_id) + '">Complete All (' + groupOnHold.length + ')</button>' : '') +
-                  // Cancelling/removing a hold is intentionally narrower than the rest of
-                  // this group's actions -- Admin/Manager/Branch Supervisor only, matching
-                  // cancel_layaway's own server-side gate (Ren, 2026-09-16).
-                  (canManage ? '<button class="btn small secondary" data-act="cancel-group" data-group="' + esc(h.group_id) + '">Cancel All (' + groupOnHold.length + ')</button>' : '') +
+                  // Cancelling/removing a hold is Admin-only -- narrower than everything
+                  // else here, matching cancel_layaway's own server-side gate (Ren,
+                  // 2026-09-16: "i will be the one to final delete not supervisor or
+                  // manager now").
+                  (canFinalDelete ? '<button class="btn small secondary" data-act="cancel-group" data-group="' + esc(h.group_id) + '">Cancel All (' + groupOnHold.length + ')</button>' : '') +
                 '</div>'
               : '') +
             (h.status === 'On Hold' && (canAct || canManage)
@@ -468,7 +472,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
                 '<div style="margin-top:4px;display:flex;gap:4px;">' +
                   (canAct ? '<button class="btn small secondary" data-act="complete" data-id="' + h.id + '">Complete</button>' : '') +
                   (canManage ? '<button class="btn small secondary" data-act="edit-hold" data-id="' + h.id + '">Edit</button>' : '') +
-                  (canManage ? '<button class="btn small secondary" data-act="cancel" data-id="' + h.id + '">Cancel</button>' : '') +
+                  (canFinalDelete ? '<button class="btn small secondary" data-act="cancel" data-id="' + h.id + '">Cancel</button>' : '') +
                 '</div>' +
                 (canManage ? editHoldFormHtml(h) : '')
               : '') +
