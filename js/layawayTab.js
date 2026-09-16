@@ -588,7 +588,10 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   function renderMonthly() {
     const fFrom = document.getElementById('mm-from').value;
     const fTo = document.getElementById('mm-to').value;
-    let rows = allHolds;
+    // Cancelled excluded here too, same as the On Hold list above -- otherwise a
+    // cancelled hold's value/paid amounts would still bleed into Total Value/Total
+    // Paid/Remaining even with its own Cancelled column gone.
+    let rows = allHolds.filter((h) => h.status !== 'Cancelled');
     if (fFrom) rows = rows.filter((h) => h.hold_date >= fFrom);
     if (fTo) rows = rows.filter((h) => h.hold_date <= fTo);
 
@@ -604,19 +607,23 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     rows.forEach((h) => {
       const key = (h.hold_date || '').slice(0, 7); // "YYYY-MM"
       if (!key) return;
-      const m = byMonth[key] || (byMonth[key] = { onHold: 0, completed: 0, cancelled: 0, count: 0, value: 0, paid: 0 });
+      const m = byMonth[key] || (byMonth[key] = { onHold: 0, completed: 0, count: 0, value: 0, paid: 0 });
       m.count++;
       m.value += Number(h.total_price || 0);
       m.paid += paidSoFar(h);
       if (h.status === 'On Hold') m.onHold++;
       else if (h.status === 'Completed') m.completed++;
-      else if (h.status === 'Cancelled') m.cancelled++;
+      // Cancelled holds are excluded from this rollup for now too (Ren, 2026-09-16:
+      // "still cancelled show in the layaway in the POS" -- referring to this table's
+      // own Cancelled column, kept the first time around since it's an aggregate
+      // count rather than individual rows; removed now to match "remove cancelled...
+      // for now" fully).
     });
     const months = Object.keys(byMonth).sort().reverse();
     const box = document.getElementById('mm-table');
     if (!months.length) { box.innerHTML = '<p class="muted">No layaway holds for this range.</p>'; return; }
     box.innerHTML = '<div class="table-scroll"><table>' +
-      '<thead><tr><th>Month</th><th>Total Holds</th><th>On Hold</th><th>Completed</th><th>Cancelled</th><th>Total Value</th><th>Total Paid</th><th>Remaining</th></tr></thead><tbody>' +
+      '<thead><tr><th>Month</th><th>Total Holds</th><th>On Hold</th><th>Completed</th><th>Total Value</th><th>Total Paid</th><th>Remaining</th></tr></thead><tbody>' +
       months.map((key) => {
         const m = byMonth[key];
         const label = new Date(key + '-02').toLocaleDateString('en-PH', { year: 'numeric', month: 'long' });
@@ -625,7 +632,6 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '<td data-label="Total Holds">' + m.count + '</td>' +
           '<td data-label="On Hold">' + m.onHold + '</td>' +
           '<td data-label="Completed">' + m.completed + '</td>' +
-          '<td data-label="Cancelled">' + m.cancelled + '</td>' +
           '<td data-label="Total Value">' + money(m.value) + '</td>' +
           '<td data-label="Total Paid">' + money(m.paid) + '</td>' +
           '<td data-label="Remaining">' + money(m.value - m.paid) + '</td>' +
@@ -644,21 +650,28 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   // was ever moved at all. Independent of the date-range filter above -- this is
   // about what needs attention right now, not a historical range. ----
   function renderForfeitureWatch() {
+    // Days Held replaced with days remaining until the forfeit due date (Ren,
+    // 2026-09-16: "instead of days held. show the remaining days until due date") --
+    // effectiveForfeit/daysPastForfeit now computed once up front (was previously
+    // computed again per-row below) so both the sort and the new column can use it.
+    // Sorted most-urgent-first: already-overdue items surface above ones still
+    // safely within their window, matching what a forfeiture watch list is for.
     const rows = allHolds
       .filter((h) => h.status === 'On Hold')
-      .map((h) => ({ h, daysHeld: daysSince(h.hold_date) }))
-      .sort((a, b) => b.daysHeld - a.daysHeld);
+      .map((h) => {
+        const effectiveForfeit = h.forfeit_date || defaultForfeitDate(h.hold_date);
+        return { h, effectiveForfeit, daysPastForfeit: daysSince(effectiveForfeit) };
+      })
+      .sort((a, b) => b.daysPastForfeit - a.daysPastForfeit);
 
     const box = document.getElementById('fw-table');
     if (!rows.length) { box.innerHTML = '<p class="muted">No items currently on hold.</p>'; return; }
 
     box.innerHTML = '<div class="table-scroll table-2col"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
-      '<thead><tr><th>Date Purchased</th><th>Item</th><th>Customer</th><th>Payments</th><th>Paid</th><th>Remaining</th><th>Days Held</th><th>Forfeit Date</th></tr></thead><tbody>' +
-      rows.map(({ h, daysHeld }) => {
+      '<thead><tr><th>Date Purchased</th><th>Item</th><th>Customer</th><th>Payments</th><th>Paid</th><th>Remaining</th><th>Days Remaining</th><th>Forfeit Date</th></tr></thead><tbody>' +
+      rows.map(({ h, effectiveForfeit, daysPastForfeit }) => {
         const paid = paidSoFar(h);
         const remaining = h.total_price == null ? null : Number(h.total_price) - paid;
-        const effectiveForfeit = h.forfeit_date || defaultForfeitDate(h.hold_date);
-        const daysPastForfeit = daysSince(effectiveForfeit);
         const isOverdue = daysPastForfeit >= 0;
         const isWarning = !isOverdue && daysPastForfeit >= -FORFEITURE_WARN_LEAD_DAYS;
         const rowStyle = isOverdue ? 'background:#fdecea;' : isWarning ? 'background:#fff3f3;' : '';
@@ -701,7 +714,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '</td>' +
           '<td data-label="Paid">' + money(paid) + '</td>' +
           '<td data-label="Remaining">' + (remaining !== null ? money(remaining) : '—') + '</td>' +
-          '<td data-label="Days Held">' + daysHeld + '</td>' +
+          '<td data-label="Days Remaining">' + (isOverdue ? '<span class="badge low">Overdue ' + daysPastForfeit + 'd</span>' : (-daysPastForfeit) + 'd left') + '</td>' +
           '<td data-label="Forfeit Date">' +
             (canAct
               ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">' +
