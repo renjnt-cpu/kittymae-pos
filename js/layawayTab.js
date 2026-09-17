@@ -9,6 +9,7 @@ import {
   listLayaways, createLayawayHold, addLayawayPayment, completeLayaway, cancelLayaway, deleteLayawayPayment,
   setLayawayForfeitDate, setLayawayHoldDate, uploadLayawayPaymentProof, getLayawayPaymentProofUrl,
   searchProducts, listActiveEmployees, subscribeToChanges, editLayawayHold, deleteLayawayHold, forfeitLayawayHold,
+  requestLayawayForfeitDate, listLayawayForfeitDateRequests, approveLayawayForfeitDate, rejectLayawayForfeitDate,
 } from './api.js';
 import { PAYMENT_METHODS } from './paymentMethods.js';
 
@@ -162,8 +163,18 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '<div id="lw-list-forfeited" style="margin-top:10px;"></div>' +
         '</details>' +
 
+        // Admin-only review queue (Ren, 2026-09-17: "for approval of me if they want
+        // to edit it") -- open by default since a pending request is something to act
+        // on, not just browse, same convention as SKU Catalog's Pending Edit Requests.
+        (canFinalDelete
+          ? '<details class="card" id="lw-pending-forfeit-folder" style="margin-top:22px;" open>' +
+              '<summary style="cursor:pointer;font-weight:bold;">Pending Forfeit Date Requests <span class="muted" id="lw-pending-forfeit-count" style="font-weight:normal;"></span></summary>' +
+              '<div id="lw-pending-forfeit-list" style="margin-top:10px;"><div class="muted">Loading…</div></div>' +
+            '</details>'
+          : '') +
+
         '<h3 style="margin-top:22px;">Forfeiture Watch <span class="muted" style="font-weight:normal;">— On Hold items, oldest first (not affected by the date range above)</span></h3>' +
-        '<p class="muted" style="margin-top:-4px;">Unpaid holds are forfeited 2 months after Date Purchased. Rows turn red once an item is close to or past that.</p>' +
+        '<p class="muted" style="margin-top:-4px;">Unpaid holds are forfeited 2 months after Date Purchased. Rows turn red once an item is close to or past that. Date Purchased is fixed once set (Admin only can correct it); a Forfeit Date change by anyone else needs Admin approval.</p>' +
         '<div id="fw-table"></div>' +
       '</div>' +
     '</div>';
@@ -377,6 +388,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
 
   let allHolds = [];
   let groupMembers = {};
+  let pendingForfeitRequests = []; // every Pending row this employee can see (RLS: all for Admin/Manager, own for anyone else)
 
   document.getElementById('lw-f-search').addEventListener('input', render);
   document.getElementById('lw-f-clear').addEventListener('click', () => {
@@ -402,10 +414,69 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       if (onCountUpdate) onCountUpdate(allHolds.filter((h) => h.status === 'On Hold').length);
       render();
       renderMonthly();
+      await loadPendingForfeitRequests(); // must resolve before renderForfeitureWatch reads pendingForfeitRequests
       renderForfeitureWatch();
     } catch (err) {
       list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
     }
+  }
+
+  /** Only relevant while a hold can still be forfeited, so filtered down to this
+   * branch's On Hold rows (allHolds is already scoped by getBranchId()) rather than
+   * every request RLS would otherwise hand back (e.g. every branch's, for Admin). */
+  async function loadPendingForfeitRequests() {
+    try {
+      const holdIds = new Set(allHolds.map((h) => h.id));
+      pendingForfeitRequests = (await listLayawayForfeitDateRequests())
+        .filter((r) => r.status === 'Pending' && holdIds.has(r.hold_id));
+    } catch (err) {
+      pendingForfeitRequests = [];
+    }
+    if (canFinalDelete) renderPendingForfeitRequests();
+  }
+
+  function renderPendingForfeitRequests() {
+    const countEl = document.getElementById('lw-pending-forfeit-count');
+    const box = document.getElementById('lw-pending-forfeit-list');
+    if (!countEl || !box) return; // not rendered at all for a non-Admin
+    countEl.textContent = '(' + pendingForfeitRequests.length + ')';
+    if (!pendingForfeitRequests.length) { box.innerHTML = '<p class="muted">No pending forfeit date requests.</p>'; return; }
+
+    box.innerHTML = pendingForfeitRequests.map((r) => {
+      const h = r.layaway_holds || {};
+      return '<div class="card" style="margin-bottom:8px;background:#fffaf0;">' +
+        '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">' +
+          '<div><b>' + esc(h.sku || '—') + '</b> — ' + esc(h.customer_name || '—') + ' <span class="muted" style="font-size:11px;">requested by ' + (r.requester ? esc(r.requester.full_name) : '—') + '</span></div>' +
+          '<div class="muted" style="font-size:11px;">' + fmtDateTime(r.requested_at) + '</div>' +
+        '</div>' +
+        '<div style="font-size:12px;margin-top:6px;">Forfeit Date: <span class="muted" style="text-decoration:line-through;">' + fmtDate(r.previous_date) + '</span> → <strong>' + fmtDate(r.proposed_date) + '</strong></div>' +
+        '<div style="margin-top:8px;display:flex;gap:6px;">' +
+          '<button class="btn small" data-act="approve-forfeit-date" data-id="' + r.id + '">Approve</button>' +
+          '<button class="btn small secondary" data-act="reject-forfeit-date" data-id="' + r.id + '">Reject</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    box.querySelectorAll('[data-act="approve-forfeit-date"]').forEach((btn) => btn.addEventListener('click', async () => {
+      try {
+        await approveLayawayForfeitDate(Number(btn.dataset.id));
+        notify('Forfeit date approved.', false);
+        await load();
+      } catch (err) {
+        notify(String(err.message || err), true);
+      }
+    }));
+    box.querySelectorAll('[data-act="reject-forfeit-date"]').forEach((btn) => btn.addEventListener('click', async () => {
+      const reason = prompt('Reason for rejecting (optional)?') || null;
+      try {
+        await rejectLayawayForfeitDate(Number(btn.dataset.id), reason);
+        notify('Forfeit date request rejected.', false);
+        await loadPendingForfeitRequests();
+        renderForfeitureWatch();
+      } catch (err) {
+        notify(String(err.message || err), true);
+      }
+    }));
   }
 
   function paidSoFar(h) { return (h.layaway_payments || []).reduce((s, p) => s + Number(p.amount), 0); }
@@ -741,9 +812,14 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         const lastEdit = history.length ? history[history.length - 1] : null;
         const hdHistory = (h.layaway_hold_date_log || []).slice().sort((a, b) => new Date(a.changed_at) - new Date(b.changed_at));
         const hdLastEdit = hdHistory.length ? hdHistory[hdHistory.length - 1] : null;
+        const pendingForfeit = pendingForfeitRequests.find((r) => r.hold_id === h.id);
         return '<tr style="' + rowStyle + '">' +
           '<td data-label="Date Purchased">' +
-            (canAct
+            // Fixed once set (Ren, 2026-09-17: "once they add date of the layaway not
+            // its already fix") -- only Admin can still correct it; everyone else
+            // gets a plain read-only date, matching set_layaway_hold_date()'s own
+            // Admin-only gate.
+            (canFinalDelete
               ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">' +
                   '<input type="date" class="fw-hold-date-input" data-hold-id="' + h.id + '" value="' + h.hold_date + '" style="font-size:12px;padding:3px 5px;border:1px solid #ddd;border-radius:6px;">' +
                   '<button type="button" class="btn small secondary fw-hold-date-save" data-hold-id="' + h.id + '" style="padding:2px 8px;">Save</button>' +
@@ -763,7 +839,13 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
             (group ? ' <span class="badge pending" style="font-size:9px;padding:1px 5px;" title="Part of a ' + group.length + '-item hold">' + (groupIdx + 1) + '/' + group.length + '</span>' : '') +
             (h.stock_status === 'Lacking' ? ' <span class="badge low" title="Not physically in stock yet -- needs to be sourced before this can be completed">Lacking</span>' : '') +
             (h.order_id ? '<div class="muted" style="font-size:10px;">Order ' + esc(h.order_id) + '</div>' : '') + '</td>' +
-          '<td data-label="Customer">' + esc(h.customer_name) + (h.contact_number ? '<div class="muted" style="font-size:10px;">' + esc(h.contact_number) + '</div>' : '') + '</td>' +
+          '<td data-label="Customer">' + esc(h.customer_name) + (h.contact_number ? '<div class="muted" style="font-size:10px;">' + esc(h.contact_number) + '</div>' : '') +
+            // Forfeit right from this watch list (Ren, 2026-09-17: "add a forfeited
+            // click side of the details of the customer") -- same action/gate as the
+            // On Hold list's own Forfeit button, just reachable without scrolling
+            // back up to it.
+            (canFinalDelete ? '<button type="button" class="btn small secondary fw-forfeit-hold" data-hold-id="' + h.id + '" style="margin-top:4px;">Forfeit</button>' : '') +
+          '</td>' +
           '<td data-label="Payments" class="full-row" style="font-size:11px;">' +
             (payments.length
               ? payments.map((p) => money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '') + ' — ' + (p.paid_at || '') +
@@ -774,12 +856,24 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '<td data-label="Remaining">' + (remaining !== null ? money(remaining) : '—') + '</td>' +
           '<td data-label="Days Remaining">' + (isOverdue ? '<span class="badge low">Overdue ' + daysPastForfeit + 'd</span>' : (-daysPastForfeit) + 'd left') + '</td>' +
           '<td data-label="Forfeit Date">' +
-            (canAct
+            // Admin edits directly; anyone else who can act on this hold submits a
+            // request instead (Ren, 2026-09-17: "for approval of me if they want to
+            // edit it") -- set_layaway_forfeit_date() is Admin-only server-side too,
+            // so this isn't just a UI-level restriction.
+            (canFinalDelete
               ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">' +
                   '<input type="date" class="fw-forfeit-input" data-hold-id="' + h.id + '" value="' + effectiveForfeit + '" style="font-size:12px;padding:3px 5px;border:1px solid #ddd;border-radius:6px;">' +
                   '<button type="button" class="btn small secondary fw-forfeit-save" data-hold-id="' + h.id + '" style="padding:2px 8px;">Save</button>' +
                 '</div>'
-              : fmtDate(effectiveForfeit)) +
+              : canAct
+                ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">' +
+                    '<input type="date" class="fw-forfeit-request-input" data-hold-id="' + h.id + '" value="' + effectiveForfeit + '" style="font-size:12px;padding:3px 5px;border:1px solid #ddd;border-radius:6px;">' +
+                    '<button type="button" class="btn small secondary fw-forfeit-request" data-hold-id="' + h.id + '" style="padding:2px 8px;">Request Change</button>' +
+                  '</div>'
+                : fmtDate(effectiveForfeit)) +
+            (pendingForfeit
+              ? '<div class="muted" style="font-size:10px;margin-top:2px;">Pending: → ' + fmtDate(pendingForfeit.proposed_date) + ' (awaiting Admin approval)</div>'
+              : '') +
             (isOverdue ? ' <span class="badge low">FORFEITURE DUE</span>' : isWarning ? ' <span class="badge low">NEARING</span>' : '') +
             (lastEdit
               ? '<div class="muted" style="font-size:10px;margin-top:2px;">Edited by ' + esc(lastEdit.employees?.full_name || 'Unknown') + ' · ' + fmtDateTime(lastEdit.changed_at) + '</div>'
@@ -807,6 +901,26 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         notify(String(err.message || err), true);
         btn.disabled = false;
       }
+    }));
+    box.querySelectorAll('.fw-forfeit-request').forEach((btn) => btn.addEventListener('click', async () => {
+      const holdId = Number(btn.dataset.holdId);
+      const input = box.querySelector('.fw-forfeit-request-input[data-hold-id="' + holdId + '"]');
+      if (!input.value) { notify('Pick a date first.', true); return; }
+      btn.disabled = true;
+      try {
+        await requestLayawayForfeitDate(holdId, input.value);
+        notify('Forfeit date change submitted -- awaiting Admin approval.', false);
+        await loadPendingForfeitRequests();
+        renderForfeitureWatch();
+      } catch (err) {
+        notify(String(err.message || err), true);
+        btn.disabled = false;
+      }
+    }));
+    box.querySelectorAll('.fw-forfeit-hold').forEach((btn) => btn.addEventListener('click', async () => {
+      if (!confirm('Mark this layaway as Forfeited? The customer never paid it off -- the item goes back to Available stock.')) return;
+      try { await forfeitLayawayHold(Number(btn.dataset.holdId)); notify('Layaway forfeited.', false); await load(); }
+      catch (err) { notify(String(err.message || err), true); }
     }));
     box.querySelectorAll('.fw-forfeit-history').forEach((btn) => btn.addEventListener('click', () => {
       const div = box.querySelector('.fw-forfeit-history-list[data-hold-id="' + btn.dataset.holdId + '"]');
@@ -842,7 +956,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
 
   function tile(num, label) { return '<div class="tile"><div class="num">' + esc(num) + '</div><div class="lbl">' + esc(label) + '</div></div>'; }
 
-  const unsubscribe = subscribeToChanges(['layaway_holds', 'layaway_payments', 'layaway_forfeit_date_log', 'layaway_hold_date_log'], load);
+  const unsubscribe = subscribeToChanges(['layaway_holds', 'layaway_payments', 'layaway_forfeit_date_log', 'layaway_hold_date_log', 'layaway_forfeit_date_requests'], load);
   await load();
 
   return { reload: load, unsubscribe };

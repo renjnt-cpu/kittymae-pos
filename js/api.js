@@ -1090,6 +1090,36 @@ export async function setLayawayHoldDate(holdId, holdDate) {
   if (error) throw new Error(error.message);
 }
 
+// ---- Forfeit Date approval (Ren, 2026-09-17: "but for approval of me if they want to
+// edit it") -- set_layaway_forfeit_date() above is now Admin-only at the RLS/RPC
+// level; anyone else submits a change here instead, which only takes effect once
+// Admin approves it. ----
+
+export async function requestLayawayForfeitDate(holdId, newDate) {
+  const { data, error } = await supabase.rpc('request_layaway_forfeit_date', { p_hold_id: holdId, p_new_date: newDate });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** RLS scopes this to every request for Admin/Manager, or just the caller's own for
+ * anyone else (checking their own submissions' status). */
+export async function listLayawayForfeitDateRequests() {
+  const { data, error } = await supabase.from('layaway_forfeit_date_requests')
+    .select('*, layaway_holds(sku, customer_name, branch_id)').order('requested_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return attachEmployeeNames(data, { requester: 'requested_by', reviewer: 'reviewed_by' });
+}
+
+export async function approveLayawayForfeitDate(requestId) {
+  const { error } = await supabase.rpc('approve_layaway_forfeit_date', { p_request_id: requestId });
+  if (error) throw new Error(error.message);
+}
+
+export async function rejectLayawayForfeitDate(requestId, reason) {
+  const { error } = await supabase.rpc('reject_layaway_forfeit_date', { p_request_id: requestId, p_reason: reason || null });
+  if (error) throw new Error(error.message);
+}
+
 /** Managerial-only correction, matching scrap_payments_managerial_delete's pattern --
  * fixing a mistaken payment entry, not part of the normal add-payment flow. */
 export async function deleteLayawayPayment(paymentId) {
