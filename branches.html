@@ -89,10 +89,14 @@ if (employee) {
     // branch, and editing/deleting stays with canWriteHere()'s stricter group.
     const isScoped = employee.role === 'Branch Supervisor';
     // Editing/deleting a completed POS sale correction (update_pos_sale_item/
-    // delete_pos_sale enforce this same gate server-side) -- Ren, 2026-09-16: "add an
-    // edited details only for me supervisor manager", deliberately narrower than who
-    // can ring up a sale in the first place.
-    const canEditSale = ['Admin', 'Manager', 'Branch Supervisor'].includes(employee.role);
+    // delete_pos_sale enforce this same gate server-side, via
+    // is_admin_manager_supervisor_or_team_leader()) -- Ren, 2026-09-16: "add an edited
+    // details only for me supervisor manager", deliberately narrower than who can ring
+    // up a sale in the first place; extended 2026-09-17 to also cover Branch Team
+    // Leader ("sales admin associate encoded in the pos but team leader and branch can
+    // also edit the details if theres an error") -- a position, not a role, so it's a
+    // separate check from the role list.
+    const canEditSale = ['Admin', 'Manager', 'Branch Supervisor'].includes(employee.role) || employee.position === 'Branch Team Leader';
     const branches = await getBranches();
     const branchOptions = (selected) => branches.map((b) =>
       '<option value="' + b.id + '"' + (b.id === selected ? ' selected' : '') + '>' + esc(b.name) + '</option>'
