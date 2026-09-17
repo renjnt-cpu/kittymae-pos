@@ -8,14 +8,14 @@
 import {
   listLayaways, createLayawayHold, addLayawayPayment, completeLayaway, cancelLayaway, deleteLayawayPayment,
   setLayawayForfeitDate, setLayawayHoldDate, uploadLayawayPaymentProof, getLayawayPaymentProofUrl,
-  searchProducts, listActiveEmployees, subscribeToChanges, editLayawayHold, deleteLayawayHold,
+  searchProducts, listActiveEmployees, subscribeToChanges, editLayawayHold, deleteLayawayHold, forfeitLayawayHold,
 } from './api.js';
 import { PAYMENT_METHODS } from './paymentMethods.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-PH', { dateStyle: 'medium' }) : '—';
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
-const STATUS_BADGE = { 'On Hold': 'pending', 'Completed': 'ok', 'Cancelled': 'low' };
+const STATUS_BADGE = { 'On Hold': 'pending', 'Completed': 'ok', 'Cancelled': 'low', 'Forfeited': 'low' };
 // A layaway with no activity forfeits 2 months (~60 days) after Date Purchased
 // (hold_date) by default -- staff can override this per-hold with an explicit Forfeit
 // Date (99_layaway_forfeit_date.sql). WARN_LEAD_DAYS gives a 2-week heads-up before
@@ -153,6 +153,13 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         '<details class="card" style="margin-top:10px;">' +
           '<summary style="cursor:pointer;font-weight:bold;">Cancelled <span class="muted" id="lw-cancelled-count" style="font-weight:normal;"></span></summary>' +
           '<div id="lw-list-cancelled" style="margin-top:10px;"></div>' +
+        '</details>' +
+        // Forfeited: a customer never came back to pay before the Forfeit Date, as
+        // opposed to Cancelled (a deliberate back-out) -- Ren, 2026-09-17, wanted these
+        // told apart instead of both landing in the same Cancelled bucket.
+        '<details class="card" style="margin-top:10px;">' +
+          '<summary style="cursor:pointer;font-weight:bold;">Forfeited <span class="muted" id="lw-forfeited-count" style="font-weight:normal;"></span></summary>' +
+          '<div id="lw-list-forfeited" style="margin-top:10px;"></div>' +
         '</details>' +
 
         '<h3 style="margin-top:22px;">Forfeiture Watch <span class="muted" style="font-weight:normal;">— On Hold items, oldest first (not affected by the date range above)</span></h3>' +
@@ -465,6 +472,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
                   (canAct ? '<button class="btn small secondary" data-act="complete" data-id="' + h.id + '">Complete</button>' : '') +
                   (canManage ? '<button class="btn small secondary" data-act="edit-hold" data-id="' + h.id + '">Edit</button>' : '') +
                   (canFinalDelete ? '<button class="btn small secondary" data-act="cancel" data-id="' + h.id + '">Cancel</button>' : '') +
+                  // Forfeited is a separate final disposition from Cancelled -- the
+                  // customer never came back to pay by the Forfeit Date, as opposed to
+                  // a deliberate back-out (Ren, 2026-09-17: wanted these told apart in
+                  // their own folder). Same Admin-only gate and stock-release effect
+                  // as Cancel, matching forfeit_layaway_hold()'s own server-side gate.
+                  (canFinalDelete ? '<button class="btn small secondary" data-act="forfeit" data-id="' + h.id + '">Forfeit</button>' : '') +
                   // Delete is distinct from Cancel -- permanently erases the row
                   // (blocked server-side if it has any payments, or is Completed),
                   // for pure data-entry mistakes rather than a real customer
@@ -474,7 +487,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
                 '</div>' +
                 (canManage ? editHoldFormHtml(h) : '')
               : '') +
-            (h.status === 'Cancelled' && canFinalDelete
+            ((h.status === 'Cancelled' || h.status === 'Forfeited') && canFinalDelete
               ? '<button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '" style="margin-top:4px;">Delete</button>'
               : '') +
           '</td>' +
@@ -520,6 +533,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     list.querySelectorAll('[data-act="cancel"]').forEach((btn) => btn.addEventListener('click', async () => {
       if (!confirm('Cancel this layaway? The item goes back to Available stock.')) return;
       try { await cancelLayaway(Number(btn.dataset.id)); notify('Layaway cancelled.', false); await load(); }
+      catch (err) { notify(String(err.message || err), true); }
+    }));
+
+    list.querySelectorAll('[data-act="forfeit"]').forEach((btn) => btn.addEventListener('click', async () => {
+      if (!confirm('Mark this layaway as Forfeited? The customer never paid it off -- the item goes back to Available stock.')) return;
+      try { await forfeitLayawayHold(Number(btn.dataset.id)); notify('Layaway forfeited.', false); await load(); }
       catch (err) { notify(String(err.message || err), true); }
     }));
 
@@ -603,6 +622,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     const onHold = rows.filter((h) => h.status === 'On Hold');
     const completed = rows.filter((h) => h.status === 'Completed');
     const cancelled = rows.filter((h) => h.status === 'Cancelled');
+    const forfeited = rows.filter((h) => h.status === 'Forfeited');
     const totalHeld = onHold.reduce((s, h) => s + Number(h.total_price || 0), 0);
     const totalPaid = onHold.reduce((s, h) => s + paidSoFar(h), 0);
     document.getElementById('lw-tiles').innerHTML =
@@ -612,10 +632,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       tile(money(totalPaid), 'Paid So Far');
     document.getElementById('lw-completed-count').textContent = '(' + completed.length + ')';
     document.getElementById('lw-cancelled-count').textContent = '(' + cancelled.length + ')';
+    document.getElementById('lw-forfeited-count').textContent = '(' + forfeited.length + ')';
 
     renderHoldTable('lw-list', onHold);
     renderHoldTable('lw-list-completed', completed);
     renderHoldTable('lw-list-cancelled', cancelled);
+    renderHoldTable('lw-list-forfeited', forfeited);
   }
 
   // ---- Monthly Monitoring: a wide, per-month rollup with a date-range-filtered
@@ -624,10 +646,10 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   function renderMonthly() {
     const fFrom = document.getElementById('mm-from').value;
     const fTo = document.getElementById('mm-to').value;
-    // Cancelled excluded here too, same as the On Hold list above -- otherwise a
-    // cancelled hold's value/paid amounts would still bleed into Total Value/Total
-    // Paid/Remaining even with its own Cancelled column gone.
-    let rows = allHolds.filter((h) => h.status !== 'Cancelled');
+    // Cancelled/Forfeited excluded here too, same as the On Hold list above --
+    // otherwise a dead hold's value/paid amounts would still bleed into Total Value/
+    // Total Paid/Remaining even with its own status column gone.
+    let rows = allHolds.filter((h) => h.status !== 'Cancelled' && h.status !== 'Forfeited');
     if (fFrom) rows = rows.filter((h) => h.hold_date >= fFrom);
     if (fTo) rows = rows.filter((h) => h.hold_date <= fTo);
 

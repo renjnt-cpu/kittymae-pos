@@ -1041,6 +1041,14 @@ export async function cancelLayaway(holdId, reason) {
   if (error) throw new Error(error.message);
 }
 
+/** Distinct from cancelLayaway() -- Forfeited means the customer never came back to
+ * pay by the Forfeit Date, as opposed to a deliberate cancellation. Same effect on
+ * stock (releases the reservation) and the same Admin-only gate server-side. */
+export async function forfeitLayawayHold(holdId, reason) {
+  const { error } = await supabase.rpc('forfeit_layaway_hold', { p_hold_id: holdId, p_reason: reason || null });
+  if (error) throw new Error(error.message);
+}
+
 /** Correct a mistake on an On Hold layaway (wrong SKU/qty/price/customer/order ref/
  * notes) without cancelling and re-creating it -- Admin/Manager/Branch Supervisor
  * only (edit_layaway_hold enforces this server-side too). Keeps qty_available/
