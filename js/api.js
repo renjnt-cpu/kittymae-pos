@@ -1141,12 +1141,14 @@ function sanitizeForOrFilter(s) {
  * actually needs instead of the whole active dataset. branchId: null for the
  * company-wide board (movement.html), or one branch's id for the Branches page's
  * Online Orders tab (92_order_item_status_branch_scope.sql). */
-export async function listOrderItemStatuses({ statusKeys = null, search = '', branchId = null } = {}) {
+export async function listOrderItemStatuses({ statusKeys = null, search = '', branchId = null, fromDate = null, toDate = null } = {}) {
   let query = supabase.from('order_item_status')
     .select(ORDER_ITEM_STATUS_COLUMNS)
     .not('status', 'in', '(' + TERMINAL_STATUSES.join(',') + ')');
   if (statusKeys) query = query.in('status', statusKeys);
   if (branchId != null) query = query.eq('branch_id', branchId);
+  if (fromDate) query = query.gte('created_at', fromDate);
+  if (toDate) query = query.lte('created_at', toDate + 'T23:59:59.999');
   const term = sanitizeForOrFilter(search || '');
   if (term) {
     const pat = '%' + term + '%';
@@ -1210,7 +1212,7 @@ export async function deleteOrderItemStatus(id) {
  * this one. Sorted/filtered on updated_at (when the row last changed status) since
  * there's no dedicated delivered_at column -- the closest proxy for "when it was
  * marked Delivered". */
-export async function listDeliveredOrders({ branchId, fromDate }) {
+export async function listDeliveredOrders({ branchId, fromDate, toDate = null }) {
   let query = supabase.from('order_item_status')
     .select(ORDER_ITEM_STATUS_COLUMNS)
     .eq('status', 'delivered')
@@ -1218,6 +1220,7 @@ export async function listDeliveredOrders({ branchId, fromDate }) {
     .order('updated_at', { ascending: false })
     .limit(ORDER_ITEM_STATUS_ROW_CAP);
   if (branchId != null) query = query.eq('branch_id', branchId);
+  if (toDate) query = query.lte('updated_at', toDate + 'T23:59:59.999');
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   return attachEmployeeNames(data, { creator: 'created_by' });

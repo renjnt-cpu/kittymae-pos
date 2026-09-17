@@ -83,7 +83,15 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
   const canEdit = () => isAdmin || !ADMIN_ONLY_EDIT_BRANCHES.includes(effectiveBranchId());
   root.innerHTML =
     (isViewRestricted ? '<p class="muted" style="margin-top:0;">Locked to your own branch — the branch buttons above only affect the other tabs here.</p>' : '') +
-    '<div class="field" style="max-width:380px;"><label>Search</label><input type="text" id="ol-search" placeholder="Item, SKU, order #, customer, or notes…"></div>' +
+    '<div class="card" style="margin-bottom:14px;">' +
+      '<h3 style="margin-top:0;">Search &amp; Filter</h3>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+        '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="ol-search" placeholder="Item, SKU, order #, customer, or notes…"></div>' +
+        '<div class="field"><label>From</label><input type="date" id="ol-f-from"></div>' +
+        '<div class="field"><label>To</label><input type="date" id="ol-f-to"></div>' +
+        '<button type="button" class="btn small secondary" id="ol-f-clear">Clear Filters</button>' +
+      '</div>' +
+    '</div>' +
     '<div id="ol-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>' +
     '<div id="ol-list" style="margin-top:10px;"><div class="muted">Loading…</div></div>';
 
@@ -91,6 +99,8 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
   let statusCounts = { all: 0 };
   let statusFilter = 'all';
   let search = '';
+  let fFrom = '';
+  let fTo = '';
   let sortKey = null, sortDir = 'desc';
   let searchTimer = null;
 
@@ -115,14 +125,17 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
     const branchId = effectiveBranchId();
     try {
       if (statusFilter === 'delivered') {
-        let items = await listDeliveredOrders({ branchId, fromDate: DELIVERED_FROM_DATE });
+        // fFrom can only narrow the Delivered tab's own Sep-2026-onward floor, never
+        // widen it further back -- DELIVERED_FROM_DATE stays the hard limit.
+        const effectiveFrom = fFrom && fFrom > DELIVERED_FROM_DATE ? fFrom : DELIVERED_FROM_DATE;
+        let items = await listDeliveredOrders({ branchId, fromDate: effectiveFrom, toDate: fTo || null });
         if (search) items = items.filter((r) => matchesSearch(r, search));
         orderItems = items;
         render();
         return;
       }
       const [items, counts] = await Promise.all([
-        listOrderItemStatuses({ statusKeys: tabKeysFor(statusFilter), search, branchId }),
+        listOrderItemStatuses({ statusKeys: tabKeysFor(statusFilter), search, branchId, fromDate: fFrom || null, toDate: fTo || null }),
         getOrderItemStatusCounts(branchId),
       ]);
       orderItems = items;
@@ -138,6 +151,15 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
     search = ev.target.value.trim();
     clearTimeout(searchTimer);
     searchTimer = setTimeout(load, 300);
+  });
+  document.getElementById('ol-f-from').addEventListener('change', (ev) => { fFrom = ev.target.value; load(); });
+  document.getElementById('ol-f-to').addEventListener('change', (ev) => { fTo = ev.target.value; load(); });
+  document.getElementById('ol-f-clear').addEventListener('click', () => {
+    document.getElementById('ol-search').value = '';
+    document.getElementById('ol-f-from').value = '';
+    document.getElementById('ol-f-to').value = '';
+    search = ''; fFrom = ''; fTo = '';
+    load();
   });
 
   // Debounced for the same reason as movement.html's board -- a single pancake-resync

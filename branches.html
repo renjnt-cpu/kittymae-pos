@@ -250,10 +250,8 @@ if (employee) {
           '</div>' +
         '</div>' +
         '<div class="layout-2col-main">' +
-          '<div class="tiles" id="scrap-tiles"></div>' +
-          '<h3>Current Balance <span class="muted" style="font-weight:normal;">— weight on hand</span></h3>' +
-          '<div id="scrap-balance" class="card"><div class="muted">Loading…</div></div>' +
           '<div class="card">' +
+            '<h3 style="margin-top:0;">Search &amp; Filter</h3>' +
             '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
               '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="scrap-f-search" placeholder="Metal, grams, customer, payment, source, date…"></div>' +
               '<div class="field"><label>Metal</label><select id="scrap-f-metal"><option value="all">All</option><option>Gold</option><option>Silver</option></select></div>' +
@@ -263,6 +261,9 @@ if (employee) {
               '<button type="button" class="btn small secondary" id="scrap-f-clear">Clear Filters</button>' +
             '</div>' +
           '</div>' +
+          '<div class="tiles" id="scrap-tiles"></div>' +
+          '<h3>Current Balance <span class="muted" style="font-weight:normal;">— weight on hand</span></h3>' +
+          '<div id="scrap-balance" class="card"><div class="muted">Loading…</div></div>' +
           '<div id="scrap-list"><div class="muted">Loading…</div></div>' +
         '</div>' +
       '</div>' +
@@ -293,8 +294,8 @@ if (employee) {
           '</div>' +
         '</div>' +
         '<div class="layout-2col-main">' +
-          '<div class="tiles" id="sub-tiles"></div>' +
           '<div class="card">' +
+            '<h3 style="margin-top:0;">Search &amp; Filter</h3>' +
             '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
               '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="sub-f-search" placeholder="Item, SKU, pawn ref, buyer, grams, date…"></div>' +
               '<div class="field"><label>Status</label><select id="sub-f-status"><option value="all">All Statuses</option>' + SUB_STATUS_OPTIONS() + '</select></div>' +
@@ -303,6 +304,7 @@ if (employee) {
               '<button type="button" class="btn small secondary" id="sub-f-clear">Clear Filters</button>' +
             '</div>' +
           '</div>' +
+          '<div class="tiles" id="sub-tiles"></div>' +
           '<div id="sub-list"><div class="muted">Loading…</div></div>' +
         '</div>' +
       '</div>' +
