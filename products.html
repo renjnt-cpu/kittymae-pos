@@ -18,6 +18,11 @@ import { listProducts, getBranches, listAllInventoryQty, subscribeToChanges } fr
 import { renderPosNav } from './js/posNav.js';
 import { branchColor } from './js/branchColors.js';
 
+// Max rows actually built as <table> DOM rows in one go -- see the comment at its use
+// in render() below for why (Ren, 2026-09-17: "lagging" as the catalog grew past 7,400
+// SKUs was the table itself, not the fetch).
+const CATALOG_RENDER_CAP = 300;
+
 const employee = await initShell();
 if (employee) {
   renderPosNav(employee, 'products.html');
@@ -137,7 +142,18 @@ if (employee) {
       if (filterBranchId != null) document.getElementById('f-clear-branch').addEventListener('click', () => { filterBranchId = null; render(); });
       return;
     }
-    const countNotice = '<p class="muted" style="margin:0 0 8px;">' + rows.length.toLocaleString('en-PH') + ' SKU(s)</p>';
+
+    // Rendering every matched row as a real <table> row is what was actually lagging
+    // the page (Ren, 2026-09-17) -- with 7,400+ Active SKUs, an unfiltered/unsearched
+    // view was building and laying out thousands of DOM rows at once. Tiles/totals
+    // above still sum the FULL matched set (`rows`, untouched), only the table body
+    // itself is capped -- search, the Status filter, or a branch-column click narrows
+    // `rows` below the cap and the whole matched set renders again.
+    const matchedCount = rows.length;
+    const truncated = matchedCount > CATALOG_RENDER_CAP;
+    const renderRows = truncated ? rows.slice(0, CATALOG_RENDER_CAP) : rows;
+    const countNotice = '<p class="muted" style="margin:0 0 8px;">' + matchedCount.toLocaleString('en-PH') + ' SKU(s)' +
+      (truncated ? ' — showing the first ' + CATALOG_RENDER_CAP + '; search or click a branch column to narrow further' : '') + '</p>';
 
     function rowHtml(p) {
       const qtyForSku = qtyBySku[p.sku] || {};
@@ -158,7 +174,7 @@ if (employee) {
     list.innerHTML = (filterBranchId != null ? '<p class="muted" style="margin:0 0 8px;">Showing only SKUs stocked at <b>' + esc((branches.find((b) => b.id === filterBranchId) || {}).name) + '</b> — click the column again to clear.</p>' : '') +
       countNotice + '<div class="table-scroll table-mini"><table><thead><tr style="white-space:nowrap;">' +
       '<th>SKU</th><th>Product Name</th>' + branchThs +
-      '</tr></thead><tbody>' + rows.map(rowHtml).join('') + '</tbody></table></div>';
+      '</tr></thead><tbody>' + renderRows.map(rowHtml).join('') + '</tbody></table></div>';
 
     list.querySelectorAll('[data-branch-filter]').forEach((th) => th.addEventListener('click', () => {
       const id = Number(th.dataset.branchFilter);
