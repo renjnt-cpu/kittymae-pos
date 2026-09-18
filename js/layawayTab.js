@@ -16,6 +16,13 @@ import { PAYMENT_METHODS } from './paymentMethods.js';
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-PH', { dateStyle: 'medium' }) : '—';
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+// Per Gram jewelry (Ren, 2026-09-18: "the total amount must be multiply the price per
+// gram and weight") -- a Per Gram SKU's price = its rate (current_gold_rate_per_g) x
+// its weight, same as SKU Catalog/POS -- used to auto-fill Unit Price when a Per Gram
+// SKU is picked here, so Total (qty x Unit Price) comes out right automatically.
+const effectivePrice = (p) => p.pricing_mode === 'Per Gram'
+  ? (p.current_gold_rate_per_g != null && p.gross_weight_g != null ? p.current_gold_rate_per_g * p.gross_weight_g : null)
+  : p.system_selling_price;
 const STATUS_BADGE = { 'On Hold': 'pending', 'Completed': 'ok', 'Cancelled': 'low', 'Forfeited': 'low' };
 // A layaway with no activity forfeits 2 months (~60 days) after Date Purchased
 // (hold_date) by default -- staff can override this per-hold with an explicit Forfeit
@@ -212,7 +219,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '<div class="lw-item-sku-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 10px rgba(0,0,0,0.12);max-height:220px;overflow-y:auto;"></div>' +
         '</div>' +
         '<div class="field" style="width:70px;"><label>Qty</label><input type="number" name="qty" min="1" value="' + h.qty + '"></div>' +
-        '<div class="field" style="width:110px;"><label>Unit Price</label><input type="number" name="unitPrice" step="0.01" min="0" value="' + (h.unit_price ?? '') + '"></div>' +
+        '<div class="field" style="width:110px;"><label>Unit Price</label><input type="number" class="lw-item-price" name="unitPrice" step="0.01" min="0" value="' + (h.unit_price ?? '') + '"></div>' +
       '</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:6px;">' +
         '<div class="field" style="flex:1;min-width:120px;"><label>Customer Name *</label><input type="text" name="customerName" value="' + esc(h.customer_name) + '"></div>' +
@@ -241,6 +248,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     function pick(p) {
       skuInput.value = p.sku;
       skuNamePreview.textContent = p.item_name + (p.category || p.product_line ? ' · ' + (p.category || p.product_line) : '');
+      // Auto-fills Unit Price for a Per Gram SKU (rate x weight) so the row's Total
+      // (qty x Unit Price) comes out right without staff computing it by hand -- still
+      // just a starting point, the field stays editable same as any other item.
+      const priceInput = row.querySelector('.lw-item-price');
+      const price = effectivePrice(p);
+      if (priceInput && p.pricing_mode === 'Per Gram' && price != null) priceInput.value = price.toFixed(2);
       hide();
     }
     function renderSuggestions(matches) {
