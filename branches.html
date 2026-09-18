@@ -33,6 +33,13 @@ const SUB_STATUS_OPTIONS = (selected) => SUB_STATUSES.map((s) => '<option' + (s 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + 'g';
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+// Per Gram jewelry (Ren, 2026-09-18: "since its jewelry per piece i also sell per
+// gram... we will based it per grams") -- a Per Gram SKU's price = its rate
+// (current_gold_rate_per_g) x its weight, computed here (not stored) so it auto-fills
+// into the cart but is still just a starting point staff can adjust by hand.
+const effectivePrice = (p) => p.pricing_mode === 'Per Gram'
+  ? (p.current_gold_rate_per_g != null && p.gross_weight_g != null ? p.current_gold_rate_per_g * p.gross_weight_g : null)
+  : p.system_selling_price;
 
 const GOLD_KARATS = ['24K', '22K', '21K', '18K', '16K', '14K', '10K', 'Other'];
 const SILVER_KARATS = ['999', '925', 'Other'];
@@ -353,7 +360,7 @@ if (employee) {
           '<div class="pos-card-name">' + esc(p.item_name) + '</div>' +
           '<div class="pos-card-meta">' + esc(p.sku) + (p.product_line ? ' · ' + esc(p.product_line) : '') + (p.metal_purity ? ' · ' + esc(p.metal_purity) : '') + '</div>' +
           (p.gross_weight_g != null ? '<div class="pos-card-meta">' + p.gross_weight_g + 'g</div>' : '') +
-          '<div class="pos-card-price">' + (p.system_selling_price != null ? money(p.system_selling_price) : '—') + '</div>' +
+          '<div class="pos-card-price">' + money(effectivePrice(p)) + (p.pricing_mode === 'Per Gram' ? ' <span class="muted" style="font-size:10px;">(' + money(p.current_gold_rate_per_g) + '/g)</span>' : '') + '</div>' +
           (stock != null ? '<div class="pos-card-stock' + (stock <= 0 ? ' low' : '') + '">' + (stock > 0 ? stock + ' in stock' : 'Out of stock') + '</div>' : '') +
         '</div>';
       }).join('');
@@ -367,7 +374,7 @@ if (employee) {
       if (!product) return;
       const existing = posCart.find((c) => c.sku === sku);
       if (existing) existing.qty += 1;
-      else posCart.push({ sku: product.sku, itemName: product.item_name, qty: 1, unitPrice: product.system_selling_price ?? null });
+      else posCart.push({ sku: product.sku, itemName: product.item_name, qty: 1, unitPrice: effectivePrice(product) ?? null });
       renderPosCart();
       updatePosTotals();
     }

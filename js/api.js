@@ -87,7 +87,7 @@ export async function getInventory(branchId) {
 export async function searchProducts(query, branchId) {
   const term = sanitizeForOrFilter(query || '');
   const pat = '%' + term + '%';
-  let cols = 'sku, sub_sku, item_name, category, product_line, metal_purity, system_selling_price, gross_weight_g, product_status';
+  let cols = 'sku, sub_sku, item_name, category, product_line, metal_purity, system_selling_price, gross_weight_g, product_status, pricing_mode, current_gold_rate_per_g';
   if (branchId) cols += ', inventory(qty_available)';
   let q = supabase
     .from('products')
@@ -172,12 +172,16 @@ export async function updateProduct(sku, fields) {
     grossWeightG: 'gross_weight_g', valueTier: 'value_tier', reorderLevel: 'reorder_level',
     category: 'category', sizeLength: 'size_length', stoneGemDetails: 'stone_gem_details',
     notes: 'notes', productStatus: 'product_status',
+    // Per Gram jewelry (Ren, 2026-09-18: "i also sell per gram") -- current_gold_rate_per_g
+    // is the per-SKU ₱/gram rate; the effective selling price for a Per Gram SKU is
+    // that rate x gross_weight_g, computed wherever price is shown/used, not stored.
+    pricingMode: 'pricing_mode', pricePerGram: 'current_gold_rate_per_g',
   };
   Object.entries(map).forEach(([key, col]) => {
     if (!(key in fields)) return;
     let v = fields[key];
-    if ((col === 'gross_weight_g' || col === 'system_selling_price') && (v === '' || v === null || v === undefined)) v = null;
-    else if (col === 'gross_weight_g' || col === 'system_selling_price') v = Number(v);
+    if ((col === 'gross_weight_g' || col === 'system_selling_price' || col === 'current_gold_rate_per_g') && (v === '' || v === null || v === undefined)) v = null;
+    else if (col === 'gross_weight_g' || col === 'system_selling_price' || col === 'current_gold_rate_per_g') v = Number(v);
     if (col === 'reorder_level') v = v ? Number(v) : 0;
     patch[col] = v === '' ? null : v;
   });
