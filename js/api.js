@@ -583,6 +583,21 @@ export async function deleteScrapEntry(id) {
   if (error) throw new Error(error.message);
 }
 
+/** Reclassifies an In (received) Scrap entry as a Subasta item instead -- for when
+ * something recorded as raw scrap metal turns out to be a sellable pawned item. The
+ * Scrap entry is kept (not deleted) and marked converted_to_subasta_item_id, so it
+ * stops counting toward the Scrap weight/cash balance but stays visible for audit.
+ * Returns the new Subasta item's id. */
+export async function convertScrapToSubasta({ scrapEntryId, itemDescription, pawnReference, pawnDate, auctionEligibleDate, notes }) {
+  const { data, error } = await supabase.rpc('convert_scrap_to_subasta', {
+    p_scrap_entry_id: scrapEntryId, p_item_description: itemDescription,
+    p_pawn_reference: pawnReference || null, p_pawn_date: pawnDate || null,
+    p_auction_eligible_date: auctionEligibleDate || null, p_notes: notes || null,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 /** Path is "<branch_id>/<scrap_entry_id>/<file>" so Branch Supervisor storage access
  * can be scoped by branch, matching scrap_entries' own RLS. */
 export async function uploadScrapAttachment(branchId, scrapId, file) {

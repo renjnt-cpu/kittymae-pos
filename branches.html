@@ -18,7 +18,7 @@ import {
   getBranches, searchProducts, listActiveEmployees,
   createPosSale, listSales, listSalePayments, updatePosSaleItem, deletePosSale,
   listSubastaItems, createSubastaItem, updateSubastaItem, deleteSubastaItem,
-  listScrapEntries, getScrapCashBalances, createScrapEntry, deleteScrapEntry, uploadScrapAttachment, getScrapAttachmentUrl,
+  listScrapEntries, getScrapCashBalances, createScrapEntry, deleteScrapEntry, uploadScrapAttachment, getScrapAttachmentUrl, convertScrapToSubasta,
   subscribeToChanges,
 } from './js/api.js';
 import { renderPosNav } from './js/posNav.js';
@@ -956,7 +956,9 @@ if (employee) {
             ? payments.map((p) => esc(p.payment_method) + ': ' + money(p.amount)).join('<br>')
             : esc(r.payment_method || '—');
           return '<tr>' +
-            '<td data-label="Item">' + esc(r.item_description) + (r.sku ? '<div class="muted" style="font-size:10px;">' + esc(r.sku) + '</div>' : '') + '</td>' +
+            '<td data-label="Item">' + esc(r.item_description) + (r.sku ? '<div class="muted" style="font-size:10px;">' + esc(r.sku) + '</div>' : '') +
+              (r.converted_from_scrap_entry_id ? '<div class="muted" style="font-size:10px;">Converted from Scrap #' + r.converted_from_scrap_entry_id + '</div>' : '') +
+            '</td>' +
             '<td data-label="Weight">' + (r.weight_grams ? Number(r.weight_grams).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + 'g' : '—') + '</td>' +
             '<td data-label="Pawn Ref">' + esc(r.pawn_reference || '—') + '</td>' +
             '<td data-label="Pawn Date">' + (r.pawn_date || '—') + '</td>' +
@@ -1161,12 +1163,22 @@ if (employee) {
             '<td data-label="Payment" style="font-size:11px;">' + paymentDetail + '</td>' +
             '<td data-label="Source/Notes" class="full-row" style="font-size:11px;">' + esc(r.source || '') + (r.notes ? '<div class="muted">' + esc(r.notes) + '</div>' : '') +
               '<div class="muted" style="font-size:10px;">' + (r.creator ? 'Added by ' + esc(r.creator.full_name) : '') + '</div>' +
+              // Converted stays visible for audit (Ren, 2026-09-18: "how to change or
+              // monitor the item if theres a scrap we change it to subasta") -- once
+              // marked, it drops out of the weight/cash balance above (see
+              // v_scrap_balance/v_scrap_cash_balance) and can't be converted or
+              // deleted again.
+              (r.converted_to_subasta_item_id ? '<div class="muted" style="font-size:10px;"><span class="badge ok" style="font-size:9px;">Converted → Subasta #' + r.converted_to_subasta_item_id + '</span></div>' : '') +
             '</td>' +
             '<td class="full-row" style="white-space:nowrap;">' +
               (r.attachment_path ? '<button class="btn small secondary" data-id="' + r.id + '" data-path="' + esc(r.attachment_path) + '" data-act="view-photo">Photo</button> ' : '') +
-              (canWriteHere() ? '<button class="btn small secondary" data-id="' + r.id + '" data-act="delete">Delete</button>' : '') +
+              (canWriteHere() && !r.converted_to_subasta_item_id
+                ? '<button class="btn small secondary" data-id="' + r.id + '" data-act="delete">Delete</button> ' +
+                  (r.entry_type === 'In' ? '<button class="btn small secondary" data-id="' + r.id + '" data-act="convert-subasta">Convert to Subasta</button>' : '')
+                : '') +
             '</td>' +
-          '</tr>';
+          '</tr>' +
+          (canWriteHere() && !r.converted_to_subasta_item_id && r.entry_type === 'In' ? scrapConvertFormHtml(r) : '');
         }).join('') +
       '</tbody>' +
       '</table></div>';
@@ -1181,6 +1193,46 @@ if (employee) {
         try { window.open(await getScrapAttachmentUrl(btn.dataset.path), '_blank'); }
         catch (err) { toast('br-msg', String(err.message || err), true); }
       }));
+
+      list.querySelectorAll('[data-act="convert-subasta"]').forEach((btn) => btn.addEventListener('click', () => {
+        const row = list.querySelector('tr[data-convert-for="' + btn.dataset.id + '"]');
+        if (!row) return;
+        row.style.display = row.style.display === 'none' ? '' : 'none';
+      }));
+      list.querySelectorAll('.scrap-convert-form').forEach((form) => form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const f = ev.target;
+        const scrapEntryId = Number(f.dataset.scrapId);
+        try {
+          const newId = await convertScrapToSubasta({
+            scrapEntryId, itemDescription: f.itemDescription.value.trim(),
+            pawnReference: f.pawnReference.value.trim(), pawnDate: f.pawnDate.value,
+            auctionEligibleDate: f.auctionEligibleDate.value, notes: f.notes.value.trim(),
+          });
+          toast('br-msg', 'Converted to Subasta item #' + newId + '.', false);
+          await loadScrap();
+        } catch (err) {
+          toast('br-msg', String(err.message || err), true);
+        }
+      }));
+    }
+
+    /** Hidden by default, toggled open by the row's "Convert to Subasta" button --
+     * Item Description is the only field Scrap has no equivalent of, so it's the one
+     * genuinely new thing to ask for; Weight carries over automatically server-side. */
+    function scrapConvertFormHtml(r) {
+      return '<tr class="convert-row" data-convert-for="' + r.id + '" style="display:none;">' +
+        '<td colspan="10" style="background:#fafafa;">' +
+          '<form class="scrap-convert-form" data-scrap-id="' + r.id + '" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;padding:8px;">' +
+            '<div class="field" style="min-width:220px;"><label>Item Description *</label><input type="text" name="itemDescription" required placeholder="What the item actually is"></div>' +
+            '<div class="field"><label>Pawn Reference</label><input type="text" name="pawnReference"></div>' +
+            '<div class="field"><label>Pawn Date</label><input type="date" name="pawnDate" value="' + (r.entry_date || '') + '"></div>' +
+            '<div class="field"><label>Auction Eligible Date</label><input type="date" name="auctionEligibleDate"></div>' +
+            '<div class="field" style="min-width:180px;"><label>Notes</label><input type="text" name="notes" value="Converted from Scrap entry, ' + weight(r.weight_grams) + '"></div>' +
+            '<button class="btn small" type="submit">Convert</button>' +
+          '</form>' +
+        '</td>' +
+      '</tr>';
     }
 
     function tile(num, label) { return '<div class="tile"><div class="num">' + num + '</div><div class="lbl">' + label + '</div></div>'; }
