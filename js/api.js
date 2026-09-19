@@ -999,7 +999,7 @@ export async function setAccessChecklistItem(employeeId, itemKey, checked, level
 
 export async function listLayaways(branchId) {
   let query = supabase.from('layaway_holds')
-    .select('*, branches(name), layaway_payments(*), layaway_forfeit_date_log(id, old_date, new_date, changed_at, employees(full_name)), layaway_hold_date_log(id, old_date, new_date, changed_at, employees(full_name))')
+    .select('*, branches(name), layaway_payments(*, employees(full_name)), layaway_forfeit_date_log(id, old_date, new_date, changed_at, employees(full_name)), layaway_hold_date_log(id, old_date, new_date, changed_at, employees(full_name))')
     .order('hold_date', { ascending: false })
     .order('id', { ascending: true }); // keeps items held together in one submission adjacent
   if (branchId != null) query = query.eq('branch_id', branchId);

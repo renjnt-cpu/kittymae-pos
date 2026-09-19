@@ -139,6 +139,13 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         '</div>' +
         '<div class="tiles" id="mm-tiles"></div>' +
         '<div id="mm-table"></div>' +
+        // Ren, 2026-09-18: "when filter range show this who also pay the date when
+        // filter" -- the rollup above is by hold_date (when the item was purchased);
+        // this is the same From/To range applied to payments' OWN dates instead, so
+        // "who paid, how much, and when" for that period is checkable directly,
+        // rather than only inferable from the aggregate Total Paid number.
+        '<h3 style="margin-top:20px;">Payments Received <span class="muted" style="font-weight:normal;">— by payment date, same range as above</span></h3>' +
+        '<div id="mm-payments-table"></div>' +
 
         '<h2 style="margin-top:30px;">On Hold</h2>' +
         '<div class="tiles" id="lw-tiles"></div>' +
@@ -528,9 +535,14 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '<td data-label="Status"><span class="badge ' + (STATUS_BADGE[h.status] || 'pending') + '">' + esc(h.status) + '</span></td>' +
           '<td data-label="" style="font-size:11px;">' +
             (h.layaway_payments && h.layaway_payments.length
+              // Payment date + who recorded it (Ren, 2026-09-18: "add date when they
+              // pay also to check") -- same info Forfeiture Watch's own payment list
+              // already showed, now here too so it doesn't need a separate page visit.
               ? h.layaway_payments.map((p) => '<div>' + money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '') +
                   (p.attachment_path ? ' <button type="button" class="btn small secondary" data-act="view-proof" data-path="' + esc(p.attachment_path) + '" style="padding:1px 6px;">Proof</button>' : '') +
-                  (canManage ? ' <button class="btn small secondary" data-act="del-payment" data-id="' + p.id + '" style="padding:1px 6px;">✕</button>' : '') + '</div>').join('')
+                  (canManage ? ' <button class="btn small secondary" data-act="del-payment" data-id="' + p.id + '" style="padding:1px 6px;">✕</button>' : '') +
+                  '<div class="muted" style="font-size:10px;">' + fmtDate(p.paid_at) + (p.employees ? ' · ' + esc(p.employees.full_name) : '') + '</div>' +
+                '</div>').join('')
               : '') +
             (groupIdx === 0 && groupOnHold.length > 1 && (canAct || canManage)
               ? '<div style="margin-bottom:4px;display:flex;gap:4px;">' +
@@ -548,6 +560,10 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
                       '<input type="number" name="amount" step="0.01" min="0.01" placeholder="Amount" required style="width:70px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
                       '<select name="method" style="padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' + PAYMENT_METHODS.map((m) => '<option>' + m + '</option>').join('') + '</select>' +
                       '<input type="text" name="reference" placeholder="Reference" style="width:70px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
+                      // Defaults to today but editable -- lets staff record the real
+                      // date a payment actually happened instead of whenever it got
+                      // typed in (Ren, 2026-09-18: "add date when they pay").
+                      '<input type="date" name="paidAt" value="' + new Date().toISOString().slice(0, 10) + '" title="Date Paid" style="padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
                       '<input type="file" name="proof" accept="image/*,.pdf" style="max-width:110px;font-size:11px;" title="Proof of Payment">' +
                       '<button class="btn small" type="submit">Add Payment</button>' +
                     '</form>'
@@ -587,7 +603,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       try {
         const file = f.proof.files[0] || null;
         const attachmentPath = file ? await uploadLayawayPaymentProof(Number(f.dataset.branchId), Number(f.dataset.holdId), file) : null;
-        await addLayawayPayment(Number(f.dataset.holdId), Number(f.amount.value), f.method.value, f.reference.value.trim(), attachmentPath);
+        await addLayawayPayment(Number(f.dataset.holdId), Number(f.amount.value), f.method.value, f.reference.value.trim(), attachmentPath, f.paidAt.value);
         notify('Payment added.', false);
         await load();
       } catch (err) {
@@ -730,6 +746,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   function renderMonthly() {
     const fFrom = document.getElementById('mm-from').value;
     const fTo = document.getElementById('mm-to').value;
+    renderMonthlyPayments(fFrom, fTo);
     // Cancelled/Forfeited excluded here too, same as the On Hold list above --
     // otherwise a dead hold's value/paid amounts would still bleed into Total Value/
     // Total Paid/Remaining even with its own status column gone.
@@ -779,6 +796,39 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '<td data-label="Remaining">' + money(m.value - m.paid) + '</td>' +
         '</tr>';
       }).join('') + '</tbody></table></div>';
+  }
+
+  // Ren, 2026-09-18: "when filter range show this who also pay the date when filter"
+  // -- same From/To inputs as the rollup above, but applied to each PAYMENT's own
+  // paid_at instead of its hold's hold_date, and listing them individually rather than
+  // rolling them into one number. Every hold regardless of status is included here
+  // (unlike the rollup, which excludes Cancelled/Forfeited) -- a payment that actually
+  // happened stays on this ledger even if the hold it was against was later cancelled.
+  function renderMonthlyPayments(fFrom, fTo) {
+    const box = document.getElementById('mm-payments-table');
+    const payments = [];
+    allHolds.forEach((h) => {
+      (h.layaway_payments || []).forEach((p) => {
+        if (fFrom && p.paid_at < fFrom) return;
+        if (fTo && p.paid_at > fTo) return;
+        payments.push({ ...p, hold: h });
+      });
+    });
+    payments.sort((a, b) => (b.paid_at || '').localeCompare(a.paid_at || ''));
+    if (!payments.length) { box.innerHTML = '<p class="muted">No payments recorded for this range.</p>'; return; }
+    const total = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
+    box.innerHTML = '<div class="table-scroll"><table>' +
+      '<thead><tr><th>Date</th><th>SKU</th><th>Customer</th><th>Amount</th><th>Method</th><th>Recorded By</th></tr></thead><tbody>' +
+      payments.map((p) => '<tr>' +
+        '<td data-label="Date">' + fmtDate(p.paid_at) + '</td>' +
+        '<td data-label="SKU">' + esc(p.hold.sku) + '</td>' +
+        '<td data-label="Customer">' + esc(p.hold.customer_name) + '</td>' +
+        '<td data-label="Amount">' + money(p.amount) + '</td>' +
+        '<td data-label="Method">' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '') + '</td>' +
+        '<td data-label="Recorded By">' + (p.employees ? esc(p.employees.full_name) : '—') + '</td>' +
+      '</tr>').join('') +
+      '</tbody><tfoot><tr style="font-weight:bold;background:#f7f7f7;"><td colspan="3">Total</td><td>' + money(total) + '</td><td colspan="2"></td></tr></tfoot>' +
+      '</table></div>';
   }
 
   // ---- Forfeiture Watch: every still-On-Hold item, oldest first, with its full
@@ -862,6 +912,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '<td data-label="Payments" class="full-row" style="font-size:11px;">' +
             (payments.length
               ? payments.map((p) => money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '') + ' — ' + (p.paid_at || '') +
+                  (p.employees ? ' · ' + esc(p.employees.full_name) : '') +
                   (p.attachment_path ? ' <button type="button" class="btn small secondary fw-view-proof" data-path="' + esc(p.attachment_path) + '" style="padding:0 5px;">Proof</button>' : '')).join('<br>')
               : '<span class="muted">No payments yet</span>') +
           '</td>' +
