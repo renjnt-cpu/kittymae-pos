@@ -503,6 +503,23 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
 
   function paidSoFar(h) { return (h.layaway_payments || []).reduce((s, p) => s + Number(p.amount), 0); }
 
+  // Ren's spec section 1: an explicit "Payment Status" per payment line. There's no
+  // stored status column -- a payment is always a completed fact once saved (no
+  // draft/void state exists) -- so this is computed from the running total against
+  // the hold's total_price, keyed by payment id so callers can look it up per row.
+  function paymentStatusFor(payments, totalPrice) {
+    const sorted = payments.slice().sort((a, b) => (a.paid_at || '').localeCompare(b.paid_at || '') || a.id - b.id);
+    let running = 0;
+    const byId = {};
+    sorted.forEach((p, idx) => {
+      running += Number(p.amount);
+      byId[p.id] = (totalPrice != null && running >= Number(totalPrice) - 0.01)
+        ? 'Paid in Full'
+        : (idx === 0 ? 'Downpayment' : 'Partial');
+    });
+    return byId;
+  }
+
   // One table per status folder (Ren, 2026-09-16: "make a folder per layaway status
   // for cancelled, delete, completed, on hold") -- render() below computes the 3
   // search-filtered buckets and the tiles, then calls this once per folder.
@@ -516,6 +533,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       rows.map((h) => {
         const paid = paidSoFar(h);
         const remaining = h.total_price == null ? null : Number(h.total_price) - paid;
+        const paymentStatusById = paymentStatusFor(h.layaway_payments || [], h.total_price);
         const canAct = canManage || employee.branch_id === h.branch_id || UNSCOPED_POSITIONS.includes(employee.position);
         const group = h.group_id ? groupMembers[h.group_id] : null;
         const groupIdx = group ? group.findIndex((x) => x.id === h.id) : -1;
@@ -534,13 +552,24 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '<td data-label="Amount">' + money(h.unit_price) + '</td>' +
           '<td data-label="Total">' + money(h.total_price) + '</td>' +
           '<td data-label="Paid">' + money(paid) + (remaining !== null ? '<div class="muted" style="font-size:10px;">' + money(remaining) + ' left</div>' : '') + '</td>' +
-          '<td data-label="Status"><span class="badge ' + (STATUS_BADGE[h.status] || 'pending') + '">' + esc(h.status) + '</span></td>' +
+          '<td data-label="Status"><span class="badge ' + (STATUS_BADGE[h.status] || 'pending') + '">' + esc(h.status) + '</span>' +
+            // Who closed this hold out and when (Ren's spec section 8: Layaway
+            // completed/forfeited need User Name + Date/Time in the audit trail) --
+            // completed_by/cancelled_by/forfeited_by are set server-side by
+            // complete_layaway()/cancel_layaway()/forfeit_layaway_hold().
+            (h.status === 'Completed' && h.completed_at ? '<div class="muted" style="font-size:10px;">' + (h.completer ? esc(h.completer.full_name) + ' · ' : '') + fmtDateTime(h.completed_at) + '</div>' : '') +
+            (h.status === 'Cancelled' && h.cancelled_at ? '<div class="muted" style="font-size:10px;">' + (h.canceller ? esc(h.canceller.full_name) + ' · ' : '') + fmtDateTime(h.cancelled_at) + '</div>' : '') +
+            (h.status === 'Forfeited' && h.forfeited_at ? '<div class="muted" style="font-size:10px;">' + (h.forfeiter ? esc(h.forfeiter.full_name) + ' · ' : '') + fmtDateTime(h.forfeited_at) + '</div>' : '') +
+          '</td>' +
           '<td data-label="" style="font-size:11px;">' +
             (h.layaway_payments && h.layaway_payments.length
               // Payment date + who recorded it (Ren, 2026-09-18: "add date when they
               // pay also to check") -- same info Forfeiture Watch's own payment list
               // already showed, now here too so it doesn't need a separate page visit.
-              ? h.layaway_payments.map((p) => '<div>' + money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '') +
+              // Reference relabeled "Receipt/Txn #" and a Payment Status badge added
+              // per Ren's spec section 1.
+              ? h.layaway_payments.map((p) => '<div>' + money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' · Receipt/Txn #' + esc(p.reference_number) : '') +
+                  ' <span class="badge ' + (paymentStatusById[p.id] === 'Paid in Full' ? 'ok' : 'pending') + '" style="font-size:9px;padding:1px 5px;">' + paymentStatusById[p.id] + '</span>' +
                   (p.attachment_path ? ' <button type="button" class="btn small secondary" data-act="view-proof" data-path="' + esc(p.attachment_path) + '" style="padding:1px 6px;">Proof</button>' : '') +
                   (canManage ? ' <button class="btn small secondary" data-act="del-payment" data-id="' + p.id + '" style="padding:1px 6px;">✕</button>' : '') +
                   '<div class="muted" style="font-size:10px;">' + fmtDate(p.paid_at) + (p.employees ? ' · ' + esc(p.employees.full_name) : '') + '</div>' +
@@ -561,7 +590,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
                   ? '<form class="lw-pay-form" data-hold-id="' + h.id + '" data-branch-id="' + h.branch_id + '" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">' +
                       '<input type="number" name="amount" step="0.01" min="0.01" placeholder="Amount" required style="width:70px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
                       '<select name="method" style="padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' + PAYMENT_METHODS.map((m) => '<option>' + m + '</option>').join('') + '</select>' +
-                      '<input type="text" name="reference" placeholder="Reference" style="width:70px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
+                      '<input type="text" name="reference" placeholder="Receipt/Txn #" style="width:90px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
                       // Defaults to today but editable -- lets staff record the real
                       // date a payment actually happened instead of whenever it got
                       // typed in (Ren, 2026-09-18: "add date when they pay").
@@ -810,26 +839,32 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     const box = document.getElementById('mm-payments-table');
     const payments = [];
     allHolds.forEach((h) => {
+      // Status computed against this hold's FULL payment history, not just the
+      // filtered range, so a payment near a range boundary still shows the right
+      // running-total status (Ren's spec section 1: explicit Payment Status).
+      const statusById = paymentStatusFor(h.layaway_payments || [], h.total_price);
       (h.layaway_payments || []).forEach((p) => {
         if (fFrom && p.paid_at < fFrom) return;
         if (fTo && p.paid_at > fTo) return;
-        payments.push({ ...p, hold: h });
+        payments.push({ ...p, hold: h, paymentStatus: statusById[p.id] });
       });
     });
     payments.sort((a, b) => (b.paid_at || '').localeCompare(a.paid_at || ''));
     if (!payments.length) { box.innerHTML = '<p class="muted">No payments recorded for this range.</p>'; return; }
     const total = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
     box.innerHTML = '<div class="table-scroll"><table>' +
-      '<thead><tr><th>Date</th><th>SKU</th><th>Customer</th><th>Amount</th><th>Method</th><th>Recorded By</th></tr></thead><tbody>' +
+      '<thead><tr><th>Date</th><th>Branch</th><th>SKU</th><th>Customer</th><th>Amount</th><th>Method</th><th>Status</th><th>Recorded By</th></tr></thead><tbody>' +
       payments.map((p) => '<tr>' +
         '<td data-label="Date">' + fmtDate(p.paid_at) + '</td>' +
+        '<td data-label="Branch">' + esc(p.hold.branches ? p.hold.branches.name : '—') + '</td>' +
         '<td data-label="SKU">' + esc(p.hold.sku) + '</td>' +
         '<td data-label="Customer">' + esc(p.hold.customer_name) + '</td>' +
         '<td data-label="Amount">' + money(p.amount) + '</td>' +
-        '<td data-label="Method">' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '') + '</td>' +
+        '<td data-label="Method">' + esc(p.payment_method) + (p.reference_number ? ' · Receipt/Txn #' + esc(p.reference_number) : '') + '</td>' +
+        '<td data-label="Status"><span class="badge ' + (p.paymentStatus === 'Paid in Full' ? 'ok' : 'pending') + '" style="font-size:10px;">' + p.paymentStatus + '</span></td>' +
         '<td data-label="Recorded By">' + (p.employees ? esc(p.employees.full_name) : '—') + '</td>' +
       '</tr>').join('') +
-      '</tbody><tfoot><tr style="font-weight:bold;background:#f7f7f7;"><td colspan="3">Total</td><td>' + money(total) + '</td><td colspan="2"></td></tr></tfoot>' +
+      '</tbody><tfoot><tr style="font-weight:bold;background:#f7f7f7;"><td colspan="4">Total</td><td>' + money(total) + '</td><td colspan="3"></td></tr></tfoot>' +
       '</table></div>';
   }
 
@@ -870,6 +905,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         const isWarning = !isOverdue && daysPastForfeit >= -FORFEITURE_WARN_LEAD_DAYS;
         const rowStyle = isOverdue ? 'background:#fdecea;' : isWarning ? 'background:#fff3f3;' : '';
         const payments = h.layaway_payments || [];
+        const paymentStatusById = paymentStatusFor(payments, h.total_price);
         const group = h.group_id ? groupMembers[h.group_id] : null;
         const groupIdx = group ? group.findIndex((x) => x.id === h.id) : -1;
         const canAct = canManage || employee.branch_id === h.branch_id || UNSCOPED_POSITIONS.includes(employee.position);
@@ -913,7 +949,9 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '</td>' +
           '<td data-label="Payments" class="full-row" style="font-size:11px;">' +
             (payments.length
-              ? payments.map((p) => money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '') + ' — ' + (p.paid_at || '') +
+              ? payments.map((p) => money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' · Receipt/Txn #' + esc(p.reference_number) : '') +
+                  ' <span class="badge ' + (paymentStatusById[p.id] === 'Paid in Full' ? 'ok' : 'pending') + '" style="font-size:9px;padding:1px 5px;">' + paymentStatusById[p.id] + '</span>' +
+                  ' — ' + (p.paid_at || '') +
                   (p.employees ? ' · ' + esc(p.employees.full_name) : '') +
                   (p.attachment_path ? ' <button type="button" class="btn small secondary fw-view-proof" data-path="' + esc(p.attachment_path) + '" style="padding:0 5px;">Proof</button>' : '')).join('<br>')
               : '<span class="muted">No payments yet</span>') +
