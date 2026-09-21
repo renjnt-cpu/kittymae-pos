@@ -426,9 +426,10 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   function renderByAdminPayment(rows) {
     const box = document.getElementById('pos-by-admin');
     const groups = groupPosSales(rows);
-    const totalsByAdmin = {}, codPendingByAdmin = {}, methodsSeen = [];
+    const totalsByAdmin = {}, codPendingByAdmin = {}, methodsSeen = [], groupsByAdmin = {};
     groups.forEach((g) => {
       const empId = g.items[0].employee_id;
+      (groupsByAdmin[empId] = groupsByAdmin[empId] || []).push(g);
       const bucket = totalsByAdmin[empId] || (totalsByAdmin[empId] = {});
       (posPaymentsByGroup[g.groupId] || []).forEach((p) => {
         if (p.payment_method === 'COD' && p.payment_status === 'Pending Collection') {
@@ -444,7 +445,12 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     const hasCodPending = Object.values(codPendingByAdmin).some((v) => v > 0);
     if (!adminIds.length) { box.innerHTML = '<p class="muted">No walk-in sales for this filter.</p>'; return; }
     const colTotals = Object.fromEntries(methods.map((m) => [m, 0]));
+    const colCount = 1 + methods.length + (hasCodPending ? 1 : 0) + 1;
     let grandTotal = 0, codPendingTotal = 0;
+    // Each admin's row expands in place to their own sale groups for this same filter
+    // (Ren's 2026-09-22 expand/collapse spec, "Summary by Admin/User") -- built from
+    // the exact same groupsByAdmin bucket the collapsed row's own totals come from, so
+    // the two always reconcile (section "SUMMARY SYNC").
     box.innerHTML = '<div class="table-scroll"><table><thead><tr><th>Admin</th>' +
       methods.map((m) => '<th>' + esc(m) + '</th>').join('') +
       (hasCodPending ? '<th>COD Pending</th>' : '') +
@@ -461,14 +467,45 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
         grandTotal += rowTotal;
         const codPending = codPendingByAdmin[empId] || 0;
         codPendingTotal += codPending;
-        return '<tr><td data-label="Admin"><b>' + esc(employeeNameById[empId] || 'Unknown') + '</b></td>' + cells +
+        return '<tr>' +
+          '<td data-label="Admin"><button type="button" class="exp-row-btn" data-admin-toggle="' + esc(empId) + '" aria-expanded="false"><span class="exp-arrow" aria-hidden="true">▸</span><b>' + esc(employeeNameById[empId] || 'Unknown') + '</b></button></td>' +
+          cells +
           (hasCodPending ? '<td data-label="COD Pending">' + (codPending ? '<span class="badge pending">' + money(codPending) + '</span>' : '—') + '</td>' : '') +
-          '<td data-label="Grand Total"><b>' + money(rowTotal) + '</b></td></tr>';
+          '<td data-label="Grand Total"><b>' + money(rowTotal) + '</b></td>' +
+        '</tr>' +
+        '<tr class="admin-detail-row" data-admin-for="' + esc(empId) + '" style="display:none;"><td colspan="' + colCount + '" class="full-row"></td></tr>';
       }).join('') +
       '</tbody><tfoot><tr><td data-label="Admin"><b>Grand Total</b></td>' +
       methods.map((m) => '<td data-label="' + esc(m) + '"><b>' + money(colTotals[m]) + '</b></td>').join('') +
       (hasCodPending ? '<td data-label="COD Pending"><b>' + money(codPendingTotal) + '</b></td>' : '') +
       '<td data-label="Grand Total"><b>' + money(grandTotal) + '</b></td></tr></tfoot></table></div>';
+
+    box.querySelectorAll('[data-admin-toggle]').forEach((btn) => btn.addEventListener('click', () => {
+      const empId = btn.dataset.adminToggle;
+      const detailRow = box.querySelector('.admin-detail-row[data-admin-for="' + empId + '"]');
+      const opening = detailRow.style.display === 'none';
+      btn.setAttribute('aria-expanded', String(opening));
+      detailRow.style.display = opening ? '' : 'none';
+      if (!opening || detailRow.dataset.built) return;
+      detailRow.dataset.built = '1';
+      const adminGroups = (groupsByAdmin[empId] || []).slice().sort((a, b) => (b.items[0].sale_date || '').localeCompare(a.items[0].sale_date || ''));
+      detailRow.querySelector('td').innerHTML =
+        '<div class="table-scroll table-mini" style="margin:6px 0;"><table><thead><tr><th>Date &amp; Time</th><th>Order</th><th>Customer</th><th>Amount</th><th>Payment</th><th></th></tr></thead><tbody>' +
+        adminGroups.map((g) => {
+          const payments = posPaymentsByGroup[g.groupId] || [];
+          const methodLabel = payments.length ? payments.map((p) => esc(p.payment_method)).join(', ') : '—';
+          return '<tr>' +
+            '<td data-label="Date &amp; Time">' + fmtDateTime(g.items[0].sale_date) + '</td>' +
+            '<td data-label="Order">' + esc(g.items[0].order_number || '—') + '</td>' +
+            '<td data-label="Customer">' + esc(g.items[0].customer_name || '—') + '</td>' +
+            '<td data-label="Amount">' + money(groupSubtotal(g)) + '</td>' +
+            '<td data-label="Payment">' + methodLabel + '</td>' +
+            '<td class="full-row"><button type="button" class="btn small secondary" data-admin-view-group="' + esc(g.groupId) + '">View Details</button></td>' +
+          '</tr>';
+        }).join('') +
+        '</tbody></table></div>';
+      detailRow.querySelectorAll('[data-admin-view-group]').forEach((vb) => vb.addEventListener('click', () => openDetail(vb.dataset.adminViewGroup)));
+    }));
   }
 
   // Summary popover for whatever's CURRENTLY VISIBLE in the ledger (search included).
