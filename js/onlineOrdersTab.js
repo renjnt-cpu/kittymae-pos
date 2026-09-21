@@ -10,6 +10,7 @@ import {
   listOrderItemStatuses, listOrderHistoryForItem, getOrderItemStatusCounts, listDeliveredOrders,
   ORDER_ITEM_STATUS_ROW_CAP, setOrderItemStatus, deleteOrderItemStatus, subscribeToChanges,
 } from './api.js';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons } from './uiKit.js';
 
 // Delivered is a terminal status, always excluded from the working board above (see
 // listOrderItemStatuses()'s TERMINAL_STATUSES filter) -- there are 40,000+ historical
@@ -81,8 +82,11 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
   // highlighted for the other tabs.
   const effectiveBranchId = () => isViewRestricted ? employee.branch_id : getBranchId();
   const canEdit = () => isAdmin || !ADMIN_ONLY_EDIT_BRANCHES.includes(effectiveBranchId());
+  // Summary tiles -> Search & Filters -> active-filter strip -> Status tabs ->
+  // Records (Ren's MASTER UI rule 2), all from the same filtered rows.
   root.innerHTML =
     (isViewRestricted ? '<p class="muted" style="margin-top:0;">Locked to your own branch — the branch buttons above only affect the other tabs here.</p>' : '') +
+    '<div class="tiles" id="ol-tiles"></div>' +
     '<div class="card" style="margin-bottom:14px;">' +
       '<h3 style="margin-top:0;">Search &amp; Filter</h3>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
@@ -92,6 +96,7 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
         '<button type="button" class="btn small secondary" id="ol-f-clear">Clear Filters</button>' +
       '</div>' +
     '</div>' +
+    '<div id="ol-active"></div>' +
     '<div id="ol-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>' +
     '<div id="ol-list" style="margin-top:10px;"><div class="muted">Loading…</div></div>';
 
@@ -158,7 +163,7 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
     document.getElementById('ol-search').value = '';
     document.getElementById('ol-f-from').value = '';
     document.getElementById('ol-f-to').value = '';
-    search = ''; fFrom = ''; fTo = '';
+    search = ''; fFrom = ''; fTo = ''; statusFilter = 'all'; // every supported filter, in one go (MASTER UI rule 9)
     load();
   });
 
@@ -194,10 +199,28 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
 
     let rows = orderItems;
     const list = document.getElementById('ol-list');
+    const truncated = rows.length >= ORDER_ITEM_STATUS_ROW_CAP;
+    // Summary tiles sit above the filter card (MASTER UI rules 2/3) and always show
+    // the same filtered rows as the list -- including when that's zero.
+    const tile = (num, label) => '<div class="tile"><div class="num">' + num + '</div><div class="lbl">' + label + '</div></div>';
+    document.getElementById('ol-tiles').innerHTML =
+      tile(rows.length + (truncated ? '+' : ''), 'Items' + (search ? ' (filtered)' : '')) +
+      tile(new Set(rows.map((r) => r.order_reference).filter(Boolean)).size + (truncated ? '+' : ''), 'Orders') +
+      tile(rows.reduce((s, r) => s + Number(r.qty || 0), 0) + (truncated ? '+' : ''), 'Qty Subtotal');
+    const activeEl = document.getElementById('ol-active');
+    activeEl.innerHTML = activeFiltersHtml([
+      { label: 'Search', value: esc(search) }, { label: 'From', value: esc(fFrom) }, { label: 'To', value: esc(fTo) },
+      { label: 'Status', value: statusFilter === 'all' ? '' : esc(statusFilter === 'delivered' ? 'Delivered' : prettyStatus(statusFilter)) },
+    ], 'ol-f-clear');
+    wireProxyButtons(activeEl);
     if (!rows.length) {
-      list.innerHTML = '<p class="muted">' + (statusFilter === 'delivered'
-        ? 'No delivered orders for this branch from September 2026 onwards' + (search ? ' matching "' + esc(search) + '"' : '') + '.'
-        : 'No online orders match this search/filter for this branch.') + '</p>';
+      list.innerHTML = emptyStateHtml({
+        message: statusFilter === 'delivered'
+          ? 'No delivered orders for this branch from September 2026 onwards' + (search ? ' matching "' + esc(search) + '"' : '') + '.'
+          : 'No online orders match this search/filter for this branch.',
+        hasFilters: !!(search || fFrom || fTo || statusFilter !== 'all'), clearId: 'ol-f-clear',
+      });
+      wireProxyButtons(list);
       return;
     }
 
@@ -223,19 +246,9 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
       const opts = distinctStatuses.includes(current) ? distinctStatuses : [...distinctStatuses, current].sort();
       return opts.map((s) => '<option value="' + esc(s) + '"' + (s === current ? ' selected' : '') + '>' + esc(prettyStatus(s)) + '</option>').join('');
     };
-    const truncated = rows.length >= ORDER_ITEM_STATUS_ROW_CAP;
-    const subtotalQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
-    const uniqueOrders = new Set(rows.map((r) => r.order_reference).filter(Boolean)).size;
-    // Ren's spec section 160: KPI tiles instead of a plain summary sentence, matching
-    // the .tile/.tiles pattern every other module (POS/Layaway/Scrap/Subasta) already
-    // uses for this exact kind of "how much is on this filtered view" number.
-    const tile = (num, label) => '<div class="tile"><div class="num">' + num + '</div><div class="lbl">' + label + '</div></div>';
-    const subtotalLine = '<div class="tiles" style="margin-bottom:8px;">' +
-      tile(rows.length + (truncated ? '+' : ''), 'Items' + (search ? ' (filtered)' : '')) +
-      tile(uniqueOrders + (truncated ? '+' : ''), 'Orders') +
-      tile(subtotalQty + (truncated ? '+' : ''), 'Qty Subtotal') +
-      '</div>' +
-      (truncated ? '<p class="muted" style="margin:0 0 6px;color:#b45309;">Showing the ' + ORDER_ITEM_STATUS_ROW_CAP + ' most recent; search to narrow further.</p>' : '');
+    // The KPI tiles themselves now render into #ol-tiles above the filter card (see
+    // the top of render()); only the row-cap note stays with the list.
+    const subtotalLine = truncated ? '<p class="muted" style="margin:0 0 6px;color:#b45309;">Showing the ' + ORDER_ITEM_STATUS_ROW_CAP + ' most recent; search to narrow further.</p>' : '';
 
     const topCounts = new Map();
     rows.forEach((r) => {

@@ -26,6 +26,7 @@ import { initOnlineOrdersTab } from './js/onlineOrdersTab.js';
 import { initLayawayTab } from './js/layawayTab.js';
 import { initScrapTab } from './js/scrapTab.js';
 import { PAYMENT_METHODS, POS_PAYMENT_METHODS } from './js/paymentMethods.js';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons } from './js/uiKit.js';
 
 const SUB_STATUS_BADGE = { Pending: 'pending', Listed: 'transit', Sold: 'ok', Cancelled: 'low' };
 const SUB_STATUSES = ['Pending', 'Listed', 'Sold', 'Cancelled'];
@@ -132,6 +133,9 @@ if (employee) {
     // root.innerHTML is set, before those loaders have ever run.
     let allPosSales = [], posPaymentsByGroup = {};
     let allSubasta = [];
+    // Module pill counts follow each module's own active filters, never an
+    // unfiltered total beside a filtered list (MASTER UI rule 20).
+    let posFilteredCount = 0, subastaFilteredCount = 0;
     let onlineOrdersCount = 0, onlineOrders = null;
     let layawayCount = 0, layaway = null;
     let scrapCount = 0, scrap = null;
@@ -183,6 +187,9 @@ if (employee) {
 
       '<div id="tab-panel-pos">' +
       '<h2>POS (Walk-In) <span class="muted" id="pos-branch-label" style="font-weight:normal;"></span></h2>' +
+      // Summary tiles directly under the module header, ahead of the filters (Ren's
+      // MASTER UI rules 2/3) -- they follow the same From/To/Search as the ledger.
+      '<div class="tiles" id="pos-tiles"></div>' +
       // Filter card moved above both the pivot and the sales list it drives (Ren,
       // 2026-09-16: "the date range must be put above so once they filter it also
       // reflect all the data") -- fFrom/fTo in renderPos() filter both; fSearch only
@@ -195,6 +202,7 @@ if (employee) {
           '<button type="button" class="btn small secondary" id="pos-f-clear">Clear Filters</button>' +
         '</div>' +
       '</div>' +
+      '<div id="pos-active"></div>' +
       '<h3 style="margin-top:0;">Sales by Admin &amp; Payment Method <span class="muted" style="font-weight:normal;font-size:12px;">— reflects the From/To date range above, all admins for this branch</span></h3>' +
       '<div id="pos-by-admin" style="margin-bottom:20px;"><div class="muted">Loading…</div></div>' +
 
@@ -254,7 +262,6 @@ if (employee) {
           '<div id="pos-summary-panel" class="pos-summary-panel" style="display:none;"></div>' +
         '</div>' +
       '</div>' +
-      '<div class="tiles" id="pos-tiles"></div>' +
       '<div id="pos-list"><div class="muted">Loading…</div></div>' +
       '</div>' +
 
@@ -293,6 +300,7 @@ if (employee) {
           '</div>' +
         '</div>' +
         '<div class="layout-2col-main">' +
+          '<div class="tiles" id="sub-tiles"></div>' +
           '<div class="card">' +
             '<h3 style="margin-top:0;">Search &amp; Filter</h3>' +
             '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
@@ -303,7 +311,7 @@ if (employee) {
               '<button type="button" class="btn small secondary" id="sub-f-clear">Clear Filters</button>' +
             '</div>' +
           '</div>' +
-          '<div class="tiles" id="sub-tiles"></div>' +
+          '<div id="sub-active"></div>' +
           '<div id="sub-list"><div class="muted">Loading…</div></div>' +
         '</div>' +
       '</div>' +
@@ -668,7 +676,6 @@ if (employee) {
     }
 
     function renderPos() {
-      renderScrapSubTabs();
       const fSearch = document.getElementById('pos-f-search').value.trim().toLowerCase();
       const fFrom = document.getElementById('pos-f-from').value;
       const fTo = document.getElementById('pos-f-to').value;
@@ -685,12 +692,23 @@ if (employee) {
         (r.customer_name || '').toLowerCase().includes(fSearch) || (r.order_number || '').toLowerCase().includes(fSearch)));
 
       renderPosSummary(groups); // search-filtered too, unlike the pivot above
+      // Pill count, tiles, active-filter strip and ledger all follow these same
+      // filters (MASTER UI rules 6/19/20/28).
+      posFilteredCount = groups.length;
+      renderScrapSubTabs();
 
       const totalAmount = groups.reduce((s, g) => s + g.items.reduce((s2, r) => s2 + Number(r.unit_price || 0) * r.qty, 0), 0);
       document.getElementById('pos-tiles').innerHTML = tile(groups.length, 'Sales') + tile(money(totalAmount), 'Total Amount');
+      const posActive = document.getElementById('pos-active');
+      posActive.innerHTML = activeFiltersHtml([{ label: 'Search', value: esc(fSearch) }, { label: 'From', value: esc(fFrom) }, { label: 'To', value: esc(fTo) }], 'pos-f-clear');
+      wireProxyButtons(posActive);
 
       const box = document.getElementById('pos-list');
-      if (!groups.length) { box.innerHTML = '<p class="muted">No walk-in sales for this filter.</p>'; return; }
+      if (!groups.length) {
+        box.innerHTML = emptyStateHtml({ message: 'No walk-in sales for this filter.', hasFilters: !!(fSearch || fFrom || fTo), clearId: 'pos-f-clear' });
+        wireProxyButtons(box);
+        return;
+      }
 
       // One flat, formal ledger table for every sale instead of a card-per-sale with a
       // nested mini-table inside it (Ren, 2026-09-16: "arrange this POS as formal line
@@ -1014,9 +1032,9 @@ if (employee) {
         '</button>';
       };
       const box = document.getElementById('scrap-sub-tabs');
-      box.innerHTML = pill('pos', 'POS', '#2e7d32', groupPosSales(allPosSales).length) +
+      box.innerHTML = pill('pos', 'POS', '#2e7d32', posFilteredCount) +
         pill('layaway', 'Layaway', '#c2185b', layawayCount) +
-        pill('scrap', 'Scrap', '#b06a1f', scrapCount) + pill('subasta', 'Subasta', '#7c3aa8', allSubasta.length) +
+        pill('scrap', 'Scrap', '#b06a1f', scrapCount) + pill('subasta', 'Subasta', '#7c3aa8', subastaFilteredCount) +
         pill('online', 'Online Orders', '#1a56b0', onlineOrdersCount);
       box.querySelectorAll('[data-tab]').forEach((btn) => btn.addEventListener('click', () => showSubTab(btn.dataset.tab)));
     }
@@ -1132,7 +1150,6 @@ if (employee) {
     }
 
     function renderSubasta() {
-      renderScrapSubTabs();
       let rows = allSubasta;
       const fSearch = document.getElementById('sub-f-search').value.trim().toLowerCase();
       const fStatus = document.getElementById('sub-f-status').value;
@@ -1149,6 +1166,16 @@ if (employee) {
       if (fStatus !== 'all') rows = rows.filter((r) => r.status === fStatus);
       if (fFrom) rows = rows.filter((r) => r.pawn_date && r.pawn_date >= fFrom);
       if (fTo) rows = rows.filter((r) => r.pawn_date && r.pawn_date <= fTo);
+      // Pill count, tiles, active-filter strip and list all follow these same
+      // filters (MASTER UI rules 6/19/20/28).
+      subastaFilteredCount = rows.length;
+      renderScrapSubTabs();
+      const subActive = document.getElementById('sub-active');
+      subActive.innerHTML = activeFiltersHtml([
+        { label: 'Search', value: esc(fSearch) }, { label: 'Status', value: esc(fStatus) },
+        { label: 'Pawned From', value: esc(fFrom) }, { label: 'Pawned To', value: esc(fTo) },
+      ], 'sub-f-clear');
+      wireProxyButtons(subActive);
 
       const counts = SUB_STATUSES.reduce((acc, s) => { acc[s] = rows.filter((r) => r.status === s).length; return acc; }, {});
       const soldTotal = rows.filter((r) => r.status === 'Sold').reduce((s, r) => s + Number(r.sale_price || 0), 0);
@@ -1160,7 +1187,11 @@ if (employee) {
         tile(counts.Pending, 'Pending') + tile(counts.Listed, 'Listed') + tile(counts.Sold, 'Sold') + tile(money(soldTotal), 'Sold Total') + tile(money(soldToday), 'Sold Today');
 
       const list = document.getElementById('sub-list');
-      if (!rows.length) { list.innerHTML = '<p class="muted">No subasta items for this filter.</p>'; return; }
+      if (!rows.length) {
+        list.innerHTML = emptyStateHtml({ message: 'No subasta items for this filter.', hasFilters: !!(fSearch || fStatus !== 'all' || fFrom || fTo), clearId: 'sub-f-clear' });
+        wireProxyButtons(list);
+        return;
+      }
 
       // Every field shows directly in the row -- no click-to-expand -- matching the
       // Transactions list. Edit still opens a form (same as before), it just isn't

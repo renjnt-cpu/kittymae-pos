@@ -12,6 +12,7 @@ import {
   requestLayawayForfeitDate, listLayawayForfeitDateRequests, approveLayawayForfeitDate, rejectLayawayForfeitDate,
 } from './api.js';
 import { PAYMENT_METHODS } from './paymentMethods.js';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons } from './uiKit.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-PH', { dateStyle: 'medium' }) : '—';
@@ -124,33 +125,11 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     // besides On Hold itself (Ren, 2026-09-16: "make a folder per layaway status for
     // cancelled, delete, completed, on hold"), collapsed by default. The On Hold
     // list's own Search box further narrows what shows inside each.
-    '<h3 style="margin-top:0;">Status</h3>' +
-    '<details class="card">' +
-      '<summary style="cursor:pointer;font-weight:bold;">Completed <span class="muted" id="lw-completed-count" style="font-weight:normal;"></span></summary>' +
-      '<div id="lw-list-completed" style="margin-top:10px;"></div>' +
-    '</details>' +
-    '<details class="card" style="margin-top:10px;">' +
-      '<summary style="cursor:pointer;font-weight:bold;">Cancelled <span class="muted" id="lw-cancelled-count" style="font-weight:normal;"></span></summary>' +
-      '<div id="lw-list-cancelled" style="margin-top:10px;"></div>' +
-    '</details>' +
-    // Forfeited: a customer never came back to pay before the Forfeit Date, as
-    // opposed to Cancelled (a deliberate back-out) -- Ren, 2026-09-17, wanted
-    // these told apart instead of both landing in the same Cancelled bucket.
-    '<details class="card" style="margin-top:10px;">' +
-      '<summary style="cursor:pointer;font-weight:bold;">Forfeited <span class="muted" id="lw-forfeited-count" style="font-weight:normal;"></span></summary>' +
-      '<div id="lw-list-forfeited" style="margin-top:10px;"></div>' +
-    '</details>' +
-
-    // Admin-only review queue (Ren, 2026-09-17: "for approval of me if they want
-    // to edit it") -- open by default since a pending request is something to
-    // act on, not just browse, same convention as SKU Catalog's Pending Edit
-    // Requests.
-    (canFinalDelete
-      ? '<details class="card" id="lw-pending-forfeit-folder" style="margin-top:10px;" open>' +
-          '<summary style="cursor:pointer;font-weight:bold;">Pending Forfeit Date Requests <span class="muted" id="lw-pending-forfeit-count" style="font-weight:normal;"></span></summary>' +
-          '<div id="lw-pending-forfeit-list" style="margin-top:10px;"><div class="muted">Loading…</div></div>' +
-        '</details>'
-      : '') +
+    // MASTER UI rule 2 (Ren, 2026-09-21) sets the order for every branch module:
+    // primary action, then Summary, then Search & Filters, then Status navigation,
+    // then Records -- so "+ New Layaway" leads, the On Hold summary/search/list come
+    // next, the per-status folders follow them, and the Monthly Monitoring and
+    // Forfeiture Watch reports close the tab.
 
     // Form Drawer (Ren's UI redesign pilot, section 203: "The current Hold Item form
     // takes too much vertical space... Replace: Hold Item(s) long form on page, with:
@@ -214,6 +193,48 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       '<div class="drawer-body" id="lw-detail-body"></div>' +
     '</div>' +
 
+    // Summary (tiles) -> Search -> active-filter strip -> Records, all from the same
+    // search-filtered rows (MASTER UI rules 2/3/6/19).
+    '<div class="tiles" id="lw-tiles" style="margin-top:14px;"></div>' +
+    '<div class="card">' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+        '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="lw-f-search" placeholder="SKU, customer, order ID, contact…"></div>' +
+        '<button type="button" class="btn small secondary" id="lw-f-clear">Clear Filters</button>' +
+      '</div>' +
+    '</div>' +
+    '<div id="lw-active"></div>' +
+    '<h3 style="margin:0 0 8px;">On Hold</h3>' +
+    '<div id="lw-list"><div class="muted">Loading…</div></div>' +
+
+    // Status navigation: one folder per status besides On Hold itself (Ren,
+    // 2026-09-16: "make a folder per layaway status for cancelled, delete, completed,
+    // on hold"), collapsed by default; the Search box above narrows every folder.
+    '<details class="card" style="margin-top:14px;">' +
+      '<summary style="cursor:pointer;font-weight:bold;">Completed <span class="muted" id="lw-completed-count" style="font-weight:normal;"></span></summary>' +
+      '<div id="lw-list-completed" style="margin-top:10px;"></div>' +
+    '</details>' +
+    '<details class="card" style="margin-top:10px;">' +
+      '<summary style="cursor:pointer;font-weight:bold;">Cancelled <span class="muted" id="lw-cancelled-count" style="font-weight:normal;"></span></summary>' +
+      '<div id="lw-list-cancelled" style="margin-top:10px;"></div>' +
+    '</details>' +
+    // Forfeited: a customer never came back to pay before the Forfeit Date, as
+    // opposed to Cancelled (a deliberate back-out) -- Ren, 2026-09-17, wanted
+    // these told apart instead of both landing in the same Cancelled bucket.
+    '<details class="card" style="margin-top:10px;">' +
+      '<summary style="cursor:pointer;font-weight:bold;">Forfeited <span class="muted" id="lw-forfeited-count" style="font-weight:normal;"></span></summary>' +
+      '<div id="lw-list-forfeited" style="margin-top:10px;"></div>' +
+    '</details>' +
+    // Admin-only review queue (Ren, 2026-09-17: "for approval of me if they want
+    // to edit it") -- open by default since a pending request is something to
+    // act on, not just browse, same convention as SKU Catalog's Pending Edit
+    // Requests.
+    (canFinalDelete
+      ? '<details class="card" id="lw-pending-forfeit-folder" style="margin-top:10px;" open>' +
+          '<summary style="cursor:pointer;font-weight:bold;">Pending Forfeit Date Requests <span class="muted" id="lw-pending-forfeit-count" style="font-weight:normal;"></span></summary>' +
+          '<div id="lw-pending-forfeit-list" style="margin-top:10px;"><div class="muted">Loading…</div></div>' +
+        '</details>'
+      : '') +
+
     '<h2 style="margin-top:26px;">Monthly Monitoring</h2>' +
     '<div class="card">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
@@ -231,16 +252,6 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     // rather than only inferable from the aggregate Total Paid number.
     '<h3 style="margin-top:20px;">Payments Received <span class="muted" style="font-weight:normal;">— by payment date, same range as above</span></h3>' +
     '<div id="mm-payments-table"></div>' +
-
-    '<h2 style="margin-top:30px;">On Hold</h2>' +
-    '<div class="tiles" id="lw-tiles"></div>' +
-    '<div class="card">' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-        '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="lw-f-search" placeholder="SKU, customer, order ID, contact…"></div>' +
-        '<button type="button" class="btn small secondary" id="lw-f-clear">Clear Filters</button>' +
-      '</div>' +
-    '</div>' +
-    '<div id="lw-list"><div class="muted">Loading…</div></div>' +
 
     '<h3 style="margin-top:22px;">Forfeiture Watch <span class="muted" style="font-weight:normal;">— On Hold items, oldest first (not affected by the date range above)</span></h3>' +
     '<p class="muted" style="margin-top:-4px;">Unpaid holds are forfeited 2 months after Date Purchased. Rows turn red once an item is close to or past that. Date Purchased is fixed once set (Admin only can correct it); a Forfeit Date change by anyone else needs Admin approval.</p>' +
@@ -537,7 +548,6 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       groupMembers = {};
       allHolds.forEach((h) => { if (h.group_id) (groupMembers[h.group_id] = groupMembers[h.group_id] || []).push(h); });
       Object.values(groupMembers).forEach((g) => g.sort((a, b) => a.id - b.id));
-      if (onCountUpdate) onCountUpdate(allHolds.filter((h) => h.status === 'On Hold').length);
       render();
       renderMonthly();
       await loadPendingForfeitRequests(); // must resolve before renderForfeitureWatch reads pendingForfeitRequests
@@ -938,6 +948,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     const completed = rows.filter((h) => h.status === 'Completed');
     const cancelled = rows.filter((h) => h.status === 'Cancelled');
     const forfeited = rows.filter((h) => h.status === 'Forfeited');
+    // The module pill count and the active-filter strip follow the same search as
+    // the tiles/folders/list below (MASTER UI rules 6/19/20/28).
+    if (onCountUpdate) onCountUpdate(onHold.length);
+    const activeEl = document.getElementById('lw-active');
+    activeEl.innerHTML = activeFiltersHtml([{ label: 'Search', value: esc(fSearch) }], 'lw-f-clear');
+    wireProxyButtons(activeEl);
     const totalHeld = onHold.reduce((s, h) => s + Number(h.total_price || 0), 0);
     const totalPaid = onHold.reduce((s, h) => s + paidSoFar(h), 0);
     document.getElementById('lw-tiles').innerHTML =
@@ -950,6 +966,14 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     document.getElementById('lw-forfeited-count').textContent = '(' + forfeited.length + ')';
 
     renderHoldTable('lw-list', onHold);
+    if (!onHold.length) {
+      const list = document.getElementById('lw-list');
+      list.innerHTML = emptyStateHtml({
+        message: fSearch ? 'No On Hold layaways match this search.' : 'No layaways on hold for this branch right now.',
+        hasFilters: !!fSearch, clearId: 'lw-f-clear', createLabel: '+ New Layaway', createId: 'lw-new-btn',
+      });
+      wireProxyButtons(list);
+    }
     renderHoldTable('lw-list-completed', completed);
     renderHoldTable('lw-list-cancelled', cancelled);
     renderHoldTable('lw-list-forfeited', forfeited);

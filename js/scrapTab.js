@@ -11,6 +11,7 @@ import {
   uploadScrapAttachment, getScrapAttachmentUrl, convertScrapToSubasta, subscribeToChanges,
 } from './api.js';
 import { PAYMENT_METHODS } from './paymentMethods.js';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons } from './uiKit.js';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + 'g';
@@ -69,7 +70,15 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       (isScoped && getBranchId() === employee.branch_id);
   }
 
+  // Page order follows Ren's MASTER UI rule 2: primary action at the top, Summary
+  // directly below the module header, Search & Filters directly below Summary, then
+  // the records. The tiles/balance/list all derive from the same filtered rows.
   root.innerHTML =
+    '<div class="module-topbar"><div></div><div style="text-align:right;">' +
+      '<button type="button" class="btn" id="sc-new-btn">+ New Scrap</button>' +
+      '<div id="sc-write-note"></div>' +
+    '</div></div>' +
+    '<div class="tiles" id="sc-tiles"></div>' +
     '<div class="card">' +
       '<h3 style="margin-top:0;">Search &amp; Filter</h3>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
@@ -81,14 +90,8 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
         '<button type="button" class="btn small secondary" id="sc-f-clear">Clear Filters</button>' +
       '</div>' +
     '</div>' +
-    '<div class="tiles" id="sc-tiles"></div>' +
-    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:20px;">' +
-      '<h3 style="margin:0;">Current Balance <span class="muted" style="font-weight:normal;">— weight on hand</span></h3>' +
-      '<div style="text-align:right;">' +
-        '<button type="button" class="btn" id="sc-new-btn">+ New Scrap</button>' +
-        '<div id="sc-write-note"></div>' +
-      '</div>' +
-    '</div>' +
+    '<div id="sc-active"></div>' +
+    '<h3 style="margin:0 0 8px;">Current Balance <span class="muted" style="font-weight:normal;">— weight on hand</span></h3>' +
     '<div id="sc-balance" class="card"><div class="muted">Loading…</div></div>' +
     '<div id="sc-list"><div class="muted">Loading…</div></div>' +
 
@@ -217,7 +220,6 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       const [entries, cashBalances] = await Promise.all([listScrapEntries(getBranchId()), getScrapCashBalances()]);
       allScrap = entries;
       scrapCashBalances = cashBalances;
-      if (onCountUpdate) onCountUpdate(allScrap.length);
       render();
     } catch (err) {
       list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
@@ -275,6 +277,17 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     if (fFrom) rows = rows.filter((r) => r.entry_date >= fFrom);
     if (fTo) rows = rows.filter((r) => r.entry_date <= fTo);
 
+    // The module pill count, the active-filter strip, the tiles, the balance and the
+    // list all come from these same filtered rows (MASTER UI rules 6/19/20/28).
+    if (onCountUpdate) onCountUpdate(rows.length);
+    const hasFilters = !!(fSearch || fMetal !== 'all' || fType !== 'all' || fFrom || fTo);
+    const activeEl = document.getElementById('sc-active');
+    activeEl.innerHTML = activeFiltersHtml([
+      { label: 'Search', value: esc(fSearch) }, { label: 'Metal', value: esc(fMetal) }, { label: 'Type', value: esc(fType) },
+      { label: 'From', value: esc(fFrom) }, { label: 'To', value: esc(fTo) },
+    ], 'sc-f-clear');
+    wireProxyButtons(activeEl);
+
     renderBalance(computeBalanceFromRows(rows));
 
     const rangeIn = rows.filter((r) => r.entry_type === 'In');
@@ -297,7 +310,15 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     document.getElementById('sc-tiles').innerHTML = tilesHtml;
 
     const list = document.getElementById('sc-list');
-    if (!rows.length) { list.innerHTML = '<p class="muted">No scrap entries for this filter.</p>'; return; }
+    if (!rows.length) {
+      list.innerHTML = emptyStateHtml({
+        message: hasFilters ? 'No scrap entries match these filters.' : 'No scrap entries recorded for this branch yet.',
+        hasFilters, clearId: 'sc-f-clear',
+        createLabel: canAddHere() ? '+ New Scrap' : null, createId: 'sc-new-btn',
+      });
+      wireProxyButtons(list);
+      return;
+    }
 
     list.innerHTML = '<div class="table-scroll table-2col"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
       '<colgroup><col style="width:11%"><col style="width:13%"><col style="width:13%"><col style="width:8%"><col style="width:10%"><col style="width:11%"><col style="width:20%"><col style="width:14%"></colgroup>' +

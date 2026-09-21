@@ -330,3 +330,27 @@ main { flex:1 1 auto; min-height:0; overflow-y:auto; width:100%; }
   .act-panel { left:8px; right:8px; bottom:auto; top:64px; width:auto; max-width:none; }
   .act-item { padding:8px 28px 8px 10px; }
 }
+
+/* ---- MASTER UI / FILTER / RESPONSIVE rules (Ren, 2026-09-21): badges that never
+   clip or wrap letter-by-letter (12); visible keyboard focus and phone-sized touch
+   targets (32/14); one active-filter strip and one empty-state look for every
+   module (28/30); Summary tiles that use a phone's width in two columns (14/15). ---- */
+.badge { white-space:nowrap; line-height:1.5; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline:2px solid #1a56b0; outline-offset:2px; }
+.module-topbar { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+.active-filters { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:-8px 0 14px; font-size:12px; color:var(--muted); }
+.active-filters-label { font-weight:600; }
+.filter-chip { background:#fff; border:1px solid #e3e3e3; border-radius:12px; padding:2px 9px; color:var(--ink); white-space:nowrap; }
+.filter-chip b { font-weight:600; }
+.empty-state { background:#fff; border:1px dashed #ddd; border-radius:10px; padding:22px 16px; text-align:center; }
+.empty-state-msg { color:var(--muted); font-size:13px; margin-bottom:10px; }
+.empty-state-actions { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+.empty-state-actions:empty { display:none; }
+@media (max-width:760px) {
+  button.btn { min-height:40px; }
+  button.btn.small { min-height:36px; }
+  .field input, .field select { min-height:40px; }
+  .tiles { gap:8px; }
+  .tile { min-width:0; flex:1 1 calc(50% - 4px); padding:12px 14px; }
+  .tile .num { font-size:22px; }
+}

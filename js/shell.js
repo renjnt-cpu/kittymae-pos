@@ -36,9 +36,18 @@ export function esc(s) {
   return (s === null || s === undefined) ? '' : String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
+// Server-side rule messages ("Not authorized: ...", "Insufficient stock: ...") are
+// written for staff and shown as-is; anything that reads like a database/network
+// internals message gets a plain-language line in front so a normal user knows what
+// happened and what to do, with the detail kept for whoever debugs it (MASTER UI 31).
+const TECHNICAL_ERROR = /violates|constraint|relation "|syntax error|null value|permission denied|JSON|invalid input|duplicate key|does not exist|PGRST|JWT|Failed to fetch|NetworkError|timeout/i;
 export function toast(targetId, text, isError) {
   const el = document.getElementById(targetId);
   if (!el) return;
-  el.innerHTML = '<div class="msg ' + (isError ? 'error' : 'ok') + '">' + esc(text) + '</div>';
-  setTimeout(() => { el.innerHTML = ''; }, 5000);
+  let shown = String(text);
+  if (isError && TECHNICAL_ERROR.test(shown)) {
+    shown = 'Something went wrong and the change was not saved. Please try again -- if it keeps happening, tell an Admin. (Details: ' + shown + ')';
+  }
+  el.innerHTML = '<div class="msg ' + (isError ? 'error' : 'ok') + '">' + esc(shown) + '</div>';
+  setTimeout(() => { el.innerHTML = ''; }, isError ? 9000 : 5000);
 }
