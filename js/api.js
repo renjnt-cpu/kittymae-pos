@@ -500,15 +500,18 @@ function summarizePaymentMethod(payments) {
   return methods.length === 1 ? methods[0] : 'Multiple';
 }
 
+/** Returns the new item's id so the Subasta drawer can switch straight to its
+ * details after saving (Ren's spec 273). */
 export async function createSubastaItem({ branchId, sku, itemDescription, weightGrams, pawnReference, pawnDate, auctionEligibleDate, notes }) {
   const empId = await currentEmployeeId();
-  const { error } = await supabase.from('subasta_items').insert({
+  const { data, error } = await supabase.from('subasta_items').insert({
     branch_id: branchId, sku: sku || null, item_description: itemDescription,
     weight_grams: weightGrams || null, pawn_reference: pawnReference || null, pawn_date: pawnDate || null,
     auction_eligible_date: auctionEligibleDate || null, notes: notes || null,
     created_by: empId,
-  });
+  }).select('id').single();
   if (error) throw new Error(error.message);
+  return data.id;
 }
 
 /** payments (optional [{method, amount}]) lets a sale be split across methods -- when
