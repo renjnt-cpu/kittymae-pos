@@ -170,7 +170,10 @@ if (employee) {
       // position; a lower z-index than the mobile Order sheet (50) keeps it out of the
       // way of normal POS operations. Hidden (display:none) until refreshForfeitedNotice()
       // actually finds something.
-      '<div id="pos-forfeited-notice" style="display:none;position:fixed;left:12px;bottom:12px;max-width:280px;background:#fff8e8;border:1px solid #f0c36d;border-radius:8px;padding:10px 12px;box-shadow:0 2px 10px rgba(0,0,0,0.18);z-index:40;font-size:12px;"></div>' +
+      // Now parked inside the Global Activity panel's pinned slot once the feed mounts
+      // (spec 312: forfeited stays a high-priority warning, not a fading toast; 326:
+      // the old fixed box is upgraded into that panel) -- see adoptForfeitedNotice().
+      '<div id="pos-forfeited-notice" class="act-pinned-warning" style="display:none;"></div>' +
       '<div class="card">' +
         '<h3>Branch</h3>' +
         '<div id="branch-buttons" style="display:flex;gap:8px;flex-wrap:wrap;"></div>' +
@@ -1015,11 +1018,41 @@ if (employee) {
         pill('layaway', 'Layaway', '#c2185b', layawayCount) +
         pill('scrap', 'Scrap', '#b06a1f', scrapCount) + pill('subasta', 'Subasta', '#7c3aa8', allSubasta.length) +
         pill('online', 'Online Orders', '#1a56b0', onlineOrdersCount);
-      box.querySelectorAll('[data-tab]').forEach((btn) => btn.addEventListener('click', () => {
-        activeSubTab = btn.dataset.tab;
-        SUB_TABS.forEach((key) => { document.getElementById('tab-panel-' + key).style.display = activeSubTab === key ? '' : 'none'; });
-        renderScrapSubTabs();
-      }));
+      box.querySelectorAll('[data-tab]').forEach((btn) => btn.addEventListener('click', () => showSubTab(btn.dataset.tab)));
+    }
+    function showSubTab(key) {
+      if (!SUB_TABS.includes(key)) return;
+      activeSubTab = key;
+      SUB_TABS.forEach((k) => { document.getElementById('tab-panel-' + k).style.display = activeSubTab === k ? '' : 'none'; });
+      renderScrapSubTabs();
+    }
+
+    // ---- Global Activity feed integration (spec 312/321) ----
+    // (a) The Forfeited notice moves into the feed panel's pinned slot so there's one
+    //     notification box, with forfeits kept as a standing warning above the live
+    //     toasts. The feed mounts async from posNav.js, so handle both orders.
+    const adoptForfeitedNotice = () => {
+      const feed = window.__kmActivity;
+      const notice = document.getElementById('pos-forfeited-notice');
+      if (feed && notice && notice.parentElement !== feed.pinnedSlot) { feed.pinnedSlot.appendChild(notice); feed.refreshPanelVisibility(); }
+    };
+    adoptForfeitedNotice();
+    document.addEventListener('km-activity-ready', adoptForfeitedNotice);
+    // (b) A clicked notification opens its record right here (no reload) when this
+    //     page is already open; from another page it arrives via ?tab=&open= instead.
+    window.__kmOpenRecord = (table, id) => {
+      if (table === 'layaway_holds') { showSubTab('layaway'); layaway?.openDetail(Number(id)); return true; }
+      if (table === 'scrap_entries') { showSubTab('scrap'); scrap?.openDetail(Number(id)); return true; }
+      if (table === 'subasta_items') { showSubTab('subasta'); return true; }
+      if (table === 'pos_sale') { showSubTab('pos'); return true; }
+      return false;
+    };
+    const deepLink = new URLSearchParams(window.location.search);
+    if (deepLink.get('tab')) showSubTab(deepLink.get('tab'));
+    if (deepLink.get('open')) {
+      const openId = Number(deepLink.get('open'));
+      if (deepLink.get('tab') === 'layaway') layaway?.openDetail(openId);
+      if (deepLink.get('tab') === 'scrap') scrap?.openDetail(openId);
     }
 
     function renderBranchButtons() {
@@ -1070,8 +1103,9 @@ if (employee) {
       try {
         const holds = await listLayaways(selectedBranch);
         const forfeited = holds.filter((h) => h.status === 'Forfeited');
-        if (!forfeited.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+        if (!forfeited.length) { box.style.display = 'none'; box.innerHTML = ''; window.__kmActivity?.refreshPanelVisibility(); return; }
         box.style.display = '';
+        window.__kmActivity?.refreshPanelVisibility();
         box.innerHTML =
           '<div style="font-weight:bold;color:#a15c00;">⚠ FORFEITED LAYAWAY' + (forfeited.length > 1 ? 'S' : '') + '</div>' +
           '<div class="muted" style="margin:2px 0 6px;">This layaway transaction has already been forfeited -- do not process it as an active layaway.</div>' +

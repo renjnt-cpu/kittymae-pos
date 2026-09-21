@@ -4,6 +4,22 @@
 // blue palette and 4-page link set instead of the ERP's full nav.
 import { esc } from './shell.js';
 import { signOut } from './auth.js';
+import { initActivityFeed } from './activityFeed.js';
+
+// Where a clicked activity notification opens its record (spec 321) -- keyed by the
+// event's record_table. Pages this app doesn't have link across to the ERP.
+const ERP = 'https://renjnt-cpu.github.io/kittymae-inventory-system/';
+const ACTIVITY_LINKS = {
+  pos_sale: 'branches.html?tab=pos',
+  layaway_holds: 'branches.html?tab=layaway&open=',
+  scrap_entries: 'branches.html?tab=scrap&open=',
+  subasta_items: 'branches.html?tab=subasta',
+  pull_out_records: ERP + 'pull-out.html',
+  inventory_transfers: ERP + 'transfers.html',
+  inventory_transactions: 'movement.html',
+  refunds: ERP + 'refunds.html',
+  products: 'products.html',
+};
 
 export function renderPosNav(employee, activeHref) {
   const links = [
@@ -52,6 +68,12 @@ export function renderPosNav(employee, activeHref) {
     esc(employee.full_name) + ' · ' + esc(employee.role) +
     ' <button class="btn small secondary" id="pos-nav-signout">Sign out</button>';
   document.getElementById('pos-nav-signout').addEventListener('click', signOut);
+
+  // Global Branch Activity feed (spec 303-332) -- same module as the ERP; async so a
+  // slow first fetch never delays the page, and a failure never breaks it.
+  initActivityFeed({ employee, headerEl: shell.querySelector('.app-header'), esc, links: ACTIVITY_LINKS })
+    .then((feed) => { window.__kmActivity = feed; document.dispatchEvent(new Event('km-activity-ready')); })
+    .catch(() => {});
 
   const closeDrawer = () => shell.classList.remove('sidebar-open');
   shell.querySelector('#app-menu-btn').addEventListener('click', () => shell.classList.toggle('sidebar-open'));

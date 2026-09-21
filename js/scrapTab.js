@@ -413,5 +413,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
   const unsubscribe = subscribeToChanges(['scrap_entries', 'branch_capital_entries'], load);
   await load();
 
-  return { reload: load, unsubscribe };
+  // openDetail is exposed so a clicked activity notification (activityFeed.js, spec
+  // 321) can open this entry's own Detail Drawer in place.
+  return { reload: load, unsubscribe, openDetail };
 }

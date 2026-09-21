@@ -1370,3 +1370,32 @@ export async function listAccessChangeLog(limit = 200) {
   if (error) throw new Error(error.message);
   return attachEmployeeNames(data, { employee: 'employee_id', changer: 'changed_by' });
 }
+
+/** Global Branch Activity feed (Ren's spec 303-332). activity_events rows are written
+ * by database-side hooks on every module's own write path, so an event only ever
+ * exists for a write that actually committed; visibility (which branches/modules a
+ * person sees) is enforced by RLS from the permission system, so these just read. */
+export async function listActivity({ limit = 60, before = null, module = null, branchId = null, employeeId = null, from = null, to = null, action = null } = {}) {
+  const { data, error } = await supabase.rpc('list_activity', {
+    p_limit: limit, p_before: before, p_module: module, p_branch_id: branchId, p_employee_id: employeeId,
+    p_from: from, p_to: to, p_action: action,
+  });
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+export async function activityUnreadCount() {
+  const { data, error } = await supabase.rpc('activity_unread_count');
+  if (error) throw new Error(error.message);
+  return Number(data || 0);
+}
+
+export async function markActivityRead(ids) {
+  const { error } = await supabase.rpc('mark_activity_read', { p_ids: ids });
+  if (error) throw new Error(error.message);
+}
+
+export async function markAllActivityRead() {
+  const { error } = await supabase.rpc('mark_all_activity_read');
+  if (error) throw new Error(error.message);
+}

@@ -290,3 +290,43 @@ main { flex:1 1 auto; min-height:0; overflow-y:auto; width:100%; }
   }
   .drawer.open { transform:translateY(0); }
 }
+
+/* ---- Global Branch Activity feed (Ren's spec 303-332) -- header bell, the compact
+   floating live panel (the old "Forfeited Layaways" box now lives in its pinned
+   slot), and the Activity History drawer (which reuses .drawer above). Priority
+   drives the colour; the fade timing lives in activityFeed.js. z-index sits below
+   the drawers (70+) and the mobile POS order sheet (50) so it never blocks a sale. ---- */
+.act-bell { position:relative; background:none; border:none; font-size:18px; cursor:pointer; padding:4px 6px; line-height:1; color:var(--ink); }
+.act-badge { position:absolute; top:-3px; right:-5px; background:var(--warn); color:#fff; font-size:10px; font-weight:700; border-radius:10px; padding:1px 5px; min-width:16px; text-align:center; line-height:1.3; }
+.act-badge[hidden] { display:none; }
+.act-panel { position:fixed; left:12px; bottom:12px; width:300px; max-width:calc(100vw - 24px); z-index:45; display:none; flex-direction:column; gap:8px; pointer-events:none; }
+.act-panel.show { display:flex; }
+.act-panel > * { pointer-events:auto; }
+.act-panel-head { display:flex; justify-content:space-between; align-items:center; font-size:11px; letter-spacing:0.06em; color:var(--muted); font-weight:700; }
+.act-x-head { background:none; border:none; color:var(--muted); cursor:pointer; font-size:16px; line-height:1; padding:0 4px; }
+#act-live, #act-pinned { display:flex; flex-direction:column; gap:8px; }
+#act-live:empty, #act-pinned:empty { display:none; }
+.act-item { background:#fff; border:1px solid #e6e6e6; border-left:4px solid #9aa4ad; border-radius:10px; padding:10px 30px 10px 12px; box-shadow:0 4px 14px rgba(0,0,0,0.14); font-size:12px; position:relative; cursor:pointer; opacity:1; transition:opacity 0.4s ease, transform 0.4s ease; }
+.act-item.act-fading { opacity:0; transform:translateY(6px); }
+.act-item.act-normal { border-left-color:#7aa7d9; }
+.act-item.act-important { border-left-color:#e0a030; background:#fffaf0; }
+.act-item.act-warning { border-left-color:#c62828; background:#fff3f2; }
+.act-item.act-critical { border-left-color:#7b1fa2; background:#f6eefc; }
+.act-title { font-weight:700; font-size:11.5px; letter-spacing:0.03em; }
+.act-who { margin-top:2px; font-weight:600; }
+.act-line { color:#444; }
+.act-when { color:var(--muted); font-size:10.5px; margin-top:3px; }
+.act-x { position:absolute; top:6px; right:8px; background:none; border:none; color:var(--muted); cursor:pointer; font-size:14px; line-height:1; }
+.act-panel-foot { display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--muted); }
+.act-link { background:none; border:none; color:#2b5aa8; cursor:pointer; font:inherit; font-size:11px; text-decoration:underline; padding:0; }
+.act-pinned-warning { background:#fff8e8; border:1px solid #f0c36d; border-radius:10px; padding:10px 12px; font-size:12px; box-shadow:0 4px 14px rgba(0,0,0,0.14); }
+.act-hist-item { margin-bottom:8px; box-shadow:none; }
+.act-hist-item.act-unread { box-shadow:inset 0 0 0 1px #cfd8ff; }
+.act-hist-item.act-unread .act-title::before { content:'•'; color:#2b5aa8; margin-right:5px; }
+.act-filters { display:flex; gap:6px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px; }
+.act-filters .field { min-width:0; flex:1 1 120px; }
+.act-filters select, .act-filters input { font-size:12px; padding:5px 6px; width:100%; }
+@media (max-width:760px) {
+  .act-panel { left:8px; right:8px; bottom:auto; top:64px; width:auto; max-width:none; }
+  .act-item { padding:8px 28px 8px 10px; }
+}

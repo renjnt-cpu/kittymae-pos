@@ -1247,5 +1247,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   const unsubscribe = subscribeToChanges(['layaway_holds', 'layaway_payments', 'layaway_forfeit_date_log', 'layaway_hold_date_log', 'layaway_forfeit_date_requests'], load);
   await load();
 
-  return { reload: load, unsubscribe };
+  // openDetail is exposed so a clicked activity notification (activityFeed.js, spec
+  // 321) can open this hold's own Detail Drawer in place.
+  return { reload: load, unsubscribe, openDetail };
 }
