@@ -24,7 +24,8 @@ import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, w
 // it, and every line of a multi-item sale stays together in the sorted order.
 const POS_SORT_FIELDS = [
   { key: 'sale_date', label: 'Date & Time' }, { key: 'order_number', label: 'Order' }, { key: 'customer_name', label: 'Customer' },
-  { key: 'sku', label: 'SKU (first item)' }, { key: 'qty', label: 'Qty (total items)' }, { key: 'amount', label: 'Amount' }, { key: 'payment_method', label: 'Payment Method' },
+  { key: 'sku', label: 'SKU (first item)' }, { key: 'qty', label: 'Qty (total items)' }, { key: 'amount', label: 'Amount' },
+  { key: 'line_total', label: 'Line Total (first item)' }, { key: 'payment_method', label: 'Payment Method' },
 ];
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
@@ -129,6 +130,10 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
         '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="pos-f-search" placeholder="SKU, item, customer, order…"></div>' +
         '<div class="field"><label>From</label><input type="date" id="pos-f-from"></div>' +
         '<div class="field"><label>To</label><input type="date" id="pos-f-to"></div>' +
+        // Catches a line a staff member rang up without ever entering a Unit Price
+        // (Ren, 2026-09-22) -- shows the whole sale a zero-total line belongs to, not
+        // just that one row, since View Details/fixing it happens at the sale level.
+        '<label class="pos-check" style="align-self:center;"><input type="checkbox" id="pos-f-zero"> Zero-amount lines only</label>' +
         sortControlHtml(POS_SORT_FIELDS, sort, 'pos-sort-field', 'pos-sort-dir') +
         '<button type="button" class="btn small secondary" id="pos-f-clear">Clear Filters</button>' +
       '</div>' +
@@ -416,6 +421,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
       sale_date: text('sale_date'), order_number: text('order_number'), customer_name: text('customer_name'), sku: text('sku'),
       qty: (a, b) => a.items.reduce((s, r) => s + r.qty, 0) - b.items.reduce((s, r) => s + r.qty, 0),
       amount: (a, b) => groupSubtotal(a) - groupSubtotal(b),
+      line_total: (a, b) => (Number(a.items[0].unit_price || 0) * a.items[0].qty) - (Number(b.items[0].unit_price || 0) * b.items[0].qty),
       payment_method: (a, b) => String((posPaymentsByGroup[a.groupId] || [])[0]?.payment_method || '').localeCompare(String((posPaymentsByGroup[b.groupId] || [])[0]?.payment_method || '')),
     };
   }
@@ -581,14 +587,18 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     const fSearch = document.getElementById('pos-f-search').value.trim().toLowerCase();
     const fFrom = document.getElementById('pos-f-from').value;
     const fTo = document.getElementById('pos-f-to').value;
+    const fZero = document.getElementById('pos-f-zero').checked;
     let rows = allPosSales;
     if (fFrom) rows = rows.filter((r) => r.sale_date >= fFrom);
     if (fTo) rows = rows.filter((r) => r.sale_date <= fTo + 'T23:59:59');
-    renderByAdminPayment(rows); // date-filtered only -- not narrowed by the free-text search
+    renderByAdminPayment(rows); // date-filtered only -- not narrowed by the free-text search/zero-amount filter
     let groups = groupPosSales(rows);
     if (fSearch) groups = groups.filter((g) => g.items.some((r) =>
       r.sku.toLowerCase().includes(fSearch) || (r.products?.item_name || '').toLowerCase().includes(fSearch) ||
       (r.customer_name || '').toLowerCase().includes(fSearch) || (r.order_number || '').toLowerCase().includes(fSearch)));
+    // Surfaces the whole sale a ₱0 line belongs to (not just that one row) -- a
+    // multi-item sale with one missing price is still one thing to go fix.
+    if (fZero) groups = groups.filter((g) => g.items.some((r) => Number(r.unit_price || 0) * r.qty === 0));
     renderSummary(groups);
 
     // Pill count, tiles, active-filter strip and ledger all follow these same filters
@@ -596,9 +606,9 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     if (onCountUpdate) onCountUpdate(groups.length);
     const totalAmount = groups.reduce((s, g) => s + groupSubtotal(g), 0);
     document.getElementById('pos-tiles').innerHTML = tile(groups.length, 'Sales') + tile(money(totalAmount), 'Total Amount');
-    const hasFilters = !!(fSearch || fFrom || fTo);
+    const hasFilters = !!(fSearch || fFrom || fTo || fZero);
     const activeEl = document.getElementById('pos-active');
-    activeEl.innerHTML = activeFiltersHtml([{ label: 'Search', value: esc(fSearch) }, { label: 'From', value: esc(fFrom) }, { label: 'To', value: esc(fTo) }], 'pos-f-clear');
+    activeEl.innerHTML = activeFiltersHtml([{ label: 'Search', value: esc(fSearch) }, { label: 'From', value: esc(fFrom) }, { label: 'To', value: esc(fTo) }, { label: 'Zero-amount only', value: fZero ? 'Yes' : '' }], 'pos-f-clear');
     wireProxyButtons(activeEl);
 
     const box = document.getElementById('pos-list');
@@ -822,10 +832,12 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   document.getElementById('pos-f-search').addEventListener('input', render);
   document.getElementById('pos-f-from').addEventListener('change', render);
   document.getElementById('pos-f-to').addEventListener('change', render);
+  document.getElementById('pos-f-zero').addEventListener('change', render);
   document.getElementById('pos-f-clear').addEventListener('click', () => {
     document.getElementById('pos-f-search').value = '';
     document.getElementById('pos-f-from').value = '';
     document.getElementById('pos-f-to').value = '';
+    document.getElementById('pos-f-zero').checked = false;
     render();
   });
   wireSortControl('pos-sort-field', 'pos-sort-dir', sort, render);
