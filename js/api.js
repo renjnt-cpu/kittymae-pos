@@ -1037,21 +1037,27 @@ export async function listLayaways(branchId) {
  * 'Lacking' (the item isn't physically on hand yet -- skips the reservation/stock
  * check entirely; the real deduction happens later, in completeLayaway(), once the
  * item has actually arrived -- see 98_layaway_stock_status.sql). */
-export async function createLayawayHold({ sku, branchId, qty, customerName, contactNumber, unitPrice, notes, orderId, handledBy, groupId, stockStatus, forfeitDate }) {
+export async function createLayawayHold({ sku, branchId, qty, customerName, contactNumber, unitPrice, notes, orderId, handledBy, groupId, stockStatus, forfeitDate, holdDate }) {
   const { data, error } = await supabase.rpc('create_layaway_hold', {
     p_sku: sku, p_branch_id: branchId, p_qty: qty, p_customer_name: customerName,
     p_contact_number: contactNumber || null, p_unit_price: unitPrice || null, p_notes: notes || null,
     p_order_id: orderId || null, p_handled_by: handledBy || null, p_group_id: groupId || null,
-    p_stock_status: stockStatus || 'In Stock', p_forfeit_date: forfeitDate || null,
+    p_stock_status: stockStatus || 'In Stock', p_forfeit_date: forfeitDate || null, p_hold_date: holdDate || null,
   });
   if (error) throw new Error(error.message);
   return data;
 }
 
-export async function addLayawayPayment(holdId, amount, paymentMethod, referenceNumber, attachmentPath) {
+// paidAt was missing here entirely -- layawayTab.js's Add Payment form has passed a
+// 6th argument (the Date Paid field) since Ren asked for it, but with only 5 params
+// declared, JS silently dropped it and every payment fell back to add_layaway_payment()'s
+// own today's-date default regardless of what staff picked. Found 2026-09-21 while
+// touching this file for an unrelated change; kittymae-inventory-v2's copy already had
+// this correctly.
+export async function addLayawayPayment(holdId, amount, paymentMethod, referenceNumber, attachmentPath, paidAt) {
   const { data, error } = await supabase.rpc('add_layaway_payment', {
     p_hold_id: holdId, p_amount: amount, p_payment_method: paymentMethod, p_reference_number: referenceNumber || null,
-    p_attachment_path: attachmentPath || null,
+    p_attachment_path: attachmentPath || null, p_paid_at: paidAt || new Date().toISOString().slice(0, 10),
   });
   if (error) throw new Error(error.message);
   return data;

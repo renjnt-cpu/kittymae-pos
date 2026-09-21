@@ -160,6 +160,13 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         '<div id="lw-items"></div>' +
         '<button type="button" class="btn small secondary" id="lw-add-item" style="align-self:flex-start;margin:-4px 0 10px;">+ Add another item</button>' +
         '<div class="field"><label>Order ID</label><input type="text" name="orderId"></div>' +
+        // Defaults to today but editable -- lets staff backdate a hold that's only
+        // being encoded now for an item actually held earlier (Ren, 2026-09-21: "under
+        // layaway hold item add date"), same reasoning as Add Payment's own Date Paid
+        // field. Previously hold_date always silently defaulted to CURRENT_DATE with
+        // no way to set it at creation time -- fixing it after the fact required an
+        // Admin to use Forfeiture Watch's own Date Purchased editor.
+        '<div class="field"><label>Date</label><input type="date" name="holdDate" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
         '<div class="field"><label>Customer Name *</label><input type="text" name="customerName" required></div>' +
         '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
         '<div class="field"><label>Forfeit Date (optional)</label><input type="date" name="forfeitDate"></div>' +
@@ -366,7 +373,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           customerName: f.customerName.value.trim(), contactNumber: f.contactNumber.value.trim(),
           unitPrice: it.unitPrice, notes: f.notes.value.trim(),
           orderId: f.orderId.value.trim(), handledBy: f.handledBy.value || null, groupId,
-          stockStatus: it.stockStatus, forfeitDate: f.forfeitDate.value || null,
+          stockStatus: it.stockStatus, forfeitDate: f.forfeitDate.value || null, holdDate: f.holdDate.value || null,
         });
         created.push({ holdId, totalPrice: it.unitPrice != null ? it.unitPrice * it.qty : null });
       }
@@ -389,7 +396,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         // item's hold for bookkeeping.
         const attachmentPath = p.file ? await uploadLayawayPaymentProof(branchId, created[0].holdId, p.file) : null;
         if (!canProportion) {
-          await addLayawayPayment(created[0].holdId, p.amount, p.method, p.reference, attachmentPath);
+          await addLayawayPayment(created[0].holdId, p.amount, p.method, p.reference, attachmentPath, f.holdDate.value || null);
           continue;
         }
         // Split one shared downpayment across each item's own hold, proportional to
@@ -401,7 +408,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           const isLast = i === created.length - 1;
           const share = isLast ? Math.round((p.amount - allocated) * 100) / 100 : Math.round((p.amount * h.totalPrice / grandTotal) * 100) / 100;
           if (!isLast) allocated += share;
-          if (share > 0) await addLayawayPayment(h.holdId, share, p.method, p.reference, attachmentPath);
+          if (share > 0) await addLayawayPayment(h.holdId, share, p.method, p.reference, attachmentPath, f.holdDate.value || null);
         }
       }
     } catch (err) {
