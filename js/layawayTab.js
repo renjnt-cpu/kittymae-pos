@@ -129,7 +129,39 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         '</div>' +
       '</div>' +
       '<div class="layout-2col-main">' +
-        '<h2>Monthly Monitoring</h2>' +
+        // Status categories moved directly under Hold Item Entry (Ren, 2026-09-21,
+        // section 3) -- one folder per status besides On Hold itself (Ren, 2026-09-16:
+        // "make a folder per layaway status for cancelled, delete, completed, on
+        // hold"), collapsed by default, same pattern as Transfers' own status folders.
+        // The On Hold list's own Search box further narrows what shows inside each.
+        '<h3 style="margin-top:0;">Status</h3>' +
+        '<details class="card">' +
+          '<summary style="cursor:pointer;font-weight:bold;">Completed <span class="muted" id="lw-completed-count" style="font-weight:normal;"></span></summary>' +
+          '<div id="lw-list-completed" style="margin-top:10px;"></div>' +
+        '</details>' +
+        '<details class="card" style="margin-top:10px;">' +
+          '<summary style="cursor:pointer;font-weight:bold;">Cancelled <span class="muted" id="lw-cancelled-count" style="font-weight:normal;"></span></summary>' +
+          '<div id="lw-list-cancelled" style="margin-top:10px;"></div>' +
+        '</details>' +
+        // Forfeited: a customer never came back to pay before the Forfeit Date, as
+        // opposed to Cancelled (a deliberate back-out) -- Ren, 2026-09-17, wanted these
+        // told apart instead of both landing in the same Cancelled bucket.
+        '<details class="card" style="margin-top:10px;">' +
+          '<summary style="cursor:pointer;font-weight:bold;">Forfeited <span class="muted" id="lw-forfeited-count" style="font-weight:normal;"></span></summary>' +
+          '<div id="lw-list-forfeited" style="margin-top:10px;"></div>' +
+        '</details>' +
+
+        // Admin-only review queue (Ren, 2026-09-17: "for approval of me if they want
+        // to edit it") -- open by default since a pending request is something to act
+        // on, not just browse, same convention as SKU Catalog's Pending Edit Requests.
+        (canFinalDelete
+          ? '<details class="card" id="lw-pending-forfeit-folder" style="margin-top:10px;" open>' +
+              '<summary style="cursor:pointer;font-weight:bold;">Pending Forfeit Date Requests <span class="muted" id="lw-pending-forfeit-count" style="font-weight:normal;"></span></summary>' +
+              '<div id="lw-pending-forfeit-list" style="margin-top:10px;"><div class="muted">Loading…</div></div>' +
+            '</details>'
+          : '') +
+
+        '<h2 style="margin-top:26px;">Monthly Monitoring</h2>' +
         '<div class="card">' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
             '<div class="field"><label>From</label><input type="date" id="mm-from"></div>' +
@@ -156,36 +188,6 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '</div>' +
         '</div>' +
         '<div id="lw-list"><div class="muted">Loading…</div></div>' +
-
-        // One folder per status besides On Hold (Ren, 2026-09-16: "make a folder per
-        // layaway status for cancelled, delete, completed, on hold") -- collapsed by
-        // default, same pattern as Transfers' own status folders. Search above still
-        // narrows what shows inside each folder.
-        '<details class="card" style="margin-top:16px;">' +
-          '<summary style="cursor:pointer;font-weight:bold;">Completed <span class="muted" id="lw-completed-count" style="font-weight:normal;"></span></summary>' +
-          '<div id="lw-list-completed" style="margin-top:10px;"></div>' +
-        '</details>' +
-        '<details class="card" style="margin-top:10px;">' +
-          '<summary style="cursor:pointer;font-weight:bold;">Cancelled <span class="muted" id="lw-cancelled-count" style="font-weight:normal;"></span></summary>' +
-          '<div id="lw-list-cancelled" style="margin-top:10px;"></div>' +
-        '</details>' +
-        // Forfeited: a customer never came back to pay before the Forfeit Date, as
-        // opposed to Cancelled (a deliberate back-out) -- Ren, 2026-09-17, wanted these
-        // told apart instead of both landing in the same Cancelled bucket.
-        '<details class="card" style="margin-top:10px;">' +
-          '<summary style="cursor:pointer;font-weight:bold;">Forfeited <span class="muted" id="lw-forfeited-count" style="font-weight:normal;"></span></summary>' +
-          '<div id="lw-list-forfeited" style="margin-top:10px;"></div>' +
-        '</details>' +
-
-        // Admin-only review queue (Ren, 2026-09-17: "for approval of me if they want
-        // to edit it") -- open by default since a pending request is something to act
-        // on, not just browse, same convention as SKU Catalog's Pending Edit Requests.
-        (canFinalDelete
-          ? '<details class="card" id="lw-pending-forfeit-folder" style="margin-top:22px;" open>' +
-              '<summary style="cursor:pointer;font-weight:bold;">Pending Forfeit Date Requests <span class="muted" id="lw-pending-forfeit-count" style="font-weight:normal;"></span></summary>' +
-              '<div id="lw-pending-forfeit-list" style="margin-top:10px;"><div class="muted">Loading…</div></div>' +
-            '</details>'
-          : '') +
 
         '<h3 style="margin-top:22px;">Forfeiture Watch <span class="muted" style="font-weight:normal;">— On Hold items, oldest first (not affected by the date range above)</span></h3>' +
         '<p class="muted" style="margin-top:-4px;">Unpaid holds are forfeited 2 months after Date Purchased. Rows turn red once an item is close to or past that. Date Purchased is fixed once set (Admin only can correct it); a Forfeit Date change by anyone else needs Admin approval.</p>' +

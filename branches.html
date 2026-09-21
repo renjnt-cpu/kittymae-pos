@@ -19,7 +19,7 @@ import {
   createPosSale, listSales, listSalePayments, updatePosSaleItem, deletePosSale,
   listSubastaItems, createSubastaItem, updateSubastaItem, deleteSubastaItem,
   listScrapEntries, getScrapCashBalances, createScrapEntry, deleteScrapEntry, uploadScrapAttachment, getScrapAttachmentUrl, convertScrapToSubasta,
-  subscribeToChanges,
+  subscribeToChanges, listLayaways,
 } from './js/api.js';
 import { renderPosNav } from './js/posNav.js';
 import { branchButtonStyle } from './js/branchColors.js';
@@ -159,6 +159,13 @@ if (employee) {
     }
 
     root.innerHTML =
+      // Ren, 2026-09-21, section 2: a small non-blocking notice for the currently
+      // selected branch's Forfeited layaways, so staff don't mistake one for still
+      // active -- position:fixed puts it in the lower-left regardless of scroll
+      // position; a lower z-index than the mobile Order sheet (50) keeps it out of the
+      // way of normal POS operations. Hidden (display:none) until refreshForfeitedNotice()
+      // actually finds something.
+      '<div id="pos-forfeited-notice" style="display:none;position:fixed;left:12px;bottom:12px;max-width:280px;background:#fff8e8;border:1px solid #f0c36d;border-radius:8px;padding:10px 12px;box-shadow:0 2px 10px rgba(0,0,0,0.18);z-index:40;font-size:12px;"></div>' +
       '<div class="card">' +
         '<h3>Branch</h3>' +
         '<div id="branch-buttons" style="display:flex;gap:8px;flex-wrap:wrap;"></div>' +
@@ -816,10 +823,13 @@ if (employee) {
       getBranchId: () => selectedBranch, employee,
       onCountUpdate: (count) => { layawayCount = count; renderScrapSubTabs(); },
     });
-    await Promise.all([loadPos(), loadSubasta(), loadScrap()]);
+    await Promise.all([loadPos(), loadSubasta(), loadScrap(), refreshForfeitedNotice()]);
     subscribeToChanges('subasta_items', loadSubasta);
     subscribeToChanges(['scrap_entries', 'branch_capital_entries'], loadScrap);
     subscribeToChanges(['sales_inventory_movements', 'sale_payments'], loadPos);
+    // Someone forfeiting a hold (or Admin reopening one) from the Layaway tab should
+    // update this notice without needing a branch switch to refresh it.
+    subscribeToChanges('layaway_holds', refreshForfeitedNotice);
 
     document.getElementById('sub-f-search').addEventListener('input', renderSubasta);
     document.getElementById('sub-f-status').addEventListener('change', renderSubasta);
@@ -887,7 +897,7 @@ if (employee) {
       box.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', async () => {
         selectedBranch = Number(btn.dataset.id);
         renderBranchButtons();
-        await Promise.all([loadPos(), loadSubasta(), loadScrap(), onlineOrders?.reload(), layaway?.reload(), runPosCatalogSearch()]);
+        await Promise.all([loadPos(), loadSubasta(), loadScrap(), onlineOrders?.reload(), layaway?.reload(), runPosCatalogSearch(), refreshForfeitedNotice()]);
       }));
       const label = ' — ' + branchName(selectedBranch);
       document.getElementById('pos-branch-label').textContent = label;
@@ -907,6 +917,34 @@ if (employee) {
         ? '<p class="muted" style="font-size:11px;">View only — you can only add items for ' + esc(branchName(employee.branch_id)) + '.</p>'
         : '<p class="muted" style="font-size:11px;">View only.</p>';
       document.querySelectorAll('#pos-write-note, #sub-write-note, #scrap-write-note').forEach((el) => { el.innerHTML = note; });
+    }
+
+    // Ren, 2026-09-21, section 2: "If a layaway transaction has already been marked as
+    // FORFEITED, show a small notification/note inside the POS ... visible to Admin,
+    // Staff, Supervisor ... should NOT block normal POS operations." Scoped to
+    // whichever branch is currently selected -- refreshed on branch switch, same as
+    // every other per-branch tab here. A failed lookup here is non-critical (shouldn't
+    // block ringing up a sale), so it just leaves the notice as it was.
+    async function refreshForfeitedNotice() {
+      const box = document.getElementById('pos-forfeited-notice');
+      if (!box) return;
+      try {
+        const holds = await listLayaways(selectedBranch);
+        const forfeited = holds.filter((h) => h.status === 'Forfeited');
+        if (!forfeited.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+        box.style.display = '';
+        box.innerHTML =
+          '<div style="font-weight:bold;color:#a15c00;">⚠ FORFEITED LAYAWAY' + (forfeited.length > 1 ? 'S' : '') + '</div>' +
+          '<div class="muted" style="margin:2px 0 6px;">This layaway transaction has already been forfeited -- do not process it as an active layaway.</div>' +
+          forfeited.slice(0, 3).map((h) =>
+            '<div style="margin-top:4px;padding-top:4px;border-top:1px dashed #e2c88a;">' +
+              esc(h.customer_name) + (h.order_id ? ' · Order ' + esc(h.order_id) : '') + '<br>' +
+              esc(h.sku) + '<br>' +
+              '<span class="muted">Forfeited ' + fmtDateTime(h.forfeited_at) + '</span>' +
+            '</div>'
+          ).join('') +
+          (forfeited.length > 3 ? '<div class="muted" style="margin-top:4px;">+' + (forfeited.length - 3) + ' more at this branch</div>' : '');
+      } catch (err) { /* non-critical -- leave the notice as it was rather than block POS */ }
     }
 
     async function loadSubasta() {
