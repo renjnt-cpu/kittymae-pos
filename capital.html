@@ -22,7 +22,7 @@ const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).t
 const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + 'g';
 // Same Metal/Karat vocabulary as Scrap entries on branches.html, for when a capital
 // injection is gold/silver stock handed over instead of (or alongside) cash.
-const GOLD_KARATS = ['24K', '22K', '21K', '18K', '16K', '14K', '10K', 'Other'];
+const GOLD_KARATS = ['24K', '22K', '21K', '20K', '18K', '16K', '14K', '10K', 'Other'];
 const SILVER_KARATS = ['999', '925', 'Other'];
 const karatOptionsFor = (metal) => (metal === 'Silver' ? SILVER_KARATS : GOLD_KARATS).map((k) => '<option>' + k + '</option>').join('');
 

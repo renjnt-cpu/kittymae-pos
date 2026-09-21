@@ -41,14 +41,14 @@ const effectivePrice = (p) => p.pricing_mode === 'Per Gram'
   ? (p.current_gold_rate_per_g != null && p.gross_weight_g != null ? p.current_gold_rate_per_g * p.gross_weight_g : null)
   : p.system_selling_price;
 
-const GOLD_KARATS = ['24K', '22K', '21K', '18K', '16K', '14K', '10K', 'Other'];
+const GOLD_KARATS = ['24K', '22K', '21K', '20K', '18K', '16K', '14K', '10K', 'Other'];
 const SILVER_KARATS = ['999', '925', 'Other'];
 const karatOptionsFor = (metal) => (metal === 'Silver' ? SILVER_KARATS : GOLD_KARATS).map((k) => '<option>' + k + '</option>').join('');
 
 // POS product-grid filters -- same CHECK-constrained values as products.product_line/
 // metal_purity (02_products_inventory.sql), not a separate free-text list.
 const POS_PRODUCT_LINES = ['18K Saudi Gold', '18K Coated', 'Moissanite', 'Silver 925/999', 'Stainless/Fashion'];
-const POS_METAL_PURITIES = ['24K', '21K', '18K', '925', '999', 'N/A'];
+const POS_METAL_PURITIES = ['24K', '21K', '20K', '18K', '925', '999', 'N/A'];
 
 // 3 fixed slots instead of a dynamic add/remove list -- covers any real split (rarely
 // more than 2 methods on one transaction) without the complexity of managing rows
