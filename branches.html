@@ -18,13 +18,13 @@ import {
   getBranches, searchProducts, listActiveEmployees,
   createPosSale, listSales, listSalePayments, updatePosSaleItem, updatePosSalePayments, markCodCollected, deletePosSale,
   listSubastaItems, createSubastaItem, updateSubastaItem, deleteSubastaItem,
-  listScrapEntries, getScrapCashBalances, createScrapEntry, deleteScrapEntry, uploadScrapAttachment, getScrapAttachmentUrl, convertScrapToSubasta,
   subscribeToChanges, listLayaways,
 } from './js/api.js';
 import { renderPosNav } from './js/posNav.js';
 import { branchButtonStyle } from './js/branchColors.js';
 import { initOnlineOrdersTab } from './js/onlineOrdersTab.js';
 import { initLayawayTab } from './js/layawayTab.js';
+import { initScrapTab } from './js/scrapTab.js';
 import { PAYMENT_METHODS, POS_PAYMENT_METHODS } from './js/paymentMethods.js';
 
 const SUB_STATUS_BADGE = { Pending: 'pending', Listed: 'transit', Sold: 'ok', Cancelled: 'low' };
@@ -40,10 +40,6 @@ const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 
 const effectivePrice = (p) => p.pricing_mode === 'Per Gram'
   ? (p.current_gold_rate_per_g != null && p.gross_weight_g != null ? p.current_gold_rate_per_g * p.gross_weight_g : null)
   : p.system_selling_price;
-
-const GOLD_KARATS = ['24K', '22K', '21K', '20K', '18K', '16K', '14K', '10K', 'Other'];
-const SILVER_KARATS = ['999', '925', 'Other'];
-const karatOptionsFor = (metal) => (metal === 'Silver' ? SILVER_KARATS : GOLD_KARATS).map((k) => '<option>' + k + '</option>').join('');
 
 // POS product-grid filters -- same CHECK-constrained values as products.product_line/
 // metal_purity (02_products_inventory.sql), not a separate free-text list.
@@ -130,14 +126,15 @@ if (employee) {
     let selectedBranch = employee.branch_id ?? branches[0].id;
     const branchName = (id) => (branches.find((b) => b.id === id) || {}).name || '';
 
-    // Declared up here (not near loadPos()/loadScrap()/loadSubasta() below) for the
+    // Declared up here (not near loadPos()/loadSubasta() below) for the
     // same reason as POSITION_MANAGERS above -- renderScrapSubTabs() reads
-    // allScrap.length/allSubasta.length and is called once immediately after
+    // allSubasta.length and is called once immediately after
     // root.innerHTML is set, before those loaders have ever run.
     let allPosSales = [], posPaymentsByGroup = {};
-    let allSubasta = [], allScrap = [], scrapCashBalances = [];
+    let allSubasta = [];
     let onlineOrdersCount = 0, onlineOrders = null;
     let layawayCount = 0, layaway = null;
+    let scrapCount = 0, scrap = null;
     let activeSubTab = 'pos';
 
     // Shared by every row's Edit/Delete buttons -- mirrors the backend RLS exactly
@@ -265,47 +262,7 @@ if (employee) {
 
       '<div id="tab-panel-scrap" style="display:none;">' +
       '<h2 id="scrap-heading">Scrap <span class="muted" id="scrap-branch-label" style="font-weight:normal;"></span></h2>' +
-      '<div class="layout-2col">' +
-        '<div class="layout-2col-side">' +
-          '<div class="card">' +
-            '<h3>Add Scrap Entry</h3>' +
-            '<div id="scrap-write-note"></div>' +
-            '<form id="scrap-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
-              '<div class="field"><label>Date</label><input type="date" name="entryDate" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
-              '<div class="field"><label>Type *</label><select name="entryType"><option value="In">In (bought from customer)</option><option value="Out">Out (sold to refiner)</option></select></div>' +
-              '<div class="field"><label>Customer Name</label><input type="text" name="customerName"></div>' +
-              '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
-              '<div class="field"><label>Metal *</label><select name="metalType" id="scrap-metal" required><option>Gold</option><option>Silver</option></select></div>' +
-              '<div class="field"><label>Karat / Purity</label><select name="karat" id="scrap-karat">' + karatOptionsFor('Gold') + '</select></div>' +
-              '<div class="field" id="scrap-karat-other-field" style="display:none;"><label>Specify</label><input type="text" name="karatOther" placeholder="Karat / purity"></div>' +
-              '<div class="field"><label>Weight (grams) *</label><input type="number" name="weightGrams" step="0.001" min="0" required></div>' +
-              '<div class="field"><label>Price per Gram (PHP)</label><input type="number" name="pricePerGram" step="0.01" min="0"></div>' +
-              paymentSlotsHtml('scrap', [{ method: 'Cash', amount: '' }]) +
-              '<div class="field"><label>Source</label><input type="text" name="source" placeholder="Walk-in, buyback, refiner name…"></div>' +
-              '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
-              '<div class="field"><label>Photo</label><input type="file" name="attachment" accept="image/*"></div>' +
-              '<button class="btn" type="submit">Add Entry</button>' +
-            '</form>' +
-          '</div>' +
-        '</div>' +
-        '<div class="layout-2col-main">' +
-          '<div class="card">' +
-            '<h3 style="margin-top:0;">Search &amp; Filter</h3>' +
-            '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-              '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="scrap-f-search" placeholder="Metal, grams, customer, payment, source, date…"></div>' +
-              '<div class="field"><label>Metal</label><select id="scrap-f-metal"><option value="all">All</option><option>Gold</option><option>Silver</option></select></div>' +
-              '<div class="field"><label>Type</label><select id="scrap-f-type"><option value="all">All</option><option>In</option><option>Out</option></select></div>' +
-              '<div class="field"><label>From</label><input type="date" id="scrap-f-from" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
-              '<div class="field"><label>To</label><input type="date" id="scrap-f-to" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
-              '<button type="button" class="btn small secondary" id="scrap-f-clear">Clear Filters</button>' +
-            '</div>' +
-          '</div>' +
-          '<div class="tiles" id="scrap-tiles"></div>' +
-          '<h3>Current Balance <span class="muted" style="font-weight:normal;">— weight on hand</span></h3>' +
-          '<div id="scrap-balance" class="card"><div class="muted">Loading…</div></div>' +
-          '<div id="scrap-list"><div class="muted">Loading…</div></div>' +
-        '</div>' +
-      '</div>' +
+      '<div id="scrap-root"></div>' +
       '</div>' +
 
       '<div id="tab-panel-subasta" style="display:none;">' +
@@ -995,41 +952,6 @@ if (employee) {
       }
     });
 
-    document.getElementById('scrap-metal').addEventListener('change', (ev) => {
-      document.getElementById('scrap-karat').innerHTML = karatOptionsFor(ev.target.value);
-      document.getElementById('scrap-karat-other-field').style.display = 'none';
-    });
-    document.getElementById('scrap-karat').addEventListener('change', (ev) => {
-      document.getElementById('scrap-karat-other-field').style.display = ev.target.value === 'Other' ? '' : 'none';
-    });
-
-    document.getElementById('scrap-form').addEventListener('submit', async (ev) => {
-      ev.preventDefault();
-      const f = ev.target;
-      try {
-        const karat = f.karat.value === 'Other' ? f.karatOther.value.trim() : f.karat.value;
-        const payments = readPaymentSlots(f, 'scrap');
-        if (!payments.length) { toast('br-msg', 'Enter at least one payment method and amount.', true); return; }
-        const newScrapId = await createScrapEntry({
-          branchId: selectedBranch, entryDate: f.entryDate.value, entryType: f.entryType.value, metalType: f.metalType.value,
-          karat, weightGrams: Number(f.weightGrams.value),
-          pricePerGram: f.pricePerGram.value ? Number(f.pricePerGram.value) : null,
-          customerName: f.customerName.value.trim(), contactNumber: f.contactNumber.value.trim(),
-          payments,
-          source: f.source.value.trim(), notes: f.notes.value.trim(),
-        });
-        if (f.attachment.files[0]) await uploadScrapAttachment(selectedBranch, newScrapId, f.attachment.files[0]);
-        toast('br-msg', 'Entry added.', false);
-        f.reset();
-        f.entryDate.value = new Date().toISOString().slice(0, 10);
-        document.getElementById('scrap-karat').innerHTML = karatOptionsFor(f.metalType.value);
-        document.getElementById('scrap-karat-other-field').style.display = 'none';
-        await loadScrap();
-      } catch (err) {
-        toast('br-msg', String(err.message || err), true);
-      }
-    });
-
     onlineOrders = initOnlineOrdersTab({
       root: document.getElementById('online-orders-root'), esc, toast, msgId: 'br-msg',
       getBranchId: () => selectedBranch,
@@ -1046,9 +968,13 @@ if (employee) {
       getBranchId: () => selectedBranch, employee,
       onCountUpdate: (count) => { layawayCount = count; renderScrapSubTabs(); },
     });
-    await Promise.all([loadPos(), loadSubasta(), loadScrap(), refreshForfeitedNotice()]);
+    scrap = await initScrapTab({
+      root: document.getElementById('scrap-root'), esc, toast, msgId: 'br-msg',
+      getBranchId: () => selectedBranch, employee,
+      onCountUpdate: (count) => { scrapCount = count; renderScrapSubTabs(); },
+    });
+    await Promise.all([loadPos(), loadSubasta(), refreshForfeitedNotice()]);
     subscribeToChanges('subasta_items', loadSubasta);
-    subscribeToChanges(['scrap_entries', 'branch_capital_entries'], loadScrap);
     subscribeToChanges(['sales_inventory_movements', 'sale_payments'], loadPos);
     // Someone forfeiting a hold (or Admin reopening one) from the Layaway tab should
     // update this notice without needing a branch switch to refresh it.
@@ -1064,19 +990,6 @@ if (employee) {
       document.getElementById('sub-f-from').value = '';
       document.getElementById('sub-f-to').value = '';
       renderSubasta();
-    });
-    document.getElementById('scrap-f-search').addEventListener('input', renderScrap);
-    document.getElementById('scrap-f-metal').addEventListener('change', renderScrap);
-    document.getElementById('scrap-f-type').addEventListener('change', renderScrap);
-    document.getElementById('scrap-f-from').addEventListener('change', renderScrap);
-    document.getElementById('scrap-f-to').addEventListener('change', renderScrap);
-    document.getElementById('scrap-f-clear').addEventListener('click', () => {
-      document.getElementById('scrap-f-search').value = '';
-      document.getElementById('scrap-f-metal').value = 'all';
-      document.getElementById('scrap-f-type').value = 'all';
-      document.getElementById('scrap-f-from').value = '';
-      document.getElementById('scrap-f-to').value = '';
-      renderScrap();
     });
 
     // ---- POS/Layaway/Scrap/Subasta/Online Orders tab bar -- switching between the
@@ -1100,7 +1013,7 @@ if (employee) {
       const box = document.getElementById('scrap-sub-tabs');
       box.innerHTML = pill('pos', 'POS', '#2e7d32', groupPosSales(allPosSales).length) +
         pill('layaway', 'Layaway', '#c2185b', layawayCount) +
-        pill('scrap', 'Scrap', '#b06a1f', allScrap.length) + pill('subasta', 'Subasta', '#7c3aa8', allSubasta.length) +
+        pill('scrap', 'Scrap', '#b06a1f', scrapCount) + pill('subasta', 'Subasta', '#7c3aa8', allSubasta.length) +
         pill('online', 'Online Orders', '#1a56b0', onlineOrdersCount);
       box.querySelectorAll('[data-tab]').forEach((btn) => btn.addEventListener('click', () => {
         activeSubTab = btn.dataset.tab;
@@ -1120,7 +1033,7 @@ if (employee) {
       box.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', async () => {
         selectedBranch = Number(btn.dataset.id);
         renderBranchButtons();
-        await Promise.all([loadPos(), loadSubasta(), loadScrap(), onlineOrders?.reload(), layaway?.reload(), runPosCatalogSearch(), refreshForfeitedNotice()]);
+        await Promise.all([loadPos(), loadSubasta(), scrap?.reload(), onlineOrders?.reload(), layaway?.reload(), runPosCatalogSearch(), refreshForfeitedNotice()]);
       }));
       const label = ' — ' + branchName(selectedBranch);
       document.getElementById('pos-branch-label').textContent = label;
@@ -1135,11 +1048,14 @@ if (employee) {
         : label;
       document.getElementById('layaway-branch-label').textContent = label;
 
-      document.querySelectorAll('#pos-form button[type="submit"], #sub-form button[type="submit"], #scrap-form button[type="submit"]').forEach((btn) => { btn.disabled = !canAddHere(); });
+      document.querySelectorAll('#pos-form button[type="submit"], #sub-form button[type="submit"]').forEach((btn) => { btn.disabled = !canAddHere(); });
       const note = canAddHere() ? '' : employee.branch_id
         ? '<p class="muted" style="font-size:11px;">View only — you can only add items for ' + esc(branchName(employee.branch_id)) + '.</p>'
         : '<p class="muted" style="font-size:11px;">View only.</p>';
-      document.querySelectorAll('#pos-write-note, #sub-write-note, #scrap-write-note').forEach((el) => { el.innerHTML = note; });
+      document.querySelectorAll('#pos-write-note, #sub-write-note').forEach((el) => { el.innerHTML = note; });
+      // Scrap owns its own "+ New Scrap" disabled-state/note (scrapTab.js's own
+      // render(), re-run via scrap?.reload() below) since canAddHere() there depends
+      // on getBranchId() and is scoped to that module now.
     }
 
     // Ren, 2026-09-21, section 2: "If a layaway transaction has already been marked as
@@ -1312,196 +1228,6 @@ if (employee) {
         '</form>';
     }
 
-    async function loadScrap() {
-      const list = document.getElementById('scrap-list');
-      list.innerHTML = '<div class="muted">Loading…</div>';
-      try {
-        const [entries, cashBalances] = await Promise.all([listScrapEntries(selectedBranch), getScrapCashBalances()]);
-        allScrap = entries;
-        scrapCashBalances = cashBalances;
-        renderScrap();
-      } catch (err) {
-        list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
-      }
-    }
-
-    function renderScrapBalance(rows) {
-      const box = document.getElementById('scrap-balance');
-      if (!rows.length) { box.innerHTML = '<p class="muted">No scrap recorded for this filter.</p>'; return; }
-      box.innerHTML = '<div class="table-scroll table-mini"><table><tr><th>Metal</th><th>Karat/Purity</th><th>Balance</th></tr>' +
-        rows.map((b) => '<tr><td data-label="Metal">' + esc(b.metal_type) + '</td><td data-label="Karat/Purity">' + esc(b.karat || '—') + '</td><td data-label="Balance">' + weight(b.balance_grams) + '</td></tr>').join('') +
-        '</table></div>';
-    }
-
-    /** Net grams (In adds, Out subtracts) per metal+karat, from whichever rows are
-     * CURRENTLY filtered -- so Current Balance tracks the From/To range (and
-     * Search/Metal/Type) instead of always showing the all-time running total from
-     * getScrapBalances(), which ignored every filter above it. Clearing the date
-     * filters naturally shows the true all-time balance again, since nothing then
-     * narrows `rows`. */
-    function computeBalanceFromRows(rows) {
-      const byKey = {};
-      rows.forEach((r) => {
-        const key = r.metal_type + '|' + (r.karat || '');
-        const g = Number(r.weight_grams || 0);
-        byKey[key] = (byKey[key] || 0) + (r.entry_type === 'In' ? g : -g);
-      });
-      return Object.keys(byKey).sort().map((key) => {
-        const [metal_type, karat] = key.split('|');
-        return { metal_type, karat: karat || null, balance_grams: byKey[key] };
-      });
-    }
-
-    function renderScrap() {
-      renderScrapSubTabs();
-      let rows = allScrap;
-      const fSearch = document.getElementById('scrap-f-search').value.trim().toLowerCase();
-      const fMetal = document.getElementById('scrap-f-metal').value;
-      const fType = document.getElementById('scrap-f-type').value;
-      const fFrom = document.getElementById('scrap-f-from').value;
-      const fTo = document.getElementById('scrap-f-to').value;
-      if (fSearch) rows = rows.filter((r) =>
-        (r.source || '').toLowerCase().includes(fSearch) ||
-        (r.notes || '').toLowerCase().includes(fSearch) ||
-        r.metal_type.toLowerCase().includes(fSearch) ||
-        (r.karat || '').toLowerCase().includes(fSearch) ||
-        (r.customer_name || '').toLowerCase().includes(fSearch) ||
-        (r.contact_number || '').toLowerCase().includes(fSearch) ||
-        (r.payment_method || '').toLowerCase().includes(fSearch) ||
-        (r.weight_grams !== null && String(r.weight_grams).includes(fSearch)) ||
-        (r.entry_date || '').includes(fSearch));
-      if (fMetal !== 'all') rows = rows.filter((r) => r.metal_type === fMetal);
-      if (fType !== 'all') rows = rows.filter((r) => r.entry_type === fType);
-      if (fFrom) rows = rows.filter((r) => r.entry_date >= fFrom);
-      if (fTo) rows = rows.filter((r) => r.entry_date <= fTo);
-
-      renderScrapBalance(computeBalanceFromRows(rows));
-
-      // Broken out by metal + karat, from the SAME filtered rows as the list below --
-      // so the From/To range (and Search/Metal/Type) actually changes this number.
-      // Defaults to today (the date fields default to today), but picking a wider
-      // range widens this too, instead of being stuck on literally today's date.
-      const rangeIn = rows.filter((r) => r.entry_type === 'In');
-      const byMetalKarat = {};
-      rangeIn.forEach((r) => {
-        const key = r.metal_type + ' ' + (r.karat || '—');
-        byMetalKarat[key] = (byMetalKarat[key] || 0) + Number(r.total_amount || 0);
-      });
-      const keys = Object.keys(byMetalKarat).sort();
-      let tilesHtml = tile(rows.length, 'Qty') + tile(weight(rows.reduce((s, r) => s + Number(r.weight_grams || 0), 0)), 'Total Weight') +
-        tile(money(rows.reduce((s, r) => s + Number(r.total_amount || 0), 0)), 'Total Amount') +
-        (keys.length
-          ? keys.map((k) => tile(money(byMetalKarat[k]), 'Purchased (' + k + ')')).join('')
-          : tile(money(0), 'Purchased'));
-
-      // Branch Capital's "Scrap" purpose entries minus net cash spent/received buying
-      // scrap -- only meaningful where the viewer actually has Branch Capital visibility
-      // for this branch (Admin/Manager/Sales Executive see every branch; Branch
-      // Supervisor only their own), so it's hidden rather than shown wrong for anyone else.
-      const canSeeScrapCash = ['Admin', 'Manager'].includes(employee.role) || employee.position === 'Sales Executive' ||
-        (isScoped && selectedBranch === employee.branch_id);
-      if (canSeeScrapCash) {
-        const cashRow = scrapCashBalances.find((b) => b.branch_id === selectedBranch);
-        tilesHtml += tile(money(cashRow ? cashRow.remaining_scrap_cash : 0), 'Remaining Scrap Cash');
-      }
-      document.getElementById('scrap-tiles').innerHTML = tilesHtml;
-
-      const list = document.getElementById('scrap-list');
-      if (!rows.length) { list.innerHTML = '<p class="muted">No scrap entries for this filter.</p>'; return; }
-
-      // Every field shows directly in the row -- no click-to-expand -- matching the
-      // Transactions list. Payment breaks down per method underneath the total when
-      // an entry was split across more than one.
-      list.innerHTML = '<div class="table-scroll table-2col"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
-        '<colgroup><col style="width:9%"><col style="width:10%"><col style="width:11%"><col style="width:7%"><col style="width:8%"><col style="width:9%"><col style="width:9%"><col style="width:12%"><col style="width:12%"><col style="width:13%"></colgroup>' +
-        '<thead><tr><th>Date</th><th>Customer</th><th>Metal/Karat</th><th>Type</th><th>Weight</th><th>Price/g</th><th>Total</th><th>Payment</th><th>Source/Notes</th><th></th></tr></thead><tbody>' +
-        rows.map((r) => {
-          const payments = r.scrap_payments || [];
-          const paymentDetail = payments.length > 1
-            ? payments.map((p) => esc(p.payment_method) + ': ' + money(p.amount)).join('<br>')
-            : esc(r.payment_method || '—');
-          return '<tr>' +
-            '<td data-label="Date">' + (r.entry_date || '—') + '<div class="muted" style="font-size:10px;">' + esc(r.contact_number || '') + '</div></td>' +
-            '<td data-label="Customer">' + esc(r.customer_name || 'Walk-in') + '</td>' +
-            '<td data-label="Metal/Karat">' + esc(r.metal_type) + ' ' + esc(r.karat || '') + '</td>' +
-            '<td data-label="Type"><span class="badge ' + (r.entry_type === 'In' ? 'ok' : 'pending') + '">' + esc(r.entry_type) + '</span></td>' +
-            '<td data-label="Weight">' + weight(r.weight_grams) + '</td>' +
-            '<td data-label="Price/g">' + money(r.price_per_gram) + '</td>' +
-            '<td data-label="Total">' + money(r.total_amount) + '</td>' +
-            '<td data-label="Payment" style="font-size:11px;">' + paymentDetail + '</td>' +
-            '<td data-label="Source/Notes" class="full-row" style="font-size:11px;">' + esc(r.source || '') + (r.notes ? '<div class="muted">' + esc(r.notes) + '</div>' : '') +
-              '<div class="muted" style="font-size:10px;">' + (r.creator ? 'Added by ' + esc(r.creator.full_name) : '') + '</div>' +
-              // Converted stays visible for audit (Ren, 2026-09-18: "how to change or
-              // monitor the item if theres a scrap we change it to subasta") -- once
-              // marked, it drops out of the weight/cash balance above (see
-              // v_scrap_balance/v_scrap_cash_balance) and can't be converted or
-              // deleted again.
-              (r.converted_to_subasta_item_id ? '<div class="muted" style="font-size:10px;"><span class="badge ok" style="font-size:9px;">Converted → Subasta #' + r.converted_to_subasta_item_id + '</span></div>' : '') +
-            '</td>' +
-            '<td class="full-row" style="white-space:nowrap;">' +
-              (r.attachment_path ? '<button class="btn small secondary" data-id="' + r.id + '" data-path="' + esc(r.attachment_path) + '" data-act="view-photo">Photo</button> ' : '') +
-              (canWriteHere() && !r.converted_to_subasta_item_id
-                ? '<button class="btn small secondary" data-id="' + r.id + '" data-act="delete">Delete</button> ' +
-                  (r.entry_type === 'In' ? '<button class="btn small secondary" data-id="' + r.id + '" data-act="convert-subasta">Convert to Subasta</button>' : '')
-                : '') +
-            '</td>' +
-          '</tr>' +
-          (canWriteHere() && !r.converted_to_subasta_item_id && r.entry_type === 'In' ? scrapConvertFormHtml(r) : '');
-        }).join('') +
-      '</tbody>' +
-      '</table></div>';
-
-      list.querySelectorAll('[data-act="delete"]').forEach((btn) => btn.addEventListener('click', async () => {
-        if (!confirm('Delete this scrap entry?')) return;
-        try { await deleteScrapEntry(btn.dataset.id); toast('br-msg', 'Deleted.', false); await loadScrap(); }
-        catch (err) { toast('br-msg', String(err.message || err), true); }
-      }));
-
-      list.querySelectorAll('[data-act="view-photo"]').forEach((btn) => btn.addEventListener('click', async () => {
-        try { window.open(await getScrapAttachmentUrl(btn.dataset.path), '_blank'); }
-        catch (err) { toast('br-msg', String(err.message || err), true); }
-      }));
-
-      list.querySelectorAll('[data-act="convert-subasta"]').forEach((btn) => btn.addEventListener('click', () => {
-        const row = list.querySelector('tr[data-convert-for="' + btn.dataset.id + '"]');
-        if (!row) return;
-        row.style.display = row.style.display === 'none' ? '' : 'none';
-      }));
-      list.querySelectorAll('.scrap-convert-form').forEach((form) => form.addEventListener('submit', async (ev) => {
-        ev.preventDefault();
-        const f = ev.target;
-        const scrapEntryId = Number(f.dataset.scrapId);
-        try {
-          const newId = await convertScrapToSubasta({
-            scrapEntryId, itemDescription: f.itemDescription.value.trim(),
-            pawnReference: f.pawnReference.value.trim(), pawnDate: f.pawnDate.value,
-            auctionEligibleDate: f.auctionEligibleDate.value, notes: f.notes.value.trim(),
-          });
-          toast('br-msg', 'Converted to Subasta item #' + newId + '.', false);
-          await loadScrap();
-        } catch (err) {
-          toast('br-msg', String(err.message || err), true);
-        }
-      }));
-    }
-
-    /** Hidden by default, toggled open by the row's "Convert to Subasta" button --
-     * Item Description is the only field Scrap has no equivalent of, so it's the one
-     * genuinely new thing to ask for; Weight carries over automatically server-side. */
-    function scrapConvertFormHtml(r) {
-      return '<tr class="convert-row" data-convert-for="' + r.id + '" style="display:none;">' +
-        '<td colspan="10" style="background:#fafafa;">' +
-          '<form class="scrap-convert-form" data-scrap-id="' + r.id + '" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;padding:8px;">' +
-            '<div class="field" style="min-width:220px;"><label>Item Description *</label><input type="text" name="itemDescription" required placeholder="What the item actually is"></div>' +
-            '<div class="field"><label>Pawn Reference</label><input type="text" name="pawnReference"></div>' +
-            '<div class="field"><label>Pawn Date</label><input type="date" name="pawnDate" value="' + (r.entry_date || '') + '"></div>' +
-            '<div class="field"><label>Auction Eligible Date</label><input type="date" name="auctionEligibleDate"></div>' +
-            '<div class="field" style="min-width:180px;"><label>Notes</label><input type="text" name="notes" value="Converted from Scrap entry, ' + weight(r.weight_grams) + '"></div>' +
-            '<button class="btn small" type="submit">Convert</button>' +
-          '</form>' +
-        '</td>' +
-      '</tr>';
-    }
 
     function tile(num, label) { return '<div class="tile"><div class="num">' + num + '</div><div class="lbl">' + label + '</div></div>'; }
   }
