@@ -1313,3 +1313,60 @@ export async function listDeliveredOrders({ branchId, fromDate, toDate = null })
   if (error) throw new Error(error.message);
   return attachEmployeeNames(data, { creator: 'created_by' });
 }
+
+/** HR-Position-based Permission System -- data-driven replacement for hardcoded
+ * role/position checks. list_my_permissions() returns every key the signed-in
+ * employee currently holds (via role/position template or an individual override);
+ * initShell()/renderPosNav() fetch this once per page load and attach it as
+ * employee.permissions (a plain array of keys) alongside the employee row they
+ * already return, so pages can check `employee.permissions.includes('key')`. */
+export async function listMyPermissions() {
+  const { data, error } = await supabase.rpc('list_my_permissions');
+  if (error) throw new Error(error.message);
+  return (data || []).map((r) => r.permission_key);
+}
+
+/** Admin-only: every permission key crossed with which position currently holds it
+ * (one row per key+position pair; a key with no position holder still appears once
+ * with position_key null) -- feeds the Position Access Matrix page. */
+export async function getPermissionMatrix() {
+  const { data, error } = await supabase.rpc('get_permission_matrix');
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function setPositionPermission(positionKey, permissionKey, granted) {
+  const { error } = await supabase.rpc('set_position_permission', { p_position_key: positionKey, p_permission_key: permissionKey, p_granted: granted });
+  if (error) throw new Error(error.message);
+}
+
+/** Admin-only: every employee's currently-granted keys plus how each was granted
+ * ('position' via role/position template, or 'override' via an individual grant) --
+ * feeds each employee's "Access Source" display. */
+export async function getEmployeeAccessOverview() {
+  const { data, error } = await supabase.rpc('get_employee_access_overview');
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function listEmployeePermissionOverrides() {
+  const { data, error } = await supabase.from('employee_permission_overrides').select('*').order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return attachEmployeeNames(data, { employee: 'employee_id', approver: 'approved_by' });
+}
+
+export async function setEmployeePermissionOverride(employeeId, permissionKey, granted, reason, expiresAt) {
+  const { error } = await supabase.rpc('set_employee_permission_override', { p_employee_id: employeeId, p_permission_key: permissionKey, p_granted: granted, p_reason: reason || null, p_expires_at: expiresAt || null });
+  if (error) throw new Error(error.message);
+}
+
+export async function removeEmployeePermissionOverride(employeeId, permissionKey) {
+  const { error } = await supabase.rpc('remove_employee_permission_override', { p_employee_id: employeeId, p_permission_key: permissionKey });
+  if (error) throw new Error(error.message);
+}
+
+export async function listAccessChangeLog(limit = 200) {
+  const { data, error } = await supabase.from('access_change_log').select('*').order('changed_at', { ascending: false }).limit(limit);
+  if (error) throw new Error(error.message);
+  return attachEmployeeNames(data, { employee: 'employee_id', changer: 'changed_by' });
+}

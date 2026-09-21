@@ -4,6 +4,7 @@
 // Branches, Transfers, Bills, etc. don't exist here) -- js/posNav.js renders this site's
 // own minimal nav instead, right after initShell() resolves.
 import { requireSession, linkEmployee } from './auth.js';
+import { listMyPermissions } from './api.js';
 
 export async function initShell() {
   const session = await requireSession();
@@ -20,6 +21,12 @@ export async function initShell() {
         ? '<div class="center-screen"><div><h2>Account inactive</h2><p>Your record is marked Inactive. Contact an Admin.</p></div></div>'
         : '<div class="center-screen"><div><h2>Something went wrong</h2><p class="muted">' + msg + '</p></div></div>';
     return null;
+  }
+
+  try {
+    employee.permissions = await listMyPermissions();
+  } catch (err) {
+    employee.permissions = []; // fail closed -- a failed lookup shouldn't grant anything
   }
 
   return employee;
