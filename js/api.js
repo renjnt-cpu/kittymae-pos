@@ -307,6 +307,15 @@ export async function updatePosSalePayments(saleGroupId, payments, reason) {
   if (error) throw new Error(error.message);
 }
 
+/** COD (Cash on Delivery) starts life "Pending Collection" (sale_payments.payment_status)
+ * -- this flips it to "Collected" once the courier/customer actually pays. Admin/
+ * Manager/Branch Supervisor/Branch Team Leader, matching mark_cod_collected()'s own
+ * server-side gate. */
+export async function markCodCollected(paymentId) {
+  const { error } = await supabase.rpc('mark_cod_collected', { p_payment_id: paymentId });
+  if (error) throw new Error(error.message);
+}
+
 export async function getTransactionHistory(sku, branchId) {
   let query = supabase
     .from('inventory_transactions')

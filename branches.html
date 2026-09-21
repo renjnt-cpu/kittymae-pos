@@ -16,7 +16,7 @@
 import { initShell, toast, esc } from './js/shell.js';
 import {
   getBranches, searchProducts, listActiveEmployees,
-  createPosSale, listSales, listSalePayments, updatePosSaleItem, updatePosSalePayments, deletePosSale,
+  createPosSale, listSales, listSalePayments, updatePosSaleItem, updatePosSalePayments, markCodCollected, deletePosSale,
   listSubastaItems, createSubastaItem, updateSubastaItem, deleteSubastaItem,
   listScrapEntries, getScrapCashBalances, createScrapEntry, deleteScrapEntry, uploadScrapAttachment, getScrapAttachmentUrl, convertScrapToSubasta,
   subscribeToChanges, listLayaways,
@@ -25,7 +25,7 @@ import { renderPosNav } from './js/posNav.js';
 import { branchButtonStyle } from './js/branchColors.js';
 import { initOnlineOrdersTab } from './js/onlineOrdersTab.js';
 import { initLayawayTab } from './js/layawayTab.js';
-import { PAYMENT_METHODS } from './js/paymentMethods.js';
+import { PAYMENT_METHODS, POS_PAYMENT_METHODS } from './js/paymentMethods.js';
 
 const SUB_STATUS_BADGE = { Pending: 'pending', Listed: 'transit', Sold: 'ok', Cancelled: 'low' };
 const SUB_STATUSES = ['Pending', 'Listed', 'Sold', 'Cancelled'];
@@ -57,6 +57,7 @@ function paymentSlotsHtml(prefix, existing, opts) {
   const label0 = (opts && opts.label0) || 'Payment Method';
   const requireFirst = !(opts && opts.optional);
   const withReference = opts && opts.withReference;
+  const methods = (opts && opts.methods) || PAYMENT_METHODS;
   const rows = existing && existing.length ? existing : [];
   let html = '';
   for (let i = 0; i < 3; i++) {
@@ -67,7 +68,7 @@ function paymentSlotsHtml(prefix, existing, opts) {
     html +=
       '<div class="field"><label>' + label + '</label><select name="' + prefix + 'Method' + i + '"' + (isRequired ? ' required' : '') + '>' +
         (!isRequired ? '<option value="">— none —</option>' : '') +
-        PAYMENT_METHODS.map((m) => '<option' + (row.method === m ? ' selected' : '') + '>' + m + '</option>').join('') +
+        methods.map((m) => '<option' + (row.method === m ? ' selected' : '') + '>' + m + '</option>').join('') +
       '</select></div>' +
       '<div class="field"><label>' + amtLabel + '</label><input type="number" name="' + prefix + 'Amount' + i + '" step="0.01" min="0"' + (isRequired ? ' required' : '') + (row.amount ? ' value="' + row.amount + '"' : '') + '></div>' +
       (withReference ? '<div class="field"><label>Reference Number</label><input type="text" name="' + prefix + 'Reference' + i + '"' + (row.reference ? ' value="' + row.reference + '"' : '') + '></div>' : '');
@@ -227,7 +228,7 @@ if (employee) {
               '<div class="field"><label>Customer Name</label><input type="text" name="customerName"></div>' +
               '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
               '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
-              paymentSlotsHtml('pos', [], { label0: 'Payment Method', optional: true, withReference: true }) +
+              paymentSlotsHtml('pos', [], { label0: 'Payment Method', optional: true, withReference: true, methods: POS_PAYMENT_METHODS }) +
               '<div class="card" style="background:#f7f5f0;margin:6px 0;padding:10px 14px;">' +
                 '<div style="display:flex;justify-content:space-between;font-size:13px;"><span>Subtotal</span><b id="pos-subtotal">₱0.00</b></div>' +
                 '<div style="display:flex;justify-content:space-between;font-size:13px;"><span>Paid</span><b id="pos-paid">₱0.00</b></div>' +
@@ -585,26 +586,37 @@ if (employee) {
     function renderPosByAdminPayment(rows) {
       const box = document.getElementById('pos-by-admin');
       const groups = groupPosSales(rows);
-      const totalsByAdmin = {}; // employeeId -> { [method]: sum }
+      const totalsByAdmin = {}; // employeeId -> { [method]: sum } -- Collected money only
+      const codPendingByAdmin = {}; // employeeId -> sum of COD still Pending Collection
       const methodsSeen = [];
       groups.forEach((g) => {
         const empId = g.items[0].employee_id;
         const bucket = totalsByAdmin[empId] || (totalsByAdmin[empId] = {});
         (posPaymentsByGroup[g.groupId] || []).forEach((p) => {
+          // Ren's spec section 189: Pending-Collection COD isn't cash in hand yet --
+          // do not include it in the collected-money columns/Grand Total, track it
+          // separately instead.
+          if (p.payment_method === 'COD' && p.payment_status === 'Pending Collection') {
+            codPendingByAdmin[empId] = (codPendingByAdmin[empId] || 0) + Number(p.amount);
+            return;
+          }
           if (!methodsSeen.includes(p.payment_method)) methodsSeen.push(p.payment_method);
           bucket[p.payment_method] = (bucket[p.payment_method] || 0) + Number(p.amount);
         });
       });
-      const methods = PAYMENT_METHODS.filter((m) => methodsSeen.includes(m)).concat(methodsSeen.filter((m) => !PAYMENT_METHODS.includes(m)));
+      const methods = POS_PAYMENT_METHODS.filter((m) => methodsSeen.includes(m)).concat(methodsSeen.filter((m) => !POS_PAYMENT_METHODS.includes(m)));
       const adminIds = Object.keys(totalsByAdmin).sort((a, b) => (employeeNameById[a] || '').localeCompare(employeeNameById[b] || ''));
+      const hasCodPending = Object.values(codPendingByAdmin).some((v) => v > 0);
 
       if (!adminIds.length) { box.innerHTML = '<p class="muted">No walk-in sales for this filter.</p>'; return; }
 
       const colTotals = Object.fromEntries(methods.map((m) => [m, 0]));
-      let grandTotal = 0;
+      let grandTotal = 0, codPendingTotal = 0;
 
       box.innerHTML = '<div class="table-scroll"><table><thead><tr><th>Admin</th>' +
-        methods.map((m) => '<th>' + esc(m) + '</th>').join('') + '<th>Grand Total</th></tr></thead><tbody>' +
+        methods.map((m) => '<th>' + esc(m) + '</th>').join('') +
+        (hasCodPending ? '<th>COD Pending</th>' : '') +
+        '<th>Grand Total</th></tr></thead><tbody>' +
         adminIds.map((empId) => {
           const bucket = totalsByAdmin[empId];
           let rowTotal = 0;
@@ -615,10 +627,15 @@ if (employee) {
             return '<td data-label="' + esc(m) + '">' + (amt ? money(amt) : '—') + '</td>';
           }).join('');
           grandTotal += rowTotal;
-          return '<tr><td data-label="Admin"><b>' + esc(employeeNameById[empId] || 'Unknown') + '</b></td>' + cells + '<td data-label="Grand Total"><b>' + money(rowTotal) + '</b></td></tr>';
+          const codPending = codPendingByAdmin[empId] || 0;
+          codPendingTotal += codPending;
+          return '<tr><td data-label="Admin"><b>' + esc(employeeNameById[empId] || 'Unknown') + '</b></td>' + cells +
+            (hasCodPending ? '<td data-label="COD Pending">' + (codPending ? '<span class="badge pending">' + money(codPending) + '</span>' : '—') + '</td>' : '') +
+            '<td data-label="Grand Total"><b>' + money(rowTotal) + '</b></td></tr>';
         }).join('') +
         '</tbody><tfoot><tr><td data-label="Admin"><b>Grand Total</b></td>' +
         methods.map((m) => '<td data-label="' + esc(m) + '"><b>' + money(colTotals[m]) + '</b></td>').join('') +
+        (hasCodPending ? '<td data-label="COD Pending"><b>' + money(codPendingTotal) + '</b></td>' : '') +
         '<td data-label="Grand Total"><b>' + money(grandTotal) + '</b></td></tr></tfoot></table></div>';
     }
 
@@ -639,7 +656,7 @@ if (employee) {
       const skuQty = {}, skuName = {};
       const totalsByAdmin = {};
       const methodTotals = {};
-      let grandTotal = 0;
+      let grandTotal = 0, codPendingTotal = 0;
 
       groups.forEach((g) => {
         const empId = g.items[0].employee_id;
@@ -651,13 +668,20 @@ if (employee) {
           skuName[r.sku] = r.products?.item_name || r.sku;
         });
         (posPaymentsByGroup[g.groupId] || []).forEach((p) => {
+          // Ren's spec section 189: Pending-Collection COD isn't cash in hand yet --
+          // kept out of the payment-method totals/Grand Total/Sales by Admin, shown
+          // as its own separate line instead.
+          if (p.payment_method === 'COD' && p.payment_status === 'Pending Collection') {
+            codPendingTotal += Number(p.amount);
+            return;
+          }
           methodTotals[p.payment_method] = (methodTotals[p.payment_method] || 0) + Number(p.amount);
           totalsByAdmin[empId] += Number(p.amount);
           grandTotal += Number(p.amount);
         });
       });
 
-      const methods = PAYMENT_METHODS.filter((m) => methodTotals[m]).concat(Object.keys(methodTotals).filter((m) => !PAYMENT_METHODS.includes(m)));
+      const methods = POS_PAYMENT_METHODS.filter((m) => methodTotals[m]).concat(Object.keys(methodTotals).filter((m) => !POS_PAYMENT_METHODS.includes(m)));
       const adminIds = Object.keys(totalsByAdmin).sort((a, b) => (employeeNameById[a] || '').localeCompare(employeeNameById[b] || ''));
       const topSkus = Object.keys(skuQty).sort((a, b) => skuQty[b] - skuQty[a]).slice(0, 5);
 
@@ -669,6 +693,7 @@ if (employee) {
         '<h4 style="margin-top:12px;">Sales</h4>' +
         methods.map((m) => '<div class="row"><span>' + esc(m) + '</span><b>' + money(methodTotals[m]) + '</b></div>').join('') +
         '<div class="row total"><span>Grand Total</span><b>' + money(grandTotal) + '</b></div>' +
+        (codPendingTotal ? '<div class="row" style="color:#a15c00;"><span>COD Pending Collection</span><b>' + money(codPendingTotal) + '</b></div>' : '') +
         '<details style="margin-top:10px;"><summary>Sales by Admin (' + adminIds.length + ')</summary>' +
           '<div style="margin-top:6px;">' +
             adminIds.map((id) => '<div class="row"><span>' + esc(employeeNameById[id] || 'Unknown') + '</span><b>' + money(totalsByAdmin[id]) + '</b></div>').join('') +
@@ -721,8 +746,20 @@ if (employee) {
           const subtotal = g.items.reduce((s, r) => s + Number(r.unit_price || 0) * r.qty, 0);
           const payments = posPaymentsByGroup[g.groupId] || [];
           const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
+          // Ren's spec sections 186/191: COD shown as its own method, never folded
+          // into Cash, with a Pending Collection badge and a Mark Collected action
+          // (gated to canEditSale -- a status change, not an amount edit, so it
+          // doesn't need the narrower canEditAmount/Auditor gate) until the
+          // courier/customer actually pays it.
           const paidLabel = (paid >= subtotal ? 'Paid in full' : money(paid) + ' paid') +
-            (payments.length ? '<div class="muted" style="font-size:10px;">' + payments.map((p) => esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '')).join(', ') + '</div>' : '');
+            (payments.length ? '<div class="muted" style="font-size:10px;">' + payments.map((p) =>
+              esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '') +
+              (p.payment_method === 'COD'
+                ? (p.payment_status === 'Pending Collection'
+                    ? ' <span class="badge pending">Pending Collection</span>' + (canEditSale ? ' <button type="button" class="btn small secondary" data-act="mark-cod-collected" data-id="' + p.id + '" style="padding:1px 6px;">Mark Collected</button>' : '')
+                    : ' <span class="badge ok">Collected</span>')
+                : '')
+            ).join('<br>') + '</div>' : '');
           return g.items.map((r, i) => '<tr>' +
             '<td data-label="Date &amp; Time">' + fmtDateTime(r.sale_date) + '</td>' +
             '<td data-label="Order">' + esc(r.order_number || '—') + '</td>' +
@@ -756,6 +793,11 @@ if (employee) {
       box.querySelectorAll('[data-act="delete-sale"]').forEach((btn) => btn.addEventListener('click', async () => {
         if (!confirm('Delete this whole sale? All its items go back to Available stock and this cannot be undone.')) return;
         try { await deletePosSale(btn.dataset.group); toast('br-msg', 'Sale deleted.', false); await loadPos(); }
+        catch (err) { toast('br-msg', String(err.message || err), true); }
+      }));
+      box.querySelectorAll('[data-act="mark-cod-collected"]').forEach((btn) => btn.addEventListener('click', async () => {
+        if (!confirm('Mark this COD payment as collected?')) return;
+        try { await markCodCollected(Number(btn.dataset.id)); toast('br-msg', 'COD payment marked collected.', false); await loadPos(); }
         catch (err) { toast('br-msg', String(err.message || err), true); }
       }));
       box.querySelectorAll('[data-act="edit-sale-item"]').forEach((btn) => btn.addEventListener('click', () => {
@@ -873,7 +915,7 @@ if (employee) {
       return '<tr class="edit-row pos-payment-edit-row" data-group-id="' + esc(g.groupId) + '" style="display:none;"><td colspan="10">' +
         '<form class="pos-payment-edit-form" data-group="' + esc(g.groupId) + '" style="padding:8px 0;">' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-            paymentSlotsHtml('editPay', existing, { withReference: true }) +
+            paymentSlotsHtml('editPay', existing, { withReference: true, methods: POS_PAYMENT_METHODS }) +
             '<div class="field" style="width:180px;"><label>Reason *</label><input type="text" name="paymentReason" required></div>' +
           '</div>' +
           '<div style="display:flex;gap:4px;margin-top:6px;">' +
