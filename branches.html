@@ -16,7 +16,7 @@
 import { initShell, toast, esc } from './js/shell.js';
 import {
   getBranches, searchProducts, listActiveEmployees,
-  createPosSale, listSales, listSalePayments, updatePosSaleItem, deletePosSale,
+  createPosSale, listSales, listSalePayments, updatePosSaleItem, updatePosSalePayments, deletePosSale,
   listSubastaItems, createSubastaItem, updateSubastaItem, deleteSubastaItem,
   listScrapEntries, getScrapCashBalances, createScrapEntry, deleteScrapEntry, uploadScrapAttachment, getScrapAttachmentUrl, convertScrapToSubasta,
   subscribeToChanges, listLayaways,
@@ -233,6 +233,19 @@ if (employee) {
         '<button type="button" class="pos-order-fab" id="pos-order-fab"></button>' +
       '</div>' +
 
+      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-top:6px;">' +
+        '<h3 style="margin:0;">Sales Transactions</h3>' +
+        // Section 41-51: a Summary popover scoped to whatever's currently visible in
+        // the table below -- Branch/From/To/Search all applied -- distinct from the
+        // "Sales by Admin & Payment Method" pivot above, which is date-only (not
+        // narrowed by search). Same underlying groups/posPaymentsByGroup data either
+        // way, so the two can never disagree (Ren's spec section 51: "same source of
+        // truth").
+        '<div style="position:relative;">' +
+          '<button type="button" class="btn small secondary" id="pos-summary-toggle">Summary ▾</button>' +
+          '<div id="pos-summary-panel" class="pos-summary-panel" style="display:none;"></div>' +
+        '</div>' +
+      '</div>' +
       '<div class="tiles" id="pos-tiles"></div>' +
       '<div id="pos-list"><div class="muted">Loading…</div></div>' +
       '</div>' +
@@ -517,6 +530,22 @@ if (employee) {
       renderPos();
     });
 
+    // Ren's spec section 41: click toggles the popover; clicking anywhere else closes
+    // it. Wired once here (not inside renderPos(), which only replaces #pos-tiles/
+    // #pos-list/#pos-by-admin's own innerHTML, not this button) rather than on every
+    // re-render, which would stack duplicate listeners.
+    document.getElementById('pos-summary-toggle').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const panel = document.getElementById('pos-summary-panel');
+      panel.style.display = panel.style.display === 'none' ? '' : 'none';
+    });
+    document.addEventListener('click', (ev) => {
+      const panel = document.getElementById('pos-summary-panel');
+      if (panel && panel.style.display !== 'none' && !panel.contains(ev.target) && ev.target.id !== 'pos-summary-toggle') {
+        panel.style.display = 'none';
+      }
+    });
+
     async function loadPos() {
       const list = document.getElementById('pos-list');
       list.innerHTML = '<div class="muted">Loading…</div>';
@@ -586,6 +615,66 @@ if (employee) {
         '<td data-label="Grand Total"><b>' + money(grandTotal) + '</b></td></tr></tfoot></table></div>';
     }
 
+    // Ren's spec sections 41-48: a Summary popover for whatever's CURRENTLY VISIBLE in
+    // the table below (search included, unlike the pivot above) -- same groups/
+    // posPaymentsByGroup data as everything else on this page, just aggregated a
+    // different way, so it can never disagree with the pivot or the transaction list.
+    // Only categories this schema actually has (payment method, admin, SKU) are
+    // shown -- no invented "Returning Customer"/"Status Breakdown" fields, since there
+    // is no customer table and no void/cancel status here (a deleted sale is just gone,
+    // per delete_pos_sale()).
+    function renderPosSummary(groups) {
+      const panel = document.getElementById('pos-summary-panel');
+      if (!groups.length) { panel.innerHTML = '<p class="muted" style="margin:0;">No transactions for this filter.</p>'; return; }
+
+      const orderCount = groups.length;
+      let itemsSold = 0, lineItems = 0;
+      const skuQty = {}, skuName = {};
+      const totalsByAdmin = {};
+      const methodTotals = {};
+      let grandTotal = 0;
+
+      groups.forEach((g) => {
+        const empId = g.items[0].employee_id;
+        totalsByAdmin[empId] = (totalsByAdmin[empId] || 0);
+        g.items.forEach((r) => {
+          lineItems++;
+          itemsSold += r.qty;
+          skuQty[r.sku] = (skuQty[r.sku] || 0) + r.qty;
+          skuName[r.sku] = r.products?.item_name || r.sku;
+        });
+        (posPaymentsByGroup[g.groupId] || []).forEach((p) => {
+          methodTotals[p.payment_method] = (methodTotals[p.payment_method] || 0) + Number(p.amount);
+          totalsByAdmin[empId] += Number(p.amount);
+          grandTotal += Number(p.amount);
+        });
+      });
+
+      const methods = PAYMENT_METHODS.filter((m) => methodTotals[m]).concat(Object.keys(methodTotals).filter((m) => !PAYMENT_METHODS.includes(m)));
+      const adminIds = Object.keys(totalsByAdmin).sort((a, b) => (employeeNameById[a] || '').localeCompare(employeeNameById[b] || ''));
+      const topSkus = Object.keys(skuQty).sort((a, b) => skuQty[b] - skuQty[a]).slice(0, 5);
+
+      panel.innerHTML =
+        '<h4>Transactions</h4>' +
+        '<div class="row"><span>Total Orders</span><b>' + orderCount + '</b></div>' +
+        '<div class="row"><span>Items Sold</span><b>' + itemsSold + '</b></div>' +
+        '<div class="row"><span>Unique SKUs</span><b>' + Object.keys(skuQty).length + '</b></div>' +
+        '<h4 style="margin-top:12px;">Sales</h4>' +
+        methods.map((m) => '<div class="row"><span>' + esc(m) + '</span><b>' + money(methodTotals[m]) + '</b></div>').join('') +
+        '<div class="row total"><span>Grand Total</span><b>' + money(grandTotal) + '</b></div>' +
+        '<details style="margin-top:10px;"><summary>Sales by Admin (' + adminIds.length + ')</summary>' +
+          '<div style="margin-top:6px;">' +
+            adminIds.map((id) => '<div class="row"><span>' + esc(employeeNameById[id] || 'Unknown') + '</span><b>' + money(totalsByAdmin[id]) + '</b></div>').join('') +
+          '</div>' +
+        '</details>' +
+        '<details style="margin-top:8px;"><summary>Top Selling Items</summary>' +
+          '<div style="margin-top:6px;">' +
+            topSkus.map((sku, i) => '<div class="row"><span>' + (i + 1) + '. ' + esc(skuName[sku]) + ' (' + esc(sku) + ')</span><b>' + skuQty[sku] + ' pcs</b></div>').join('') +
+          '</div>' +
+        '</details>' +
+        '<p class="muted" style="margin:10px 0 0;font-size:11px;">Lines: ' + lineItems + ' · matches the Search/From/To/Branch filters above.</p>';
+    }
+
     function renderPos() {
       renderScrapSubTabs();
       const fSearch = document.getElementById('pos-f-search').value.trim().toLowerCase();
@@ -602,6 +691,8 @@ if (employee) {
       if (fSearch) groups = groups.filter((g) => g.items.some((r) =>
         r.sku.toLowerCase().includes(fSearch) || (r.products?.item_name || '').toLowerCase().includes(fSearch) ||
         (r.customer_name || '').toLowerCase().includes(fSearch) || (r.order_number || '').toLowerCase().includes(fSearch)));
+
+      renderPosSummary(groups); // search-filtered too, unlike the pivot above
 
       const totalAmount = groups.reduce((s, g) => s + g.items.reduce((s2, r) => s2 + Number(r.unit_price || 0) * r.qty, 0), 0);
       document.getElementById('pos-tiles').innerHTML = tile(groups.length, 'Sales') + tile(money(totalAmount), 'Total Amount');
@@ -637,11 +728,13 @@ if (employee) {
             '<td data-label="Payment">' + paidLabel + '</td>' +
             '<td style="white-space:nowrap;">' +
               (canEditSale ? '<button type="button" class="btn small secondary" data-act="edit-sale-item" data-id="' + r.id + '">Edit</button>' : '') +
-              // Delete Sale removes the whole group regardless of which line's button is
-              // clicked, so it only needs to appear once -- shown on this group's first row.
+              // Delete Sale/Edit Payment operate on the whole group regardless of which
+              // line's button is clicked, so they only need to appear once -- shown on
+              // this group's first row.
+              (canEditSale && i === 0 ? ' <button type="button" class="btn small secondary" data-act="edit-payment" data-group="' + esc(g.groupId) + '">Edit Payment</button>' : '') +
               (canEditSale && i === 0 ? ' <button type="button" class="btn small secondary" data-act="delete-sale" data-group="' + esc(g.groupId) + '">Delete Sale</button>' : '') +
             '</td>' +
-          '</tr>' + (canEditSale ? posSaleEditRowHtml(r) : '')).join('');
+          '</tr>' + (canEditSale ? posSaleEditRowHtml(r) : '')).join('') + (canEditSale ? posPaymentEditRowHtml(g) : '');
         }).join('') +
         '</tbody></table></div>';
 
@@ -655,8 +748,39 @@ if (employee) {
         const row = box.querySelector('.pos-sale-edit-row[data-move-id="' + btn.dataset.id + '"]');
         if (!row) return;
         const opening = row.style.display === 'none';
-        box.querySelectorAll('.pos-sale-edit-row').forEach((r) => { r.style.display = 'none'; });
+        box.querySelectorAll('.pos-sale-edit-row, .pos-payment-edit-row').forEach((r) => { r.style.display = 'none'; });
         if (opening) row.style.display = '';
+      }));
+      box.querySelectorAll('[data-act="edit-payment"]').forEach((btn) => btn.addEventListener('click', () => {
+        const row = box.querySelector('.pos-payment-edit-row[data-group-id="' + btn.dataset.group + '"]');
+        if (!row) return;
+        const opening = row.style.display === 'none';
+        box.querySelectorAll('.pos-sale-edit-row, .pos-payment-edit-row').forEach((r) => { r.style.display = 'none'; });
+        if (opening) row.style.display = '';
+      }));
+      box.querySelectorAll('[data-act="close-payment-edit"]').forEach((btn) => btn.addEventListener('click', () => {
+        const row = box.querySelector('.pos-payment-edit-row[data-group-id="' + btn.dataset.group + '"]');
+        if (row) row.style.display = 'none';
+      }));
+      // Ren's spec section 33: editing a sale's payment method must move the amount off
+      // the old column and onto the new one -- update_pos_sale_payments() replaces the
+      // whole sale_payments split for the group in one call, so there's never a moment
+      // where both the old and new method show an amount.
+      box.querySelectorAll('.pos-payment-edit-form').forEach((form) => form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const f = ev.target;
+        const btn = f.querySelector('button[type=submit]');
+        const payments = readPaymentSlots(f, 'editPay');
+        if (!payments.length) { toast('br-msg', 'At least one payment method and amount is required.', true); return; }
+        btn.disabled = true;
+        try {
+          await updatePosSalePayments(f.dataset.group, payments);
+          toast('br-msg', 'Payment updated.', false);
+          await loadPos();
+        } catch (err) {
+          toast('br-msg', String(err.message || err), true);
+          btn.disabled = false;
+        }
       }));
       box.querySelectorAll('[data-act="close-sale-item"]').forEach((btn) => btn.addEventListener('click', () => {
         const row = box.querySelector('.pos-sale-edit-row[data-move-id="' + btn.dataset.id + '"]');
@@ -700,6 +824,25 @@ if (employee) {
           '<button type="button" class="btn small" data-act="save-sale-item" data-id="' + r.id + '">Save</button>' +
           '<button type="button" class="btn small secondary" data-act="close-sale-item" data-id="' + r.id + '">Cancel</button>' +
         '</div>' +
+      '</td></tr>';
+    }
+
+    // Correct a sale's whole payment-method split at once (Ren's spec section 33) --
+    // one row per group (not per line item, since sale_payments keys on sale_group_id),
+    // prefilled with its current payments via the same paymentSlotsHtml()/
+    // readPaymentSlots() helpers the New Sale form itself uses.
+    function posPaymentEditRowHtml(g) {
+      const existing = posPaymentsByGroup[g.groupId] || [];
+      return '<tr class="edit-row pos-payment-edit-row" data-group-id="' + esc(g.groupId) + '" style="display:none;"><td colspan="10">' +
+        '<form class="pos-payment-edit-form" data-group="' + esc(g.groupId) + '" style="padding:8px 0;">' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+            paymentSlotsHtml('editPay', existing, { withReference: true }) +
+          '</div>' +
+          '<div style="display:flex;gap:4px;margin-top:6px;">' +
+            '<button class="btn small" type="submit">Save Payment</button>' +
+            '<button type="button" class="btn small secondary" data-act="close-payment-edit" data-group="' + esc(g.groupId) + '">Cancel</button>' +
+          '</div>' +
+        '</form>' +
       '</td></tr>';
     }
 

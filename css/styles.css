@@ -233,3 +233,21 @@ main { flex:1 1 auto; min-height:0; overflow-y:auto; width:100%; }
     padding:14px 18px; font-size:14px; font-weight:600; box-shadow:0 4px 14px rgba(0,0,0,0.2); cursor:pointer;
   }
 }
+
+/* ---- Sales Transactions "Summary" popover (Ren's spec section 41-49) ---- */
+.pos-summary-panel {
+  position:absolute; right:0; top:100%; margin-top:6px; background:#fff; border:1px solid #ddd;
+  border-radius:10px; box-shadow:0 4px 14px rgba(0,0,0,0.15); padding:14px; width:360px;
+  max-width:calc(100vw - 24px); z-index:35; font-size:13px; max-height:70vh; overflow-y:auto;
+}
+.pos-summary-panel h4 { margin:0 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:0.03em; color:var(--muted); }
+.pos-summary-panel .row { display:flex; justify-content:space-between; gap:10px; padding:3px 0; }
+.pos-summary-panel .row.total { border-top:1px solid #eee; margin-top:4px; padding-top:6px; font-weight:bold; }
+.pos-summary-panel details { margin-top:8px; border-top:1px solid #f0f0f0; padding-top:8px; }
+.pos-summary-panel summary { cursor:pointer; font-weight:600; }
+
+/* Below 600px: a fixed bottom sheet instead of a floating popover that could run off
+   the side of a phone screen (Ren's spec section 49). */
+@media (max-width:600px) {
+  .pos-summary-panel { position:fixed; left:12px; right:12px; top:auto; bottom:12px; width:auto; max-width:none; }
+}

@@ -294,6 +294,18 @@ export async function listSalePayments(groupIds) {
   return data;
 }
 
+/** Replace a sale's whole payment-method split at once (Ren's spec section 33: an
+ * edited payment method must move the amount off the old column and onto the new one,
+ * not leave it under both) -- payments: [{method, amount, reference}]. Admin/Manager/
+ * Branch Supervisor/Branch Team Leader only, matching update_pos_sale_item's own gate. */
+export async function updatePosSalePayments(saleGroupId, payments) {
+  const { error } = await supabase.rpc('update_pos_sale_payments', {
+    p_sale_group_id: saleGroupId,
+    p_payments: payments.map((p) => ({ method: p.method, amount: p.amount, reference: p.reference || null })),
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function getTransactionHistory(sku, branchId) {
   let query = supabase
     .from('inventory_transactions')
