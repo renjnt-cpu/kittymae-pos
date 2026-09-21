@@ -336,7 +336,10 @@ export async function listTransfers() {
     .order('created_at', { ascending: false })
     .limit(200);
   if (error) throw new Error(error.message);
-  return attachEmployeeNames(data, { requester: 'requested_by', approver: 'approved_by' });
+  return attachEmployeeNames(data, {
+    requester: 'requested_by', approver: 'approved_by', shipper: 'shipped_by', receiver: 'received_by',
+    rejecter: 'rejected_by', canceller: 'cancelled_by',
+  });
 }
 
 /** items: [{ sku, qty }] */
