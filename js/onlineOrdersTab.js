@@ -297,8 +297,8 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
       rows.map((r) =>
         '<tr>' +
           '<td data-label="Item" class="full-row">' +
-            '<button type="button" data-history-toggle="' + r.id + '" data-history-sku="' + esc(r.sku || '') + '" data-history-name="' + esc(r.item_name) + '" ' +
-              'style="background:none;border:none;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer;">' +
+            '<button type="button" class="exp-row-btn" data-history-toggle="' + r.id + '" data-history-sku="' + esc(r.sku || '') + '" data-history-name="' + esc(r.item_name) + '" aria-expanded="false">' +
+              '<span class="exp-arrow" aria-hidden="true">▸</span>' +
               '<strong style="text-decoration:underline;text-decoration-style:dotted;">' + esc(r.item_name) + '</strong>' +
             '</button>' +
             (r.sku ? '<div class="muted" style="font-size:11px;">' + esc(r.sku) + '</div>' : '') +
@@ -350,7 +350,11 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
     const row = document.querySelector('tr[data-history-for="' + id + '"]');
     const isOpen = row.style.display !== 'none';
     document.querySelectorAll('.history-row').forEach((r) => { r.style.display = 'none'; r.querySelector('td').innerHTML = ''; });
+    // Accordion-style (only one item's history open at a time) -- every trigger's
+    // caret resets, then the one just opened (if any) flips back to expanded.
+    document.querySelectorAll('[data-history-toggle]').forEach((btn) => btn.setAttribute('aria-expanded', 'false'));
     if (isOpen) return;
+    document.querySelector('[data-history-toggle="' + id + '"]')?.setAttribute('aria-expanded', 'true');
     row.style.display = '';
     row.querySelector('td').innerHTML = '<div class="muted" style="padding:8px 4px;">Loading history…</div>';
     let matches;

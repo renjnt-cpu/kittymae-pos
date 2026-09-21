@@ -272,29 +272,32 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     // Status navigation: one folder per status besides On Hold itself (Ren,
     // 2026-09-16: "make a folder per layaway status for cancelled, delete, completed,
     // on hold"), collapsed by default; the Search box above narrows every folder.
-    '<details class="card" style="margin-top:14px;">' +
-      '<summary style="cursor:pointer;font-weight:bold;">Completed <span class="muted" id="lw-completed-count" style="font-weight:normal;"></span></summary>' +
-      '<div id="lw-list-completed" style="margin-top:10px;"></div>' +
+    // Ren's spec, 2026-09-22: every collapsible folder/group uses the same
+    // expand/collapse pattern (details.exp -- see css/styles.css) -- an aria-hidden
+    // caret that rotates open, native <details> keyboard/screen-reader semantics.
+    '<details class="card exp" style="margin-top:14px;">' +
+      '<summary><span class="exp-arrow" aria-hidden="true">▸</span>Completed <span class="exp-count" id="lw-completed-count"></span></summary>' +
+      '<div class="exp-body" id="lw-list-completed"></div>' +
     '</details>' +
-    '<details class="card" style="margin-top:10px;">' +
-      '<summary style="cursor:pointer;font-weight:bold;">Cancelled <span class="muted" id="lw-cancelled-count" style="font-weight:normal;"></span></summary>' +
-      '<div id="lw-list-cancelled" style="margin-top:10px;"></div>' +
+    '<details class="card exp" style="margin-top:10px;">' +
+      '<summary><span class="exp-arrow" aria-hidden="true">▸</span>Cancelled <span class="exp-count" id="lw-cancelled-count"></span></summary>' +
+      '<div class="exp-body" id="lw-list-cancelled"></div>' +
     '</details>' +
     // Forfeited: a customer never came back to pay before the Forfeit Date, as
     // opposed to Cancelled (a deliberate back-out) -- Ren, 2026-09-17, wanted
     // these told apart instead of both landing in the same Cancelled bucket.
-    '<details class="card" style="margin-top:10px;">' +
-      '<summary style="cursor:pointer;font-weight:bold;">Forfeited <span class="muted" id="lw-forfeited-count" style="font-weight:normal;"></span></summary>' +
-      '<div id="lw-list-forfeited" style="margin-top:10px;"></div>' +
+    '<details class="card exp" style="margin-top:10px;">' +
+      '<summary><span class="exp-arrow" aria-hidden="true">▸</span>Forfeited <span class="exp-count" id="lw-forfeited-count"></span></summary>' +
+      '<div class="exp-body" id="lw-list-forfeited"></div>' +
     '</details>' +
     // Admin-only review queue (Ren, 2026-09-17: "for approval of me if they want
     // to edit it") -- open by default since a pending request is something to
     // act on, not just browse, same convention as SKU Catalog's Pending Edit
     // Requests.
     (canFinalDelete
-      ? '<details class="card" id="lw-pending-forfeit-folder" style="margin-top:10px;" open>' +
-          '<summary style="cursor:pointer;font-weight:bold;">Pending Forfeit Date Requests <span class="muted" id="lw-pending-forfeit-count" style="font-weight:normal;"></span></summary>' +
-          '<div id="lw-pending-forfeit-list" style="margin-top:10px;"><div class="muted">Loading…</div></div>' +
+      ? '<details class="card exp" id="lw-pending-forfeit-folder" style="margin-top:10px;" open>' +
+          '<summary><span class="exp-arrow" aria-hidden="true">▸</span>Pending Forfeit Date Requests <span class="exp-count" id="lw-pending-forfeit-count"></span></summary>' +
+          '<div class="exp-body" id="lw-pending-forfeit-list"><div class="muted">Loading…</div></div>' +
         '</details>'
       : '') +
 
@@ -1215,7 +1218,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
               ? '<div class="muted" style="font-size:10px;margin-top:2px;">Edited by ' + esc(hdLastEdit.employees?.full_name || 'Unknown') + ' · ' + fmtDateTime(hdLastEdit.changed_at) + '</div>'
               : '<div class="muted" style="font-size:10px;margin-top:2px;">Never edited</div>') +
             (hdHistory.length
-              ? '<button type="button" class="btn small secondary fw-hold-date-history" data-hold-id="' + h.id + '" style="font-size:10px;padding:1px 6px;margin-top:2px;">History (' + hdHistory.length + ')</button>' +
+              ? '<button type="button" class="btn small secondary fw-hold-date-history" data-hold-id="' + h.id + '" aria-expanded="false" style="font-size:10px;padding:1px 6px;margin-top:2px;"><span class="exp-arrow" aria-hidden="true" style="width:7px;">▸</span> History (' + hdHistory.length + ')</button>' +
                 '<div class="fw-hold-date-history-list" data-hold-id="' + h.id + '" style="display:none;font-size:10px;margin-top:4px;border-top:1px dashed #ddd;padding-top:4px;">' +
                   hdHistory.map((l) => (l.old_date ? fmtDate(l.old_date) : '<span class="muted">—</span>') + ' → <strong>' + fmtDate(l.new_date) + '</strong> by ' + esc(l.employees?.full_name || 'Unknown') + ' · ' + fmtDateTime(l.changed_at)).join('<br>') +
                 '</div>'
@@ -1268,7 +1271,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
               ? '<div class="muted" style="font-size:10px;margin-top:2px;">Edited by ' + esc(lastEdit.employees?.full_name || 'Unknown') + ' · ' + fmtDateTime(lastEdit.changed_at) + '</div>'
               : '<div class="muted" style="font-size:10px;margin-top:2px;">Never edited (default 60-day date)</div>') +
             (history.length
-              ? '<button type="button" class="btn small secondary fw-forfeit-history" data-hold-id="' + h.id + '" style="font-size:10px;padding:1px 6px;margin-top:2px;">History (' + history.length + ')</button>' +
+              ? '<button type="button" class="btn small secondary fw-forfeit-history" data-hold-id="' + h.id + '" aria-expanded="false" style="font-size:10px;padding:1px 6px;margin-top:2px;"><span class="exp-arrow" aria-hidden="true" style="width:7px;">▸</span> History (' + history.length + ')</button>' +
                 '<div class="fw-forfeit-history-list" data-hold-id="' + h.id + '" style="display:none;font-size:10px;margin-top:4px;border-top:1px dashed #ddd;padding-top:4px;">' +
                   history.map((l) => (l.old_date ? fmtDate(l.old_date) : '<span class="muted">default</span>') + ' → <strong>' + fmtDate(l.new_date) + '</strong> by ' + esc(l.employees?.full_name || 'Unknown') + ' · ' + fmtDateTime(l.changed_at)).join('<br>') +
                 '</div>'
@@ -1313,7 +1316,9 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     }));
     box.querySelectorAll('.fw-forfeit-history').forEach((btn) => btn.addEventListener('click', () => {
       const div = box.querySelector('.fw-forfeit-history-list[data-hold-id="' + btn.dataset.holdId + '"]');
-      div.style.display = div.style.display === 'none' ? '' : 'none';
+      const opening = div.style.display === 'none';
+      div.style.display = opening ? '' : 'none';
+      btn.setAttribute('aria-expanded', String(opening));
     }));
     box.querySelectorAll('.fw-hold-date-save').forEach((btn) => btn.addEventListener('click', async () => {
       const holdId = Number(btn.dataset.holdId);
@@ -1331,7 +1336,9 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     }));
     box.querySelectorAll('.fw-hold-date-history').forEach((btn) => btn.addEventListener('click', () => {
       const div = box.querySelector('.fw-hold-date-history-list[data-hold-id="' + btn.dataset.holdId + '"]');
-      div.style.display = div.style.display === 'none' ? '' : 'none';
+      const opening = div.style.display === 'none';
+      div.style.display = opening ? '' : 'none';
+      btn.setAttribute('aria-expanded', String(opening));
     }));
     box.querySelectorAll('.fw-view-proof').forEach((btn) => btn.addEventListener('click', async () => {
       try {

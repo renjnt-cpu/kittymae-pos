@@ -340,3 +340,30 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .tile { min-width:0; flex:1 1 calc(50% - 4px); padding:12px 14px; }
   .tile .num { font-size:22px; }
 }
+
+/* ---- Expand/Collapse (Ren, 2026-09-22): one shared interaction pattern for every
+   collapsible summary/group/detail section system-wide -- native <details>/<summary>
+   so keyboard operation (Enter/Space while focused) and expanded/collapsed
+   announcement to assistive tech come from the browser for free, never hand-rolled.
+   The caret is its own aria-hidden span (not ::before generated content, which some
+   assistive tech folds into the accessible name) -- one glyph that rotates via CSS
+   transform, so it's the SAME element animating open/closed instead of two glyphs
+   being swapped. .exp alone gives the bare arrow+summary mechanics (used inside an
+   already-.card folder); .exp-cat adds the tinted category-header look used for a
+   grouped-data accordion that isn't its own card. */
+details.exp > summary { cursor:pointer; user-select:none; list-style:none; display:flex; align-items:center; gap:8px; min-height:44px; padding:8px 4px; font-weight:700; }
+details.exp > summary::-webkit-details-marker { display:none; }
+.exp-arrow { display:inline-block; width:10px; flex:0 0 auto; transition:transform .15s ease; }
+details.exp[open] > summary .exp-arrow { transform:rotate(90deg); }
+.exp-count { font-weight:normal; color:var(--muted); }
+details.exp > .exp-body { padding:8px 4px 4px; }
+details.exp.exp-cat { border:1px solid #eee; border-radius:8px; overflow:hidden; margin-bottom:8px; }
+details.exp.exp-cat > summary { padding:9px 12px; font-size:12px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); background:#f7f5f0; }
+details.exp.exp-cat > .exp-body { padding:10px 12px; }
+/* Any trigger for a table row's own expand/collapse (a <details> can't validly wrap
+   a <tr>) rotates its .exp-arrow the same way, driven by aria-expanded instead of the
+   browser's native [open] -- works whether it's a plain .exp-row-btn (bare text
+   trigger) or an existing styled button (e.g. a small "History" button) that just
+   needs the same caret bolted on. */
+.exp-row-btn { background:none; border:none; padding:4px 0; font:inherit; color:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:6px; min-height:32px; }
+[aria-expanded="true"] > .exp-arrow { transform:rotate(90deg); }

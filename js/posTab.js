@@ -505,10 +505,10 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
       methods.map((m) => '<div class="row"><span>' + esc(m) + '</span><b>' + money(methodTotals[m]) + '</b></div>').join('') +
       '<div class="row total"><span>Grand Total</span><b>' + money(grandTotal) + '</b></div>' +
       (codPendingTotal ? '<div class="row" style="color:#a15c00;"><span>COD Pending Collection</span><b>' + money(codPendingTotal) + '</b></div>' : '') +
-      '<details style="margin-top:10px;"><summary>Sales by Admin (' + adminIds.length + ')</summary><div style="margin-top:6px;">' +
+      '<details class="exp" style="margin-top:10px;"><summary><span class="exp-arrow" aria-hidden="true">▸</span>Sales by Admin <span class="exp-count">(' + adminIds.length + ')</span></summary><div class="exp-body">' +
         adminIds.map((id) => '<div class="row"><span>' + esc(employeeNameById[id] || 'Unknown') + '</span><b>' + money(totalsByAdmin[id]) + '</b></div>').join('') +
       '</div></details>' +
-      '<details style="margin-top:8px;"><summary>Top Selling Items</summary><div style="margin-top:6px;">' +
+      '<details class="exp" style="margin-top:8px;"><summary><span class="exp-arrow" aria-hidden="true">▸</span>Top Selling Items</summary><div class="exp-body">' +
         topSkus.map((sku, i) => '<div class="row"><span>' + (i + 1) + '. ' + esc(skuName[sku]) + ' (' + esc(sku) + ')</span><b>' + skuQty[sku] + ' pcs</b></div>').join('') +
       '</div></details>' +
       '<p class="muted" style="margin:10px 0 0;font-size:11px;">Lines: ' + lineItems + ' · matches the Search/From/To/Branch filters above.</p>';
