@@ -518,7 +518,11 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     ev.preventDefault();
     const f = ev.target;
     const branchId = getBranchId();
-    const btn = f.querySelector('button[type=submit]');
+    // The submit button lives in .drawer-footer (form="lw-form"), outside this
+    // <form> element's own DOM subtree, so it's reached by its own selector --
+    // f.querySelector() here always returned null (silently throwing on
+    // btn.disabled below, before any validation or network call ever ran).
+    const btn = document.querySelector('#lw-form-drawer .drawer-footer button[type=submit]');
     const items = readItemRows();
     if (!items.length) { notify('Add at least one item (SKU) to hold.', true); return; }
     const badQty = items.find((it) => !it.qty || it.qty <= 0);
