@@ -152,31 +152,66 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         '</details>'
       : '') +
 
-    '<div class="card" style="margin-top:20px;">' +
-      '<h3 style="margin-top:0;">Hold Item(s)</h3>' +
-      '<p class="muted" style="margin-top:-4px;">Each item leaves the sellable pool immediately (moves to Reserved) but stays on hand until either completed as a sale or cancelled. Add more than one item to hold a whole order for one customer at once.</p>' +
-      '<form id="lw-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
-        '<label style="font-size:13px;font-weight:600;">Items *</label>' +
-        '<div id="lw-items"></div>' +
-        '<button type="button" class="btn small secondary" id="lw-add-item" style="align-self:flex-start;margin:-4px 0 10px;">+ Add another item</button>' +
-        '<div class="field"><label>Order ID</label><input type="text" name="orderId"></div>' +
-        // Defaults to today but editable -- lets staff backdate a hold that's only
-        // being encoded now for an item actually held earlier (Ren, 2026-09-21: "under
-        // layaway hold item add date"), same reasoning as Add Payment's own Date Paid
-        // field. Previously hold_date always silently defaulted to CURRENT_DATE with
-        // no way to set it at creation time -- fixing it after the fact required an
-        // Admin to use Forfeiture Watch's own Date Purchased editor.
-        '<div class="field"><label>Date</label><input type="date" name="holdDate" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
-        '<div class="field"><label>Customer Name *</label><input type="text" name="customerName" required></div>' +
-        '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
-        '<div class="field"><label>Forfeit Date (optional)</label><input type="date" name="forfeitDate"></div>' +
-        '<div class="field"><label>Admin (Handled By)</label><select name="handledBy"><option value="">— none —</option>' +
-          staff.map((s) => '<option value="' + s.id + '"' + (s.id === employee.id ? ' selected' : '') + '>' + esc(s.full_name) + '</option>').join('') +
-        '</select></div>' +
-        paymentSlotsHtml() +
-        '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
-        '<button class="btn" type="submit">Hold Item(s)</button>' +
-      '</form>' +
+    // Form Drawer (Ren's UI redesign pilot, section 203: "The current Hold Item form
+    // takes too much vertical space... Replace: Hold Item(s) long form on page, with:
+    // [+ New Layaway]... Open a right-side drawer") -- same fields as before, grouped
+    // into labeled sections, submit button relocated to a sticky footer via
+    // form="lw-form" (a submit button outside its <form> tag, tied to it by id, is
+    // standard HTML -- nothing about the form's own submit handler below changes).
+    '<button type="button" class="btn" id="lw-new-btn" style="margin-top:20px;">+ New Layaway</button>' +
+    '<div class="drawer-backdrop" id="lw-form-backdrop"></div>' +
+    '<div class="drawer" id="lw-form-drawer">' +
+      '<div class="drawer-header"><h3>New Layaway</h3><button type="button" class="drawer-close" id="lw-form-close" aria-label="Close">✕</button></div>' +
+      '<div class="drawer-body">' +
+        '<p class="muted" style="margin-top:0;">Each item leaves the sellable pool immediately (moves to Reserved) but stays on hand until either completed as a sale or cancelled. Add more than one item to hold a whole order for one customer at once.</p>' +
+        '<form id="lw-form" style="display:flex;flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:8px;">' +
+          '<div class="drawer-section">' +
+            '<h4>Item(s)</h4>' +
+            '<label style="font-size:13px;font-weight:600;">Items *</label>' +
+            '<div id="lw-items"></div>' +
+            '<button type="button" class="btn small secondary" id="lw-add-item" style="align-self:flex-start;margin-top:-4px;">+ Add another item</button>' +
+          '</div>' +
+          '<div class="drawer-section">' +
+            '<h4>Customer</h4>' +
+            '<div class="field"><label>Order ID</label><input type="text" name="orderId"></div>' +
+            // Defaults to today but editable -- lets staff backdate a hold that's only
+            // being encoded now for an item actually held earlier (Ren, 2026-09-21:
+            // "under layaway hold item add date"), same reasoning as Add Payment's own
+            // Date Paid field. Previously hold_date always silently defaulted to
+            // CURRENT_DATE with no way to set it at creation time -- fixing it after
+            // the fact required an Admin to use Forfeiture Watch's own Date Purchased
+            // editor.
+            '<div class="field"><label>Date</label><input type="date" name="holdDate" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
+            '<div class="field"><label>Customer Name *</label><input type="text" name="customerName" required></div>' +
+            '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
+          '</div>' +
+          '<div class="drawer-section">' +
+            '<h4>Payment</h4>' +
+            paymentSlotsHtml() +
+          '</div>' +
+          '<div class="drawer-section">' +
+            '<h4>Forfeit &amp; Handling</h4>' +
+            '<div class="field"><label>Forfeit Date (optional)</label><input type="date" name="forfeitDate"></div>' +
+            '<div class="field"><label>Admin (Handled By)</label><select name="handledBy"><option value="">— none —</option>' +
+              staff.map((s) => '<option value="' + s.id + '"' + (s.id === employee.id ? ' selected' : '') + '>' + esc(s.full_name) + '</option>').join('') +
+            '</select></div>' +
+            '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
+          '</div>' +
+        '</form>' +
+      '</div>' +
+      '<div class="drawer-footer">' +
+        '<button class="btn" type="submit" form="lw-form">Hold Item(s)</button>' +
+        '<button type="button" class="btn secondary" id="lw-form-cancel">Cancel</button>' +
+      '</div>' +
+    '</div>' +
+
+    // Detail Drawer -- one shared instance, its body/title replaced per record each
+    // time openDetail() is called (Ren's UI redesign pilot, section 204: "Use Detail
+    // Drawer for Records... When user clicks a row: Open a right-side detail drawer").
+    '<div class="drawer-backdrop" id="lw-detail-backdrop"></div>' +
+    '<div class="drawer" id="lw-detail-drawer">' +
+      '<div class="drawer-header"><h3 id="lw-detail-title">Layaway Details</h3><button type="button" class="drawer-close" id="lw-detail-close" aria-label="Close">✕</button></div>' +
+      '<div class="drawer-body" id="lw-detail-body"></div>' +
     '</div>' +
 
     '<h2 style="margin-top:26px;">Monthly Monitoring</h2>' +
@@ -338,6 +373,54 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   addItemRow();
   document.getElementById('lw-add-item').addEventListener('click', addItemRow);
 
+  // Generic open/close for the Form Drawer -- the form itself and every listener on
+  // it (below) are unchanged from before this was a drawer; only where it lives in
+  // the page (and whether it's currently visible) is different.
+  function openFormDrawer() {
+    document.getElementById('lw-form-backdrop').classList.add('open');
+    document.getElementById('lw-form-drawer').classList.add('open');
+  }
+  function closeFormDrawer() {
+    document.getElementById('lw-form-backdrop').classList.remove('open');
+    document.getElementById('lw-form-drawer').classList.remove('open');
+  }
+  document.getElementById('lw-new-btn').addEventListener('click', openFormDrawer);
+  document.getElementById('lw-form-close').addEventListener('click', closeFormDrawer);
+  document.getElementById('lw-form-cancel').addEventListener('click', closeFormDrawer);
+  document.getElementById('lw-form-backdrop').addEventListener('click', closeFormDrawer);
+
+  // Detail Drawer -- body content is rebuilt fresh by renderDetailBody()/
+  // wireDetailBody() every time a specific hold's "View Details" is clicked (see
+  // renderHoldTable() below), not a static block like the form drawer above.
+  function closeDetailDrawer() {
+    document.getElementById('lw-detail-backdrop').classList.remove('open');
+    document.getElementById('lw-detail-drawer').classList.remove('open');
+  }
+  document.getElementById('lw-detail-close').addEventListener('click', closeDetailDrawer);
+  document.getElementById('lw-detail-backdrop').addEventListener('click', closeDetailDrawer);
+  function openDetail(holdId) {
+    const h = allHolds.find((x) => x.id === holdId);
+    if (!h) return;
+    // .textContent escapes on its own -- esc() here would double-escape (e.g. an
+    // actual "&" in a customer's name showing up literally as "&amp;").
+    document.getElementById('lw-detail-title').textContent = h.customer_name + ' — ' + h.sku;
+    const body = document.getElementById('lw-detail-body');
+    body.innerHTML = renderDetailBody(h);
+    wireDetailBody(body, h);
+    document.getElementById('lw-detail-backdrop').classList.add('open');
+    document.getElementById('lw-detail-drawer').classList.add('open');
+  }
+  // Called after any action taken from inside the detail drawer -- keeps it open with
+  // fresh data if the hold still exists (e.g. a payment was just added), or closes it
+  // if the action removed the hold from view entirely (deleted, or moved to a
+  // folder the drawer has no reason to track further).
+  function refreshDetailIfOpen(holdId) {
+    if (!document.getElementById('lw-detail-drawer').classList.contains('open')) return;
+    const h = allHolds.find((x) => x.id === holdId);
+    if (!h) { closeDetailDrawer(); return; }
+    openDetail(holdId);
+  }
+
   function readItemRows() {
     const items = [];
     itemsContainer.querySelectorAll('.lw-item-row').forEach((row) => {
@@ -412,10 +495,11 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         }
       }
     } catch (err) {
-      notify(items.length + ' item(s) held, but recording payment failed: ' + (err.message || err) + '. Add it manually below.', true);
+      notify(items.length + ' item(s) held, but recording payment failed: ' + (err.message || err) + '. Add it from the item\'s own View Details.', true);
       f.reset();
       resetItemRows();
       btn.disabled = false;
+      closeFormDrawer();
       await load();
       return;
     }
@@ -424,6 +508,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     f.reset();
     resetItemRows();
     btn.disabled = false;
+    closeFormDrawer();
     await load();
   });
 
@@ -541,134 +626,168 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
 
   // One table per status folder (Ren, 2026-09-16: "make a folder per layaway status
   // for cancelled, delete, completed, on hold") -- render() below computes the 3
-  // search-filtered buckets and the tiles, then calls this once per folder.
+  // search-filtered buckets and the tiles, then calls this once per folder. UI
+  // redesign pilot (Ren, 2026-09-21: "REDESIGNING BOTH DESKTOP AND MOBILE VIEW"):
+  // the row itself now only carries scan-at-a-glance fields; everything else
+  // (payment history, notes, every action) lives in the Detail Drawer opened by
+  // "View Details" -- see renderDetailBody()/wireDetailBody() below.
   function renderHoldTable(containerId, rows) {
     const list = document.getElementById(containerId);
     if (!rows.length) { list.innerHTML = '<p class="muted">None' + (containerId === 'lw-list' ? ' for this filter.' : '.') + '</p>'; return; }
 
     list.innerHTML = '<div class="table-scroll table-2col"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
-      '<colgroup><col style="width:13%"><col style="width:9%"><col style="width:7%"><col style="width:12%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:23%"></colgroup>' +
-      '<thead><tr><th>SKU</th><th>Order ID</th><th>Qty</th><th>Customer</th><th>Amount</th><th>Total</th><th>Paid</th><th>Status</th><th></th></tr></thead><tbody>' +
+      '<colgroup><col style="width:14%"><col style="width:14%"><col style="width:8%"><col style="width:20%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:11%"></colgroup>' +
+      '<thead><tr><th>SKU</th><th>Order ID</th><th>Qty</th><th>Customer</th><th>Total</th><th>Paid</th><th>Status</th><th></th></tr></thead><tbody>' +
       rows.map((h) => {
         const paid = paidSoFar(h);
         const remaining = h.total_price == null ? null : Number(h.total_price) - paid;
-        const paymentStatusById = paymentStatusFor(h.layaway_payments || [], h.total_price);
-        const canAct = canManage || employee.branch_id === h.branch_id || UNSCOPED_POSITIONS.includes(employee.position);
         const group = h.group_id ? groupMembers[h.group_id] : null;
         const groupIdx = group ? group.findIndex((x) => x.id === h.id) : -1;
-        const groupOnHold = group ? group.filter((x) => x.status === 'On Hold') : [];
         return '<tr>' +
           '<td data-label="SKU">' + esc(h.sku) +
             (h.stock_status === 'Lacking' ? ' <span class="badge low" title="Not physically in stock yet -- needs to be sourced before this can be completed">Lacking</span>' : '') +
           '</td>' +
           '<td data-label="Order ID">' + esc(h.order_id || '—') +
             // An On Hold item has already left the sellable pool (moves to Reserved --
-            // see the Hold Item(s) form's own note above), so it's visibly tagged right
-            // next to the Order ID, not just implied by the Status column, matching
-            // Ren's spec section 229: "Do not hide the reserved state inside notes
-            // only. It must be immediately visible."
+            // see the New Layaway form's own note), so it's visibly tagged right next
+            // to the Order ID, not just implied by the Status column, matching Ren's
+            // spec section 229: "Do not hide the reserved state inside notes only. It
+            // must be immediately visible."
             (h.status === 'On Hold' ? ' <span class="badge transit" style="font-size:9px;padding:1px 5px;" title="This item is held for this customer -- not available for another sale.">Reserved</span>' : '') +
             (group ? ' <span class="badge pending" style="font-size:9px;padding:1px 5px;" title="Part of a ' + group.length + '-item hold">' + (groupIdx + 1) + '/' + group.length + '</span>' : '') +
           '</td>' +
           '<td data-label="Qty">' + h.qty + '</td>' +
-          '<td data-label="Customer" class="full-row">' + esc(h.customer_name) + (h.contact_number ? '<div class="muted" style="font-size:10px;">' + esc(h.contact_number) + '</div>' : '') +
-            // Notes visually separated from the customer's own name/contact (Ren's spec
-            // section 58: Notes is its own grouped line, not run into Customer) --
-            // still the same <td> (adding a whole extra table column for an
-            // occasionally-empty field would widen every row for no benefit), just with
-            // its own small heading once there's actually a handler or note to show.
-            ((h.handler || h.notes) ? '<div class="muted" style="font-size:10px;margin-top:4px;padding-top:4px;border-top:1px dashed #eee;">' +
-              (h.handler ? 'Handled by ' + esc(h.handler.full_name) : '') +
-              (h.handler && h.notes ? '<br>' : '') +
-              (h.notes ? 'Note: ' + esc(h.notes) : '') +
-            '</div>' : '') + '</td>' +
-          '<td data-label="Amount">' + money(h.unit_price) + '</td>' +
+          '<td data-label="Customer" class="full-row">' + esc(h.customer_name) + (h.contact_number ? '<div class="muted" style="font-size:10px;">' + esc(h.contact_number) + '</div>' : '') + '</td>' +
           '<td data-label="Total">' + money(h.total_price) + '</td>' +
           '<td data-label="Paid">' + money(paid) + (remaining !== null ? '<div class="muted" style="font-size:10px;">' + money(remaining) + ' left</div>' : '') + '</td>' +
-          '<td data-label="Status"><span class="badge ' + (STATUS_BADGE[h.status] || 'pending') + '">' + esc(h.status) + '</span>' +
-            // Who closed this hold out and when (Ren's spec section 8: Layaway
-            // completed/forfeited need User Name + Date/Time in the audit trail) --
-            // completed_by/cancelled_by/forfeited_by are set server-side by
-            // complete_layaway()/cancel_layaway()/forfeit_layaway_hold().
-            (h.status === 'Completed' && h.completed_at ? '<div class="muted" style="font-size:10px;">' + (h.completer ? esc(h.completer.full_name) + ' · ' : '') + fmtDateTime(h.completed_at) + '</div>' : '') +
-            (h.status === 'Cancelled' && h.cancelled_at ? '<div class="muted" style="font-size:10px;">' + (h.canceller ? esc(h.canceller.full_name) + ' · ' : '') + fmtDateTime(h.cancelled_at) + '</div>' : '') +
-            (h.status === 'Forfeited' && h.forfeited_at ? '<div class="muted" style="font-size:10px;">' + (h.forfeiter ? esc(h.forfeiter.full_name) + ' · ' : '') + fmtDateTime(h.forfeited_at) + '</div>' : '') +
-          '</td>' +
-          '<td data-label="Payment History" class="full-row" style="font-size:11px;">' +
-            (h.layaway_payments && h.layaway_payments.length
-              // Payment date + who recorded it (Ren, 2026-09-18: "add date when they
-              // pay also to check") -- same info Forfeiture Watch's own payment list
-              // already showed, now here too so it doesn't need a separate page visit.
-              // Reference relabeled "Receipt/Txn #" and a Payment Status badge added
-              // per Ren's spec section 1. Each payment gets its own bordered
-              // .payment-line block (Ren's spec section 16/66: "Do not compress
-              // multiple payments into one narrow line") with Amount/Method on their
-              // own leading line and Receipt kept as its own clearly-labeled piece,
-              // instead of one run-on sentence.
-              ? h.layaway_payments.map((p) => '<div class="payment-line">' +
-                  '<div>' + money(p.amount) + ' · ' + esc(p.payment_method) +
-                    ' <span class="badge ' + (paymentStatusById[p.id] === 'Paid in Full' ? 'ok' : 'pending') + '" style="font-size:9px;padding:1px 5px;">' + paymentStatusById[p.id] + '</span>' +
-                  '</div>' +
-                  (p.reference_number ? '<div class="muted" style="font-size:10px;margin-top:2px;">Receipt/Txn #' + esc(p.reference_number) + '</div>' : '') +
-                  '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">' +
-                    (p.attachment_path ? '<button type="button" class="btn small secondary" data-act="view-proof" data-path="' + esc(p.attachment_path) + '" style="padding:1px 6px;">Proof</button>' : '') +
-                    (canEditAmount ? '<button class="btn small secondary" data-act="del-payment" data-id="' + p.id + '" style="padding:1px 6px;">✕</button>' : '') +
-                    '<span class="muted" style="font-size:10px;">' + fmtDate(p.paid_at) + (p.employees ? ' · ' + esc(p.employees.full_name) : '') + '</span>' +
-                  '</div>' +
-                '</div>').join('')
-              : '') +
-            (groupIdx === 0 && groupOnHold.length > 1 && (canAct || canManage)
-              ? '<div style="margin-bottom:4px;display:flex;flex-wrap:wrap;gap:4px;">' +
-                  (canAct ? '<button class="btn small secondary" data-act="complete-group" data-group="' + esc(h.group_id) + '">Complete All (' + groupOnHold.length + ')</button>' : '') +
-                  // Cancelling/removing a hold is Admin-only -- narrower than everything
-                  // else here, matching cancel_layaway's own server-side gate (Ren,
-                  // 2026-09-16: "i will be the one to final delete not supervisor or
-                  // manager now").
-                  (canFinalDelete ? '<button class="btn small secondary" data-act="cancel-group" data-group="' + esc(h.group_id) + '">Cancel All (' + groupOnHold.length + ')</button>' : '') +
-                '</div>'
-              : '') +
-            (h.status === 'On Hold' && (canAct || canManage)
-              ? (canAct
-                  ? '<form class="lw-pay-form" data-hold-id="' + h.id + '" data-branch-id="' + h.branch_id + '" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">' +
-                      '<input type="number" name="amount" step="0.01" min="0.01" placeholder="Amount" required style="width:70px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
-                      '<select name="method" style="padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' + PAYMENT_METHODS.map((m) => '<option>' + m + '</option>').join('') + '</select>' +
-                      '<input type="text" name="reference" placeholder="Receipt/Txn #" style="width:90px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
-                      // Defaults to today but editable -- lets staff record the real
-                      // date a payment actually happened instead of whenever it got
-                      // typed in (Ren, 2026-09-18: "add date when they pay").
-                      '<input type="date" name="paidAt" value="' + new Date().toISOString().slice(0, 10) + '" title="Date Paid" style="padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;">' +
-                      '<input type="file" name="proof" accept="image/*,.pdf" style="max-width:110px;font-size:11px;" title="Proof of Payment">' +
-                      '<button class="btn small" type="submit">Add Payment</button>' +
-                    '</form>'
-                  : '') +
-                '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">' +
-                  (canAct ? '<button class="btn small secondary" data-act="complete" data-id="' + h.id + '">Complete</button>' : '') +
-                  (canEditAmount ? '<button class="btn small secondary" data-act="edit-hold" data-id="' + h.id + '">Edit</button>' : '') +
-                  (canFinalDelete ? '<button class="btn small secondary" data-act="cancel" data-id="' + h.id + '">Cancel</button>' : '') +
-                  // Forfeited is a separate final disposition from Cancelled -- the
-                  // customer never came back to pay by the Forfeit Date, as opposed to
-                  // a deliberate back-out (Ren, 2026-09-17: wanted these told apart in
-                  // their own folder). Same Admin-only gate and stock-release effect
-                  // as Cancel, matching forfeit_layaway_hold()'s own server-side gate.
-                  (canFinalDelete ? '<button class="btn small secondary" data-act="forfeit" data-id="' + h.id + '">Forfeit</button>' : '') +
-                  // Delete is distinct from Cancel -- permanently erases the row
-                  // (blocked server-side if it has any payments, or is Completed),
-                  // for pure data-entry mistakes rather than a real customer
-                  // cancellation (Ren, 2026-09-16: "make a folder ... for cancelled,
-                  // delete, completed, on hold").
-                  (canFinalDelete ? '<button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '">Delete</button>' : '') +
-                '</div>' +
-                (canEditAmount ? editHoldFormHtml(h) : '')
-              : '') +
-            ((h.status === 'Cancelled' || h.status === 'Forfeited') && canFinalDelete
-              ? '<button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '" style="margin-top:4px;">Delete</button>'
-              : '') +
-          '</td>' +
+          '<td data-label="Status"><span class="badge ' + (STATUS_BADGE[h.status] || 'pending') + '">' + esc(h.status) + '</span></td>' +
+          '<td class="full-row"><button type="button" class="btn small secondary" data-act="view-details" data-id="' + h.id + '">View Details</button></td>' +
         '</tr>';
       }).join('') +
       '</tbody></table></div>';
 
-    list.querySelectorAll('.lw-pay-form').forEach((form) => form.addEventListener('submit', async (ev) => {
+    list.querySelectorAll('[data-act="view-details"]').forEach((btn) => btn.addEventListener('click', () => openDetail(Number(btn.dataset.id))));
+  }
+
+  // Everything a row's own cells used to cram into one column, now the Detail
+  // Drawer's body -- same fields, same actions, same server calls, just laid out as
+  // a proper standalone record view (Ren's spec section 204).
+  function renderDetailBody(h) {
+    const paid = paidSoFar(h);
+    const remaining = h.total_price == null ? null : Number(h.total_price) - paid;
+    const paymentStatusById = paymentStatusFor(h.layaway_payments || [], h.total_price);
+    const canAct = canManage || employee.branch_id === h.branch_id || UNSCOPED_POSITIONS.includes(employee.position);
+    const group = h.group_id ? groupMembers[h.group_id] : null;
+    const groupIdx = group ? group.findIndex((x) => x.id === h.id) : -1;
+    const groupOnHold = group ? group.filter((x) => x.status === 'On Hold') : [];
+
+    return '<div class="drawer-section">' +
+        '<h4>Item</h4>' +
+        '<div class="drawer-kv"><span>SKU</span><b>' + esc(h.sku) + (h.stock_status === 'Lacking' ? ' <span class="badge low">Lacking</span>' : '') + '</b></div>' +
+        '<div class="drawer-kv"><span>Order ID</span><b>' + esc(h.order_id || '—') +
+          (h.status === 'On Hold' ? ' <span class="badge transit">Reserved</span>' : '') +
+          (group ? ' <span class="badge pending">' + (groupIdx + 1) + '/' + group.length + '</span>' : '') +
+        '</b></div>' +
+        '<div class="drawer-kv"><span>Qty</span><b>' + h.qty + '</b></div>' +
+        '<div class="drawer-kv"><span>Unit Price</span><b>' + money(h.unit_price) + '</b></div>' +
+        '<div class="drawer-kv"><span>Total</span><b>' + money(h.total_price) + '</b></div>' +
+        '<div class="drawer-kv"><span>Paid</span><b>' + money(paid) + '</b></div>' +
+        (remaining !== null ? '<div class="drawer-kv"><span>Remaining</span><b>' + money(remaining) + '</b></div>' : '') +
+        '<div class="drawer-kv"><span>Status</span><b><span class="badge ' + (STATUS_BADGE[h.status] || 'pending') + '">' + esc(h.status) + '</span></b></div>' +
+        // Who closed this hold out and when (Ren's spec section 8: Layaway
+        // completed/forfeited need User Name + Date/Time in the audit trail) --
+        // completed_by/cancelled_by/forfeited_by are set server-side by
+        // complete_layaway()/cancel_layaway()/forfeit_layaway_hold().
+        (h.status === 'Completed' && h.completed_at ? '<div class="drawer-kv"><span>Completed</span><b>' + (h.completer ? esc(h.completer.full_name) + ' · ' : '') + fmtDateTime(h.completed_at) + '</b></div>' : '') +
+        (h.status === 'Cancelled' && h.cancelled_at ? '<div class="drawer-kv"><span>Cancelled</span><b>' + (h.canceller ? esc(h.canceller.full_name) + ' · ' : '') + fmtDateTime(h.cancelled_at) + '</b></div>' : '') +
+        (h.status === 'Forfeited' && h.forfeited_at ? '<div class="drawer-kv"><span>Forfeited</span><b>' + (h.forfeiter ? esc(h.forfeiter.full_name) + ' · ' : '') + fmtDateTime(h.forfeited_at) + '</b></div>' : '') +
+      '</div>' +
+      '<div class="drawer-section">' +
+        '<h4>Customer</h4>' +
+        '<div class="drawer-kv"><span>Name</span><b>' + esc(h.customer_name) + '</b></div>' +
+        (h.contact_number ? '<div class="drawer-kv"><span>Contact</span><b>' + esc(h.contact_number) + '</b></div>' : '') +
+        (h.handler ? '<div class="drawer-kv"><span>Handled By</span><b>' + esc(h.handler.full_name) + '</b></div>' : '') +
+        (h.notes ? '<div class="drawer-kv"><span>Notes</span><b>' + esc(h.notes) + '</b></div>' : '') +
+      '</div>' +
+      '<div class="drawer-section">' +
+        '<h4>Payment History</h4>' +
+        (h.layaway_payments && h.layaway_payments.length
+          // Reference relabeled "Receipt/Txn #" and a Payment Status badge per Ren's
+          // spec section 1. Each payment gets its own bordered .payment-line block
+          // (section 16/66: "Do not compress multiple payments into one narrow
+          // line") with Amount/Method on their own leading line and Receipt kept as
+          // its own clearly-labeled piece, instead of one run-on sentence.
+          ? h.layaway_payments.map((p) => '<div class="payment-line">' +
+              '<div>' + money(p.amount) + ' · ' + esc(p.payment_method) +
+                ' <span class="badge ' + (paymentStatusById[p.id] === 'Paid in Full' ? 'ok' : 'pending') + '" style="font-size:9px;padding:1px 5px;">' + paymentStatusById[p.id] + '</span>' +
+              '</div>' +
+              (p.reference_number ? '<div class="muted" style="font-size:10px;margin-top:2px;">Receipt/Txn #' + esc(p.reference_number) + '</div>' : '') +
+              '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">' +
+                (p.attachment_path ? '<button type="button" class="btn small secondary" data-act="view-proof" data-path="' + esc(p.attachment_path) + '" style="padding:1px 6px;">Proof</button>' : '') +
+                (canEditAmount ? '<button class="btn small secondary" data-act="del-payment" data-id="' + p.id + '" style="padding:1px 6px;">✕</button>' : '') +
+                '<span class="muted" style="font-size:10px;">' + fmtDate(p.paid_at) + (p.employees ? ' · ' + esc(p.employees.full_name) : '') + '</span>' +
+              '</div>' +
+            '</div>').join('')
+          : '<p class="muted" style="margin:0;">No payments yet.</p>') +
+      '</div>' +
+      (groupIdx === 0 && groupOnHold.length > 1 && (canAct || canManage)
+        ? '<div class="drawer-section"><h4>This Order (' + group.length + ' items)</h4><div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+            (canAct ? '<button class="btn small secondary" data-act="complete-group" data-group="' + esc(h.group_id) + '">Complete All (' + groupOnHold.length + ')</button>' : '') +
+            // Cancelling/removing a hold is Admin-only -- narrower than everything
+            // else here, matching cancel_layaway's own server-side gate (Ren,
+            // 2026-09-16: "i will be the one to final delete not supervisor or
+            // manager now").
+            (canFinalDelete ? '<button class="btn small secondary" data-act="cancel-group" data-group="' + esc(h.group_id) + '">Cancel All (' + groupOnHold.length + ')</button>' : '') +
+          '</div></div>'
+        : '') +
+      (h.status === 'On Hold' && (canAct || canManage)
+        ? '<div class="drawer-section"><h4>Actions</h4>' +
+            (canAct
+              ? '<form class="lw-pay-form" data-hold-id="' + h.id + '" data-branch-id="' + h.branch_id + '" style="display:flex;flex-wrap:wrap;gap:6px;">' +
+                  '<input type="number" name="amount" step="0.01" min="0.01" placeholder="Amount" required style="width:80px;padding:5px 7px;border:1px solid #ddd;border-radius:6px;font-size:12px;">' +
+                  '<select name="method" style="padding:5px 7px;border:1px solid #ddd;border-radius:6px;font-size:12px;">' + PAYMENT_METHODS.map((m) => '<option>' + m + '</option>').join('') + '</select>' +
+                  '<input type="text" name="reference" placeholder="Receipt/Txn #" style="width:100px;padding:5px 7px;border:1px solid #ddd;border-radius:6px;font-size:12px;">' +
+                  // Defaults to today but editable -- lets staff record the real date a
+                  // payment actually happened instead of whenever it got typed in
+                  // (Ren, 2026-09-18: "add date when they pay").
+                  '<input type="date" name="paidAt" value="' + new Date().toISOString().slice(0, 10) + '" title="Date Paid" style="padding:5px 7px;border:1px solid #ddd;border-radius:6px;font-size:12px;">' +
+                  '<input type="file" name="proof" accept="image/*,.pdf" style="max-width:140px;font-size:12px;" title="Proof of Payment">' +
+                  '<button class="btn small" type="submit">Add Payment</button>' +
+                '</form>'
+              : '') +
+            '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;">' +
+              (canAct ? '<button class="btn small secondary" data-act="complete" data-id="' + h.id + '">Complete</button>' : '') +
+              (canEditAmount ? '<button class="btn small secondary" data-act="edit-hold" data-id="' + h.id + '">Edit</button>' : '') +
+              (canFinalDelete ? '<button class="btn small secondary" data-act="cancel" data-id="' + h.id + '">Cancel</button>' : '') +
+              // Forfeited is a separate final disposition from Cancelled -- the
+              // customer never came back to pay by the Forfeit Date, as opposed to a
+              // deliberate back-out (Ren, 2026-09-17: wanted these told apart in
+              // their own folder). Same Admin-only gate and stock-release effect as
+              // Cancel, matching forfeit_layaway_hold()'s own server-side gate.
+              (canFinalDelete ? '<button class="btn small secondary" data-act="forfeit" data-id="' + h.id + '">Forfeit</button>' : '') +
+              // Delete is distinct from Cancel -- permanently erases the row (blocked
+              // server-side if it has any payments, or is Completed), for pure
+              // data-entry mistakes rather than a real customer cancellation (Ren,
+              // 2026-09-16: "make a folder ... for cancelled, delete, completed, on
+              // hold").
+              (canFinalDelete ? '<button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '">Delete</button>' : '') +
+            '</div>' +
+            (canEditAmount ? editHoldFormHtml(h) : '') +
+          '</div>'
+        : '') +
+      ((h.status === 'Cancelled' || h.status === 'Forfeited') && canFinalDelete
+        ? '<div class="drawer-section"><button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '">Delete</button></div>'
+        : '');
+  }
+
+  // Same wiring the old per-row cell used to attach across the whole table, now
+  // scoped to just the one hold's drawer body -- refreshDetailIfOpen() re-renders
+  // this same drawer with fresh data after an in-place action (Add Payment, Delete
+  // Payment, Edit), or closeDetailDrawer() after an action that moves the hold to a
+  // different status folder entirely.
+  function wireDetailBody(container, h) {
+    const payForm = container.querySelector('.lw-pay-form');
+    if (payForm) payForm.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const f = ev.target;
       const btn = f.querySelector('button[type=submit]');
@@ -679,12 +798,13 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         await addLayawayPayment(Number(f.dataset.holdId), Number(f.amount.value), f.method.value, f.reference.value.trim(), attachmentPath, f.paidAt.value);
         notify('Payment added.', false);
         await load();
+        refreshDetailIfOpen(h.id);
       } catch (err) {
         notify(String(err.message || err), true);
         btn.disabled = false;
       }
-    }));
-    list.querySelectorAll('[data-act="view-proof"]').forEach((btn) => btn.addEventListener('click', async () => {
+    });
+    container.querySelectorAll('[data-act="view-proof"]').forEach((btn) => btn.addEventListener('click', async () => {
       try {
         const url = await getLayawayPaymentProofUrl(btn.dataset.path);
         window.open(url, '_blank');
@@ -693,79 +813,89 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       }
     }));
 
-    list.querySelectorAll('[data-act="complete"]').forEach((btn) => btn.addEventListener('click', async () => {
-      const hold = allHolds.find((h) => h.id === Number(btn.dataset.id));
-      const paid = hold ? paidSoFar(hold) : 0;
-      if (hold && hold.total_price != null && paid < Number(hold.total_price)) {
-        if (!confirm('Not fully paid yet (' + money(paid) + ' of ' + money(hold.total_price) + '). Complete anyway?')) return;
+    const completeBtn = container.querySelector('[data-act="complete"]');
+    if (completeBtn) completeBtn.addEventListener('click', async () => {
+      const paid = paidSoFar(h);
+      if (h.total_price != null && paid < Number(h.total_price)) {
+        if (!confirm('Not fully paid yet (' + money(paid) + ' of ' + money(h.total_price) + '). Complete anyway?')) return;
       } else if (!confirm('Mark this layaway as completed and sold?')) return;
-      try { await completeLayaway(Number(btn.dataset.id)); notify('Layaway completed.', false); await load(); }
+      try { await completeLayaway(h.id); notify('Layaway completed.', false); await load(); closeDetailDrawer(); }
       catch (err) { notify(String(err.message || err), true); }
-    }));
+    });
 
-    list.querySelectorAll('[data-act="cancel"]').forEach((btn) => btn.addEventListener('click', async () => {
+    const cancelBtn = container.querySelector('[data-act="cancel"]');
+    if (cancelBtn) cancelBtn.addEventListener('click', async () => {
       if (!confirm('Cancel this layaway? The item goes back to Available stock.')) return;
-      try { await cancelLayaway(Number(btn.dataset.id)); notify('Layaway cancelled.', false); await load(); }
+      try { await cancelLayaway(h.id); notify('Layaway cancelled.', false); await load(); closeDetailDrawer(); }
       catch (err) { notify(String(err.message || err), true); }
-    }));
+    });
 
-    list.querySelectorAll('[data-act="forfeit"]').forEach((btn) => btn.addEventListener('click', async () => {
+    const forfeitBtn = container.querySelector('[data-act="forfeit"]');
+    if (forfeitBtn) forfeitBtn.addEventListener('click', async () => {
       if (!confirm('Mark this layaway as Forfeited? The customer never paid it off -- the item goes back to Available stock.')) return;
-      try { await forfeitLayawayHold(Number(btn.dataset.id)); notify('Layaway forfeited.', false); await load(); }
+      try { await forfeitLayawayHold(h.id); notify('Layaway forfeited.', false); await load(); closeDetailDrawer(); }
       catch (err) { notify(String(err.message || err), true); }
-    }));
+    });
 
-    list.querySelectorAll('[data-act="complete-group"]').forEach((btn) => btn.addEventListener('click', async () => {
-      const members = (groupMembers[btn.dataset.group] || []).filter((h) => h.status === 'On Hold');
+    const completeGroupBtn = container.querySelector('[data-act="complete-group"]');
+    if (completeGroupBtn) completeGroupBtn.addEventListener('click', async () => {
+      const members = (groupMembers[h.group_id] || []).filter((x) => x.status === 'On Hold');
       if (!confirm('Mark all ' + members.length + ' items in this order as completed and sold?')) return;
       try {
-        for (const h of members) await completeLayaway(h.id);
+        for (const m of members) await completeLayaway(m.id);
         notify(members.length + ' item(s) completed.', false);
       } catch (err) {
         notify(String(err.message || err), true);
       } finally {
         await load();
+        closeDetailDrawer();
       }
-    }));
+    });
 
-    list.querySelectorAll('[data-act="delete-hold"]').forEach((btn) => btn.addEventListener('click', async () => {
-      if (!confirm('Permanently delete this layaway? This cannot be undone (blocked automatically if it has any payments recorded).')) return;
-      try { await deleteLayawayHold(Number(btn.dataset.id)); notify('Layaway deleted.', false); await load(); }
-      catch (err) { notify(String(err.message || err), true); }
-    }));
-
-    list.querySelectorAll('[data-act="cancel-group"]').forEach((btn) => btn.addEventListener('click', async () => {
-      const members = (groupMembers[btn.dataset.group] || []).filter((h) => h.status === 'On Hold');
+    const cancelGroupBtn = container.querySelector('[data-act="cancel-group"]');
+    if (cancelGroupBtn) cancelGroupBtn.addEventListener('click', async () => {
+      const members = (groupMembers[h.group_id] || []).filter((x) => x.status === 'On Hold');
       if (!confirm('Cancel all ' + members.length + ' items in this order? They all go back to Available stock.')) return;
       try {
-        for (const h of members) await cancelLayaway(h.id);
+        for (const m of members) await cancelLayaway(m.id);
         notify(members.length + ' item(s) cancelled.', false);
       } catch (err) {
         notify(String(err.message || err), true);
       } finally {
         await load();
+        closeDetailDrawer();
       }
-    }));
+    });
 
-    list.querySelectorAll('[data-act="del-payment"]').forEach((btn) => btn.addEventListener('click', async () => {
+    const deleteBtn = container.querySelector('[data-act="delete-hold"]');
+    if (deleteBtn) deleteBtn.addEventListener('click', async () => {
+      if (!confirm('Permanently delete this layaway? This cannot be undone (blocked automatically if it has any payments recorded).')) return;
+      try { await deleteLayawayHold(h.id); notify('Layaway deleted.', false); await load(); closeDetailDrawer(); }
+      catch (err) { notify(String(err.message || err), true); }
+    });
+
+    container.querySelectorAll('[data-act="del-payment"]').forEach((btn) => btn.addEventListener('click', async () => {
       if (!confirm('Delete this payment entry?')) return;
-      try { await deleteLayawayPayment(Number(btn.dataset.id)); notify('Payment removed.', false); await load(); }
+      try { await deleteLayawayPayment(Number(btn.dataset.id)); notify('Payment removed.', false); await load(); refreshDetailIfOpen(h.id); }
       catch (err) { notify(String(err.message || err), true); }
     }));
 
-    list.querySelectorAll('[data-act="edit-hold"]').forEach((btn) => btn.addEventListener('click', () => {
-      const form = list.querySelector('.lw-edit-form[data-hold-id="' + btn.dataset.id + '"]');
+    const editBtn = container.querySelector('[data-act="edit-hold"]');
+    if (editBtn) editBtn.addEventListener('click', () => {
+      const form = container.querySelector('.lw-edit-form[data-hold-id="' + h.id + '"]');
       if (!form) return;
       const opening = form.style.display === 'none';
-      list.querySelectorAll('.lw-edit-form').forEach((f) => { f.style.display = 'none'; });
-      if (opening) { form.style.display = ''; attachSkuAutocomplete(form); }
-    }));
-    list.querySelectorAll('[data-act="close-edit-hold"]').forEach((btn) => btn.addEventListener('click', () => {
-      const form = list.querySelector('.lw-edit-form[data-hold-id="' + btn.dataset.id + '"]');
+      form.style.display = opening ? '' : 'none';
+      if (opening) attachSkuAutocomplete(form);
+    });
+    const closeEditBtn = container.querySelector('[data-act="close-edit-hold"]');
+    if (closeEditBtn) closeEditBtn.addEventListener('click', () => {
+      const form = container.querySelector('.lw-edit-form[data-hold-id="' + h.id + '"]');
       if (form) form.style.display = 'none';
-    }));
-    list.querySelectorAll('[data-act="save-edit-hold"]').forEach((btn) => btn.addEventListener('click', async () => {
-      const form = list.querySelector('.lw-edit-form[data-hold-id="' + btn.dataset.id + '"]');
+    });
+    const saveEditBtn = container.querySelector('[data-act="save-edit-hold"]');
+    if (saveEditBtn) saveEditBtn.addEventListener('click', async () => {
+      const form = container.querySelector('.lw-edit-form[data-hold-id="' + h.id + '"]');
       if (!form) return;
       const sku = form.querySelector('[name=sku]').value.trim();
       const qty = Number(form.querySelector('[name=qty]').value);
@@ -776,25 +906,25 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       const notes = form.querySelector('[name=notes]').value.trim();
       const reason = form.querySelector('[name=reason]').value.trim();
       if (!sku || !qty || qty <= 0 || !customerName) { notify('SKU, a positive Qty, and Customer Name are required.', true); return; }
-      const original = allHolds.find((x) => x.id === Number(btn.dataset.id));
-      const amountChanged = original && (Number(original.unit_price) !== Number(unitPrice) || Number(original.qty) !== qty);
+      const amountChanged = Number(h.unit_price) !== Number(unitPrice) || Number(h.qty) !== qty;
       // Ren's spec section 126: reason required whenever the amount/qty actually
       // changes -- checked here too (not just server-side) so the user isn't
       // surprised by a rejected save after already reviewing the confirmation below.
       if (amountChanged && !reason) { notify('A reason is required when changing the amount or quantity.', true); return; }
       // Ren's spec section 127: confirm old vs new amount before saving.
       if (amountChanged && !confirm(
-        'Confirm amount change?\n\nOld Amount: ' + money(original.unit_price) + '\nNew Amount: ' + money(unitPrice) +
-        '\nDifference: ' + money(Number(unitPrice || 0) - Number(original.unit_price || 0)) + '\n\nReason: ' + reason
+        'Confirm amount change?\n\nOld Amount: ' + money(h.unit_price) + '\nNew Amount: ' + money(unitPrice) +
+        '\nDifference: ' + money(Number(unitPrice || 0) - Number(h.unit_price || 0)) + '\n\nReason: ' + reason
       )) return;
       try {
-        await editLayawayHold({ holdId: Number(btn.dataset.id), sku, qty, unitPrice, customerName, contactNumber, orderId, notes, reason });
+        await editLayawayHold({ holdId: h.id, sku, qty, unitPrice, customerName, contactNumber, orderId, notes, reason });
         notify('Layaway updated.', false);
         await load();
+        refreshDetailIfOpen(h.id);
       } catch (err) {
         notify(String(err.message || err), true);
       }
-    }));
+    });
   }
 
   function render() {
