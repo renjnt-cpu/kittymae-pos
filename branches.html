@@ -169,11 +169,7 @@ if (employee) {
     document.getElementById('layaway-branch-label').textContent = label;
     document.getElementById('scrap-branch-label').textContent = label;
     document.getElementById('sub-branch-label').textContent = label;
-    // A view-restricted employee's Online Orders board always shows their own branch
-    // (onlineOrdersTab.js's isViewRestricted), so its heading must say that branch.
-    document.getElementById('online-branch-label').textContent = onlineOrders?.isViewRestricted
-      ? ' — ' + branchName(onlineOrders.ownBranchId)
-      : label;
+    document.getElementById('online-branch-label').textContent = label;
   }
 
   // Ren, 2026-09-21, section 2: "If a layaway transaction has already been marked as

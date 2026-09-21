@@ -313,12 +313,26 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     '<div class="tiles" id="mm-tiles"></div>' +
     '<div id="mm-table"></div>' +
     // Ren, 2026-09-18: "when filter range show this who also pay the date when
-    // filter" -- the rollup above is by hold_date (when the item was purchased);
-    // this is the same From/To range applied to payments' OWN dates instead, so
-    // "who paid, how much, and when" for that period is checkable directly,
-    // rather than only inferable from the aggregate Total Paid number.
-    '<h3 style="margin-top:20px;">Payments Received <span class="muted" style="font-weight:normal;">— by payment date, same range as above</span></h3>' +
-    '<div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' + sortControlHtml(MM_PAY_SORT_FIELDS, mmPaySort, 'mm-pay-sort-field', 'mm-pay-sort-dir') + '</div></div>' +
+    // filter" -- who paid, how much, and when is checkable directly, rather than
+    // only inferable from the aggregate Total Paid number above. Given its own full
+    // filter set (Ren, 2026-09-22: Date/Amount/Method/Status/Recorded By), separate
+    // from the rollup's own From/To -- branch isn't one of them since this whole tab
+    // is already scoped to one branch, so a Branch filter here would never narrow
+    // anything.
+    '<h3 style="margin-top:20px;">Payments Received <span class="muted" style="font-weight:normal;">— by payment date</span></h3>' +
+    '<div class="card">' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+        '<div class="field" style="min-width:180px;"><label>Search</label><input type="text" id="mm-pay-f-search" placeholder="SKU, customer, amount, receipt #…"></div>' +
+        '<div class="field"><label>From</label><input type="date" id="mm-pay-f-from"></div>' +
+        '<div class="field"><label>To</label><input type="date" id="mm-pay-f-to"></div>' +
+        '<div class="field"><label>Method</label><select id="mm-pay-f-method"><option value="all">All</option>' + PAYMENT_METHODS.map((m) => '<option>' + m + '</option>').join('') + '</select></div>' +
+        '<div class="field"><label>Status</label><select id="mm-pay-f-status"><option value="all">All</option><option>Downpayment</option><option>Partial</option><option>Paid in Full</option></select></div>' +
+        '<div class="field"><label>Recorded By</label><select id="mm-pay-f-recordedby"><option value="all">All</option></select></div>' +
+        sortControlHtml(MM_PAY_SORT_FIELDS, mmPaySort, 'mm-pay-sort-field', 'mm-pay-sort-dir') +
+        '<button type="button" class="btn small secondary" id="mm-pay-f-clear">Clear Filters</button>' +
+      '</div>' +
+    '</div>' +
+    '<div id="mm-pay-active"></div>' +
     '<div id="mm-payments-table"></div>' +
 
     '<h3 style="margin-top:22px;">Forfeiture Watch <span class="muted" style="font-weight:normal;">— On Hold items, most urgent first (not affected by the date range above)</span></h3>' +
@@ -614,8 +628,23 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     renderMonthly();
   });
   wireSortControl('mm-sort-field', 'mm-sort-dir', mmSort, renderMonthly);
-  wireSortControl('mm-pay-sort-field', 'mm-pay-sort-dir', mmPaySort, () => renderMonthlyPayments(document.getElementById('mm-from').value, document.getElementById('mm-to').value));
+  wireSortControl('mm-pay-sort-field', 'mm-pay-sort-dir', mmPaySort, renderMonthlyPayments);
   wireSortControl('fw-sort-field', 'fw-sort-dir', fwSort, renderForfeitureWatch);
+  document.getElementById('mm-pay-f-search').addEventListener('input', renderMonthlyPayments);
+  document.getElementById('mm-pay-f-from').addEventListener('change', renderMonthlyPayments);
+  document.getElementById('mm-pay-f-to').addEventListener('change', renderMonthlyPayments);
+  document.getElementById('mm-pay-f-method').addEventListener('change', renderMonthlyPayments);
+  document.getElementById('mm-pay-f-status').addEventListener('change', renderMonthlyPayments);
+  document.getElementById('mm-pay-f-recordedby').addEventListener('change', renderMonthlyPayments);
+  document.getElementById('mm-pay-f-clear').addEventListener('click', () => {
+    document.getElementById('mm-pay-f-search').value = '';
+    document.getElementById('mm-pay-f-from').value = '';
+    document.getElementById('mm-pay-f-to').value = '';
+    document.getElementById('mm-pay-f-method').value = 'all';
+    document.getElementById('mm-pay-f-status').value = 'all';
+    document.getElementById('mm-pay-f-recordedby').value = 'all';
+    renderMonthlyPayments();
+  });
 
   async function load() {
     const list = document.getElementById('lw-list');
@@ -1066,7 +1095,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   function renderMonthly() {
     const fFrom = document.getElementById('mm-from').value;
     const fTo = document.getElementById('mm-to').value;
-    renderMonthlyPayments(fFrom, fTo);
+    renderMonthlyPayments();
     // Cancelled/Forfeited excluded here too, same as the On Hold list above --
     // otherwise a dead hold's value/paid amounts would still bleed into Total Value/
     // Total Paid/Remaining even with its own status column gone.
@@ -1122,13 +1151,21 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   }
 
   // Ren, 2026-09-18: "when filter range show this who also pay the date when filter"
-  // -- same From/To inputs as the rollup above, but applied to each PAYMENT's own
-  // paid_at instead of its hold's hold_date, and listing them individually rather than
-  // rolling them into one number. Every hold regardless of status is included here
-  // (unlike the rollup, which excludes Cancelled/Forfeited) -- a payment that actually
-  // happened stays on this ledger even if the hold it was against was later cancelled.
-  function renderMonthlyPayments(fFrom, fTo) {
+  // -- applied to each PAYMENT's own paid_at (not its hold's hold_date), listing them
+  // individually rather than rolling them into one number. Every hold regardless of
+  // status is included here (unlike the rollup, which excludes Cancelled/Forfeited)
+  // -- a payment that actually happened stays on this ledger even if the hold it was
+  // against was later cancelled. Own full filter set (Ren, 2026-09-22), independent
+  // of the rollup's From/To above it.
+  function renderMonthlyPayments() {
     const box = document.getElementById('mm-payments-table');
+    const fSearch = document.getElementById('mm-pay-f-search').value.trim().toLowerCase();
+    const fFrom = document.getElementById('mm-pay-f-from').value;
+    const fTo = document.getElementById('mm-pay-f-to').value;
+    const fMethod = document.getElementById('mm-pay-f-method').value;
+    const fStatus = document.getElementById('mm-pay-f-status').value;
+    const recordedByEl = document.getElementById('mm-pay-f-recordedby');
+    const fRecordedBy = recordedByEl.value;
     const payments = [];
     allHolds.forEach((h) => {
       // Status computed against this hold's FULL payment history, not just the
@@ -1141,9 +1178,34 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         payments.push({ ...p, hold: h, paymentStatus: statusById[p.id], recordedBy: p.employees ? p.employees.full_name : '' });
       });
     });
-    const total = payments.reduce((s, p) => s + Number(p.amount || 0), 0); // total follows the date-range FILTER, not sort (section 11)
-    const sortedPayments = applySort(payments, mmPaySort, MM_PAY_SORT_COMPARATORS);
-    if (!sortedPayments.length) { box.innerHTML = '<p class="muted">No payments recorded for this range.</p>'; return; }
+    // Recorded By's own option list is real data, not a fixed enum -- rebuilt from
+    // whatever's actually in range, but only when that set changes, so a mid-typing
+    // selection isn't wiped out by every re-render.
+    const names = [...new Set(payments.map((p) => p.recordedBy).filter(Boolean))].sort();
+    if (recordedByEl.dataset.optionsFor !== names.join('|')) {
+      recordedByEl.dataset.optionsFor = names.join('|');
+      recordedByEl.innerHTML = '<option value="all">All</option>' + names.map((n) => '<option>' + esc(n) + '</option>').join('');
+      recordedByEl.value = names.includes(fRecordedBy) ? fRecordedBy : 'all';
+    }
+    let filtered = payments;
+    if (fSearch) filtered = filtered.filter((p) =>
+      p.hold.sku.toLowerCase().includes(fSearch) || p.hold.customer_name.toLowerCase().includes(fSearch) ||
+      String(p.amount).includes(fSearch) || (p.reference_number || '').toLowerCase().includes(fSearch));
+    if (fMethod !== 'all') filtered = filtered.filter((p) => p.payment_method === fMethod);
+    if (fStatus !== 'all') filtered = filtered.filter((p) => p.paymentStatus === fStatus);
+    if (recordedByEl.value !== 'all') filtered = filtered.filter((p) => p.recordedBy === recordedByEl.value);
+
+    const activeEl = document.getElementById('mm-pay-active');
+    activeEl.innerHTML = activeFiltersHtml([
+      { label: 'Search', value: esc(fSearch) }, { label: 'From', value: esc(fFrom) }, { label: 'To', value: esc(fTo) },
+      { label: 'Method', value: fMethod === 'all' ? '' : esc(fMethod) }, { label: 'Status', value: fStatus === 'all' ? '' : esc(fStatus) },
+      { label: 'Recorded By', value: recordedByEl.value === 'all' ? '' : esc(recordedByEl.value) },
+    ], 'mm-pay-f-clear');
+    wireProxyButtons(activeEl);
+
+    const total = filtered.reduce((s, p) => s + Number(p.amount || 0), 0); // total follows the FILTERS, not sort (section 11)
+    const sortedPayments = applySort(filtered, mmPaySort, MM_PAY_SORT_COMPARATORS);
+    if (!sortedPayments.length) { box.innerHTML = '<p class="muted">No payments match these filters.</p>'; return; }
     box.innerHTML = '<div class="table-scroll"><table>' +
       '<thead><tr><th>Date</th><th>Branch</th><th>SKU</th><th>Customer</th><th>Amount</th><th>Method</th><th>Status</th><th>Recorded By</th></tr></thead><tbody>' +
       sortedPayments.map((p) => '<tr>' +
