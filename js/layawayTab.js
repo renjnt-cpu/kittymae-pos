@@ -12,7 +12,60 @@ import {
   requestLayawayForfeitDate, listLayawayForfeitDateRequests, approveLayawayForfeitDate, rejectLayawayForfeitDate,
 } from './api.js';
 import { PAYMENT_METHODS } from './paymentMethods.js';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons } from './uiKit.js';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate } from './uiKit.js';
+
+// Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
+// every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
+// sort UI to learn for this whole tab, not one per folder. Paid/Remaining aren't real
+// columns (they're computed from layaway_payments), so their comparators call
+// paidSoFar() directly instead of byNumber().
+const LW_SORT_FIELDS = [
+  { key: 'hold_date', label: 'Date' }, { key: 'sku', label: 'SKU' }, { key: 'customer_name', label: 'Customer' },
+  { key: 'qty', label: 'Qty' }, { key: 'total_price', label: 'Total' }, { key: 'paid', label: 'Paid' },
+  { key: 'remaining', label: 'Remaining Balance' }, { key: 'status', label: 'Status' },
+];
+function lwSortComparators() {
+  return {
+    hold_date: byDate('hold_date'), sku: byText('sku'), customer_name: byText('customer_name'),
+    qty: byNumber('qty'), total_price: byNumber('total_price'), status: byText('status'),
+    paid: (a, b) => paidSoFar(a) - paidSoFar(b),
+    remaining: (a, b) => (Number(a.total_price || 0) - paidSoFar(a)) - (Number(b.total_price || 0) - paidSoFar(b)),
+  };
+}
+// Monthly Monitoring's own rows are per-month aggregates, not layaway_holds rows, so
+// they get a separate field list/state (spec section 15).
+const MM_SORT_FIELDS = [
+  { key: 'month', label: 'Month' }, { key: 'count', label: 'Count' }, { key: 'value', label: 'Total Value' },
+  { key: 'paid', label: 'Paid' }, { key: 'remaining', label: 'Remaining' },
+];
+const MM_SORT_COMPARATORS = {
+  month: (a, b) => a.month.localeCompare(b.month), count: byNumber('count'), value: byNumber('value'),
+  paid: byNumber('paid'), remaining: (a, b) => (a.value - a.paid) - (b.value - b.paid),
+};
+// Payments Received is Payment History (spec section 16): sortable by date/amount/
+// method/recorded-by/status.
+const MM_PAY_SORT_FIELDS = [
+  { key: 'paid_at', label: 'Payment Date' }, { key: 'amount', label: 'Amount' }, { key: 'payment_method', label: 'Payment Method' },
+  { key: 'recordedBy', label: 'Recorded By' }, { key: 'paymentStatus', label: 'Status' },
+];
+const MM_PAY_SORT_COMPARATORS = {
+  paid_at: byDate('paid_at'), amount: byNumber('amount'), payment_method: byText('payment_method'),
+  recordedBy: byText('recordedBy'), paymentStatus: byText('paymentStatus'),
+};
+// Forfeiture Watch's default (most-urgent-first) is a deliberate business rule, not a
+// generic "newest first" -- kept as the default sort field/direction here rather than
+// overridden by the shared control's own defaults (spec section 23).
+const FW_SORT_FIELDS = [
+  { key: 'urgency', label: 'Days Remaining (most urgent first)' }, { key: 'customer_name', label: 'Customer' },
+  { key: 'sku', label: 'SKU' }, { key: 'paid', label: 'Paid' }, { key: 'remaining', label: 'Remaining' },
+];
+function fwSortComparators() {
+  return {
+    urgency: (a, b) => a.daysPastForfeit - b.daysPastForfeit, customer_name: (a, b) => byText('customer_name')(a.h, b.h),
+    sku: (a, b) => byText('sku')(a.h, b.h), paid: (a, b) => paidSoFar(a.h) - paidSoFar(b.h),
+    remaining: (a, b) => (Number(a.h.total_price || 0) - paidSoFar(a.h)) - (Number(b.h.total_price || 0) - paidSoFar(b.h)),
+  };
+}
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-PH', { dateStyle: 'medium' }) : '—';
@@ -106,6 +159,15 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   // do it too. Matches cancel_layaway's own server-side gate exactly.
   const canFinalDelete = employee.role === 'Admin';
   const staff = await listActiveEmployees();
+  // Three independent { field, dir } states -- one per distinct dataset on this tab
+  // (spec section 9: same state drives desktop/tablet/mobile, but a dataset switch
+  // like On Hold list -> Monthly rollup -> Forfeiture Watch is a genuinely different
+  // list, not a breakpoint, so each earns its own state). Declared before
+  // root.innerHTML below, which already reads them via sortControlHtml().
+  const sort = { field: 'hold_date', dir: 'desc' };
+  const mmSort = { field: 'month', dir: 'desc' };
+  const mmPaySort = { field: 'paid_at', dir: 'desc' };
+  const fwSort = { field: 'urgency', dir: 'desc' };
 
   function notify(text, isError) {
     toast(msgId, text, isError);
@@ -199,6 +261,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     '<div class="card">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
         '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="lw-f-search" placeholder="SKU, customer, order ID, contact…"></div>' +
+        sortControlHtml(LW_SORT_FIELDS, sort, 'lw-sort-field', 'lw-sort-dir') +
         '<button type="button" class="btn small secondary" id="lw-f-clear">Clear Filters</button>' +
       '</div>' +
     '</div>' +
@@ -240,6 +303,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
         '<div class="field"><label>From</label><input type="date" id="mm-from"></div>' +
         '<div class="field"><label>To</label><input type="date" id="mm-to"></div>' +
+        sortControlHtml(MM_SORT_FIELDS, mmSort, 'mm-sort-field', 'mm-sort-dir') +
         '<button type="button" class="btn small secondary" id="mm-clear">All Time</button>' +
       '</div>' +
     '</div>' +
@@ -251,10 +315,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     // "who paid, how much, and when" for that period is checkable directly,
     // rather than only inferable from the aggregate Total Paid number.
     '<h3 style="margin-top:20px;">Payments Received <span class="muted" style="font-weight:normal;">— by payment date, same range as above</span></h3>' +
+    '<div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' + sortControlHtml(MM_PAY_SORT_FIELDS, mmPaySort, 'mm-pay-sort-field', 'mm-pay-sort-dir') + '</div></div>' +
     '<div id="mm-payments-table"></div>' +
 
-    '<h3 style="margin-top:22px;">Forfeiture Watch <span class="muted" style="font-weight:normal;">— On Hold items, oldest first (not affected by the date range above)</span></h3>' +
+    '<h3 style="margin-top:22px;">Forfeiture Watch <span class="muted" style="font-weight:normal;">— On Hold items, most urgent first (not affected by the date range above)</span></h3>' +
     '<p class="muted" style="margin-top:-4px;">Unpaid holds are forfeited 2 months after Date Purchased. Rows turn red once an item is close to or past that. Date Purchased is fixed once set (Admin only can correct it); a Forfeit Date change by anyone else needs Admin approval.</p>' +
+    '<div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' + sortControlHtml(FW_SORT_FIELDS, fwSort, 'fw-sort-field', 'fw-sort-dir') + '</div></div>' +
     '<div id="fw-table"></div>';
 
   // ---- Item rows: one or more SKU/Qty/Price lines under the same order, each with
@@ -532,6 +598,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     document.getElementById('lw-f-search').value = '';
     render();
   });
+  wireSortControl('lw-sort-field', 'lw-sort-dir', sort, render);
   document.getElementById('mm-from').addEventListener('change', renderMonthly);
   document.getElementById('mm-to').addEventListener('change', renderMonthly);
   document.getElementById('mm-clear').addEventListener('click', () => {
@@ -539,6 +606,9 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     document.getElementById('mm-to').value = '';
     renderMonthly();
   });
+  wireSortControl('mm-sort-field', 'mm-sort-dir', mmSort, renderMonthly);
+  wireSortControl('mm-pay-sort-field', 'mm-pay-sort-dir', mmPaySort, () => renderMonthlyPayments(document.getElementById('mm-from').value, document.getElementById('mm-to').value));
+  wireSortControl('fw-sort-field', 'fw-sort-dir', fwSort, renderForfeitureWatch);
 
   async function load() {
     const list = document.getElementById('lw-list');
@@ -965,7 +1035,11 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     document.getElementById('lw-cancelled-count').textContent = '(' + cancelled.length + ')';
     document.getElementById('lw-forfeited-count').textContent = '(' + forfeited.length + ')';
 
-    renderHoldTable('lw-list', onHold);
+    // One sort state, applied to every status folder alike (spec section 20) --
+    // filtering picks WHICH rows show, sort only reorders them, same rule for On
+    // Hold and every folder below it.
+    const cmp = lwSortComparators();
+    renderHoldTable('lw-list', applySort(onHold, sort, cmp));
     if (!onHold.length) {
       const list = document.getElementById('lw-list');
       list.innerHTML = emptyStateHtml({
@@ -974,9 +1048,9 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       });
       wireProxyButtons(list);
     }
-    renderHoldTable('lw-list-completed', completed);
-    renderHoldTable('lw-list-cancelled', cancelled);
-    renderHoldTable('lw-list-forfeited', forfeited);
+    renderHoldTable('lw-list-completed', applySort(completed, sort, cmp));
+    renderHoldTable('lw-list-cancelled', applySort(cancelled, sort, cmp));
+    renderHoldTable('lw-list-forfeited', applySort(forfeited, sort, cmp));
   }
 
   // ---- Monthly Monitoring: a wide, per-month rollup with a date-range-filtered
@@ -1017,13 +1091,16 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       // count rather than individual rows; removed now to match "remove cancelled...
       // for now" fully).
     });
-    const months = Object.keys(byMonth).sort().reverse();
+    // Filtering (the date range above) picks which months are included; sort only
+    // reorders them -- Total Holds/Value/Paid/Remaining stay whatever the range
+    // produced regardless of sort field (spec section 11).
+    const monthRows = applySort(Object.keys(byMonth).map((key) => ({ month: key, ...byMonth[key] })), mmSort, MM_SORT_COMPARATORS);
     const box = document.getElementById('mm-table');
-    if (!months.length) { box.innerHTML = '<p class="muted">No layaway holds for this range.</p>'; return; }
+    if (!monthRows.length) { box.innerHTML = '<p class="muted">No layaway holds for this range.</p>'; return; }
     box.innerHTML = '<div class="table-scroll"><table>' +
       '<thead><tr><th>Month</th><th>Total Holds</th><th>On Hold</th><th>Completed</th><th>Total Value</th><th>Total Paid</th><th>Remaining</th></tr></thead><tbody>' +
-      months.map((key) => {
-        const m = byMonth[key];
+      monthRows.map((m) => {
+        const key = m.month;
         const label = new Date(key + '-02').toLocaleDateString('en-PH', { year: 'numeric', month: 'long' });
         return '<tr>' +
           '<td data-label="Month"><b>' + label + '</b></td>' +
@@ -1054,15 +1131,15 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       (h.layaway_payments || []).forEach((p) => {
         if (fFrom && p.paid_at < fFrom) return;
         if (fTo && p.paid_at > fTo) return;
-        payments.push({ ...p, hold: h, paymentStatus: statusById[p.id] });
+        payments.push({ ...p, hold: h, paymentStatus: statusById[p.id], recordedBy: p.employees ? p.employees.full_name : '' });
       });
     });
-    payments.sort((a, b) => (b.paid_at || '').localeCompare(a.paid_at || ''));
-    if (!payments.length) { box.innerHTML = '<p class="muted">No payments recorded for this range.</p>'; return; }
-    const total = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
+    const total = payments.reduce((s, p) => s + Number(p.amount || 0), 0); // total follows the date-range FILTER, not sort (section 11)
+    const sortedPayments = applySort(payments, mmPaySort, MM_PAY_SORT_COMPARATORS);
+    if (!sortedPayments.length) { box.innerHTML = '<p class="muted">No payments recorded for this range.</p>'; return; }
     box.innerHTML = '<div class="table-scroll"><table>' +
       '<thead><tr><th>Date</th><th>Branch</th><th>SKU</th><th>Customer</th><th>Amount</th><th>Method</th><th>Status</th><th>Recorded By</th></tr></thead><tbody>' +
-      payments.map((p) => '<tr>' +
+      sortedPayments.map((p) => '<tr>' +
         '<td data-label="Date">' + fmtDate(p.paid_at) + '</td>' +
         '<td data-label="Branch">' + esc(p.hold.branches ? p.hold.branches.name : '—') + '</td>' +
         '<td data-label="SKU">' + esc(p.hold.sku) + '</td>' +
@@ -1093,13 +1170,13 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     // computed again per-row below) so both the sort and the new column can use it.
     // Sorted most-urgent-first: already-overdue items surface above ones still
     // safely within their window, matching what a forfeiture watch list is for.
-    const rows = allHolds
+    const unsorted = allHolds
       .filter((h) => h.status === 'On Hold')
       .map((h) => {
         const effectiveForfeit = h.forfeit_date || defaultForfeitDate(h.hold_date);
         return { h, effectiveForfeit, daysPastForfeit: daysSince(effectiveForfeit) };
-      })
-      .sort((a, b) => b.daysPastForfeit - a.daysPastForfeit);
+      });
+    const rows = applySort(unsorted, fwSort, fwSortComparators());
 
     const box = document.getElementById('fw-table');
     if (!rows.length) { box.innerHTML = '<p class="muted">No items currently on hold.</p>'; return; }

@@ -10,7 +10,18 @@ import {
   listSubastaItems, createSubastaItem, updateSubastaItem, deleteSubastaItem, searchProducts, subscribeToChanges,
 } from './api.js';
 import { PAYMENT_METHODS } from './paymentMethods.js';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons } from './uiKit.js';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate } from './uiKit.js';
+
+// Global Filter + Sort rules (Ren, 2026-09-21, section 19): Subasta sortable by Pawn
+// Date/Item/SKU/Weight/Sale Price/Status.
+const SB_SORT_FIELDS = [
+  { key: 'pawn_date', label: 'Pawn Date' }, { key: 'item_description', label: 'Item' }, { key: 'sku', label: 'SKU' },
+  { key: 'weight_grams', label: 'Weight' }, { key: 'status', label: 'Status' }, { key: 'sale_price', label: 'Sale Price' },
+];
+const SB_SORT_COMPARATORS = {
+  pawn_date: byDate('pawn_date'), item_description: byText('item_description'), sku: byText('sku'),
+  weight_grams: byNumber('weight_grams'), status: byText('status'), sale_price: byNumber('sale_price'),
+};
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const weight = (n) => n === null || n === undefined || n === '' ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + 'g';
@@ -71,6 +82,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
   const branchOptions = (selected) => (branches || []).map((b) =>
     '<option value="' + b.id + '"' + (b.id === selected ? ' selected' : '') + '>' + esc(b.name) + '</option>').join('');
   const branchName = (id) => ((branches || []).find((b) => b.id === id) || {}).name || ('Branch #' + id);
+  const sort = { field: 'pawn_date', dir: 'desc' };
 
   root.innerHTML =
     '<div class="module-topbar"><div></div><div style="text-align:right;">' +
@@ -85,6 +97,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
         '<div class="field"><label>Status</label><select id="sb-f-status"><option value="all">All Statuses</option>' + SUB_STATUS_OPTIONS() + '</select></div>' +
         '<div class="field"><label>Pawned From</label><input type="date" id="sb-f-from"></div>' +
         '<div class="field"><label>Pawned To</label><input type="date" id="sb-f-to"></div>' +
+        sortControlHtml(SB_SORT_FIELDS, sort, 'sb-sort-field', 'sb-sort-dir') +
         '<button type="button" class="btn small secondary" id="sb-f-clear">Clear Filters</button>' +
       '</div>' +
     '</div>' +
@@ -313,10 +326,12 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
     }
 
     // Scan-at-a-glance columns only; everything else lives in the Detail Drawer.
+    // Filtering already picked `rows`; sort only reorders them for display (section 11).
+    const sortedRows = applySort(rows, sort, SB_SORT_COMPARATORS);
     list.innerHTML = '<div class="table-scroll table-2col"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
       '<colgroup><col style="width:26%"><col style="width:11%"><col style="width:13%"><col style="width:13%"><col style="width:12%"><col style="width:13%"><col style="width:12%"></colgroup>' +
       '<thead><tr><th>Item</th><th>Weight</th><th>Pawn Ref</th><th>Pawn Date</th><th>Status</th><th>Sale Price</th><th></th></tr></thead><tbody>' +
-      rows.map((r) => '<tr>' +
+      sortedRows.map((r) => '<tr>' +
         '<td data-label="Item">' + esc(r.item_description) + (r.sku ? '<div class="muted" style="font-size:10px;">' + esc(r.sku) + '</div>' : '') + '</td>' +
         '<td data-label="Weight">' + weight(r.weight_grams) + '</td>' +
         '<td data-label="Pawn Ref">' + esc(r.pawn_reference || '—') + '</td>' +
@@ -449,6 +464,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
     document.getElementById('sb-f-to').value = '';
     render();
   });
+  wireSortControl('sb-sort-field', 'sb-sort-dir', sort, render);
 
   const unsubscribe = subscribeToChanges('subasta_items', load);
   await load();

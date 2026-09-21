@@ -10,7 +10,22 @@ import {
   listOrderItemStatuses, listOrderHistoryForItem, getOrderItemStatusCounts, listDeliveredOrders,
   ORDER_ITEM_STATUS_ROW_CAP, setOrderItemStatus, deleteOrderItemStatus, subscribeToChanges,
 } from './api.js';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons } from './uiKit.js';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber } from './uiKit.js';
+
+// Global Filter + Sort rules (Ren, 2026-09-21, section 37): replaces this board's old
+// per-column header-click sort, which silently stopped working on mobile once a
+// board's table collapses to header-less cards below 760px (section 7) -- one Sort
+// control now drives both. "Default" has no comparator below, so it's a deliberate
+// no-op that preserves the API's own (already recency-ordered) row order, same as
+// this board's original unsorted state.
+const OL_SORT_FIELDS = [
+  { key: 'default', label: 'Default (most recent)' }, { key: 'item_name', label: 'Item' }, { key: 'qty', label: 'Qty' },
+  { key: 'status', label: 'Status' }, { key: 'order_reference', label: 'Order / Customer' }, { key: 'notes', label: 'Notes / By' },
+];
+const OL_SORT_COMPARATORS = {
+  item_name: byText('item_name'), qty: byNumber('qty'), status: byText('status'),
+  order_reference: byText('order_reference'), notes: byText('notes'),
+};
 
 // Delivered is a terminal status, always excluded from the working board above (see
 // listOrderItemStatuses()'s TERMINAL_STATUSES filter) -- there are 40,000+ historical
@@ -82,6 +97,7 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
   // highlighted for the other tabs.
   const effectiveBranchId = () => isViewRestricted ? employee.branch_id : getBranchId();
   const canEdit = () => isAdmin || !ADMIN_ONLY_EDIT_BRANCHES.includes(effectiveBranchId());
+  const sort = { field: 'default', dir: 'desc' };
   // Summary tiles -> Search & Filters -> active-filter strip -> Status tabs ->
   // Records (Ren's MASTER UI rule 2), all from the same filtered rows.
   root.innerHTML =
@@ -93,6 +109,7 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
         '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="ol-search" placeholder="Item, SKU, order #, customer, or notes…"></div>' +
         '<div class="field"><label>From</label><input type="date" id="ol-f-from"></div>' +
         '<div class="field"><label>To</label><input type="date" id="ol-f-to"></div>' +
+        sortControlHtml(OL_SORT_FIELDS, sort, 'ol-sort-field', 'ol-sort-dir') +
         '<button type="button" class="btn small secondary" id="ol-f-clear">Clear Filters</button>' +
       '</div>' +
     '</div>' +
@@ -106,7 +123,6 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
   let search = '';
   let fFrom = '';
   let fTo = '';
-  let sortKey = null, sortDir = 'desc';
   let searchTimer = null;
 
   function tabKeysFor(filterId) {
@@ -166,6 +182,7 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
     search = ''; fFrom = ''; fTo = ''; statusFilter = 'all'; // every supported filter, in one go (MASTER UI rule 9)
     load();
   });
+  wireSortControl('ol-sort-field', 'ol-sort-dir', sort, render);
 
   // Debounced for the same reason as movement.html's board -- a single pancake-resync
   // pass can upsert hundreds of rows in a burst, and Realtime fires once per row.
@@ -224,20 +241,11 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
       return;
     }
 
-    if (sortKey) {
-      const dirMul = sortDir === 'desc' ? -1 : 1;
-      rows = [...rows].sort((a, b) => {
-        const av = a[sortKey], bv = b[sortKey];
-        const cmp = sortKey === 'qty' ? Number(av || 0) - Number(bv || 0) : String(av || '').localeCompare(String(bv || ''));
-        return cmp * dirMul;
-      });
-    }
+    // Filtering already picked `rows` above; sort only reorders them for display
+    // (section 11) -- via the shared Sort control in the filter card, not a per-column
+    // header click (which would be invisible once this table collapses to cards).
+    rows = applySort(rows, sort, OL_SORT_COMPARATORS);
 
-    const sortTh = (key, label) => {
-      const active = sortKey === key;
-      const arrow = active ? (sortDir === 'desc' ? ' ▼' : ' ▲') : '';
-      return '<th><button type="button" class="btn small' + (active ? '' : ' secondary') + '" data-ol-sort="' + key + '" style="padding:2px 8px;">' + label + arrow + '</button></th>';
-    };
     // distinctStatuses comes from the active-board aggregate, which excludes every
     // terminal status (including "delivered") -- so a Delivered-tab row's own current
     // status must be added in by hand, or its dropdown would silently default to
@@ -284,7 +292,7 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
       // content (Item+SKU, Order/Customer, Notes/By), the same shape that broke into
       // letter-per-line headers on Layaway's status tables before that fix.
       '<div class="table-scroll table-2col"><table><thead><tr>' +
-        sortTh('item_name', 'Item') + sortTh('qty', 'Qty') + sortTh('status', 'Status') + sortTh('order_reference', 'Order / Customer') + sortTh('notes', 'Notes / By') + '<th></th>' +
+        '<th>Item</th><th>Qty</th><th>Status</th><th>Order / Customer</th><th>Notes / By</th><th></th>' +
       '</tr></thead><tbody>' +
       rows.map((r) =>
         '<tr>' +
@@ -311,12 +319,6 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
       ).join('') +
       '</tbody></table></div>';
 
-    list.querySelectorAll('[data-ol-sort]').forEach((btn) => btn.addEventListener('click', () => {
-      const key = btn.dataset.olSort;
-      if (sortKey === key) { sortDir = sortDir === 'desc' ? 'asc' : 'desc'; }
-      else { sortKey = key; sortDir = 'desc'; }
-      render();
-    }));
     list.querySelectorAll('[data-status-for]').forEach((sel) => sel.addEventListener('change', async () => {
       const id = sel.dataset.statusFor;
       sel.disabled = true;

@@ -11,7 +11,18 @@ import {
   uploadScrapAttachment, getScrapAttachmentUrl, convertScrapToSubasta, subscribeToChanges,
 } from './api.js';
 import { PAYMENT_METHODS } from './paymentMethods.js';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons } from './uiKit.js';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate } from './uiKit.js';
+
+// Global Filter + Sort rules (Ren, 2026-09-21, section 18): Scrap sortable by Date/
+// Metal-Karat/Weight/Amount/Type/Customer.
+const SC_SORT_FIELDS = [
+  { key: 'entry_date', label: 'Date' }, { key: 'metal_type', label: 'Metal/Karat' }, { key: 'customer_name', label: 'Customer' },
+  { key: 'entry_type', label: 'Type' }, { key: 'weight_grams', label: 'Weight' }, { key: 'total_amount', label: 'Amount' },
+];
+const SC_SORT_COMPARATORS = {
+  entry_date: byDate('entry_date'), metal_type: (a, b) => byText('metal_type')(a, b) || byText('karat')(a, b),
+  customer_name: byText('customer_name'), entry_type: byText('entry_type'), weight_grams: byNumber('weight_grams'), total_amount: byNumber('total_amount'),
+};
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + 'g';
@@ -69,6 +80,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     return ['Admin', 'Manager'].includes(employee.role) || employee.position === 'Sales Executive' ||
       (isScoped && getBranchId() === employee.branch_id);
   }
+  const sort = { field: 'entry_date', dir: 'desc' };
 
   // Page order follows Ren's MASTER UI rule 2: primary action at the top, Summary
   // directly below the module header, Search & Filters directly below Summary, then
@@ -87,6 +99,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
         '<div class="field"><label>Type</label><select id="sc-f-type"><option value="all">All</option><option>In</option><option>Out</option></select></div>' +
         '<div class="field"><label>From</label><input type="date" id="sc-f-from" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
         '<div class="field"><label>To</label><input type="date" id="sc-f-to" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
+        sortControlHtml(SC_SORT_FIELDS, sort, 'sc-sort-field', 'sc-sort-dir') +
         '<button type="button" class="btn small secondary" id="sc-f-clear">Clear Filters</button>' +
       '</div>' +
     '</div>' +
@@ -320,10 +333,12 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       return;
     }
 
+    // Filtering already picked `rows`; sort only reorders them for display (section 11).
+    const sortedRows = applySort(rows, sort, SC_SORT_COMPARATORS);
     list.innerHTML = '<div class="table-scroll table-2col"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
       '<colgroup><col style="width:11%"><col style="width:13%"><col style="width:13%"><col style="width:8%"><col style="width:10%"><col style="width:11%"><col style="width:20%"><col style="width:14%"></colgroup>' +
       '<thead><tr><th>Date</th><th>Customer</th><th>Metal/Karat</th><th>Type</th><th>Weight</th><th>Total</th><th>Source/Notes</th><th></th></tr></thead><tbody>' +
-      rows.map((r) => '<tr>' +
+      sortedRows.map((r) => '<tr>' +
         '<td data-label="Date">' + (r.entry_date || '—') + '</td>' +
         '<td data-label="Customer">' + esc(r.customer_name || 'Walk-in') + '</td>' +
         '<td data-label="Metal/Karat">' + esc(r.metal_type) + ' ' + esc(r.karat || '') + '</td>' +
@@ -430,6 +445,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     document.getElementById('sc-f-to').value = '';
     render();
   });
+  wireSortControl('sc-sort-field', 'sc-sort-dir', sort, render);
 
   const unsubscribe = subscribeToChanges(['scrap_entries', 'branch_capital_entries'], load);
   await load();

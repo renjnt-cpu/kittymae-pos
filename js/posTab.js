@@ -15,7 +15,17 @@ import {
 } from './api.js';
 import { branchColor } from './branchColors.js';
 import { POS_PAYMENT_METHODS } from './paymentMethods.js';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons } from './uiKit.js';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort } from './uiKit.js';
+
+// Global Filter + Sort rules (Ren, 2026-09-21, section 12): Sales Transactions sortable
+// across Date & Time/Order/Customer/SKU/Qty/Amount/Payment. The ledger is one row per
+// LINE ITEM but "View Details" acts on the whole sale_group -- so sort operates at the
+// group level (using its first item / totals), same as the group-level filters above
+// it, and every line of a multi-item sale stays together in the sorted order.
+const POS_SORT_FIELDS = [
+  { key: 'sale_date', label: 'Date & Time' }, { key: 'order_number', label: 'Order' }, { key: 'customer_name', label: 'Customer' },
+  { key: 'sku', label: 'SKU (first item)' }, { key: 'qty', label: 'Qty (total items)' }, { key: 'amount', label: 'Amount' }, { key: 'payment_method', label: 'Payment Method' },
+];
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
@@ -91,6 +101,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   // sales_inventory_movements only carries employee_id -- resolved to a display name
   // the same way every other admin-attributed list does (get_employee_names()).
   const employeeNameById = Object.fromEntries((await listActiveEmployees()).map((e) => [e.id, e.full_name]));
+  const sort = { field: 'sale_date', dir: 'desc' };
 
   root.innerHTML =
     '<div class="module-topbar"><div></div><div style="text-align:right;">' +
@@ -106,6 +117,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
         '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="pos-f-search" placeholder="SKU, item, customer, order…"></div>' +
         '<div class="field"><label>From</label><input type="date" id="pos-f-from"></div>' +
         '<div class="field"><label>To</label><input type="date" id="pos-f-to"></div>' +
+        sortControlHtml(POS_SORT_FIELDS, sort, 'pos-sort-field', 'pos-sort-dir') +
         '<button type="button" class="btn small secondary" id="pos-f-clear">Clear Filters</button>' +
       '</div>' +
     '</div>' +
@@ -395,6 +407,15 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   }
   const groupSubtotal = (g) => g.items.reduce((s, r) => s + Number(r.unit_price || 0) * r.qty, 0);
   const groupPaid = (g) => (posPaymentsByGroup[g.groupId] || []).reduce((s, p) => s + Number(p.amount), 0);
+  function posSortComparators() {
+    const text = (key) => (a, b) => String(a.items[0][key] || '').localeCompare(String(b.items[0][key] || ''));
+    return {
+      sale_date: text('sale_date'), order_number: text('order_number'), customer_name: text('customer_name'), sku: text('sku'),
+      qty: (a, b) => a.items.reduce((s, r) => s + r.qty, 0) - b.items.reduce((s, r) => s + r.qty, 0),
+      amount: (a, b) => groupSubtotal(a) - groupSubtotal(b),
+      payment_method: (a, b) => String((posPaymentsByGroup[a.groupId] || [])[0]?.payment_method || '').localeCompare(String((posPaymentsByGroup[b.groupId] || [])[0]?.payment_method || '')),
+    };
+  }
 
   // Pivot: rows = who processed the sale, columns = payment method, cell = money
   // actually collected that way -- Pending-Collection COD is kept out of the
@@ -552,10 +573,12 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     // One formal ledger row per line item (Ren, 2026-09-16: "arrange this POS as
     // formal line those records easily find it"); Date/Order/Customer/Payment repeat
     // on each row of a multi-item sale so the mobile card view keeps working. Every
-    // action moved into the Detail Drawer.
+    // action moved into the Detail Drawer. Filtering already picked `groups`; sort
+    // only reorders them -- every line of one sale stays together (section 11).
+    const sortedGroups = applySort(groups, sort, posSortComparators());
     box.innerHTML = '<div class="table-scroll table-2col"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
       '<thead><tr><th>Date &amp; Time</th><th>Order</th><th>Customer</th><th>SKU</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Total</th><th>Payment</th><th></th></tr></thead><tbody>' +
-      groups.map((g) => {
+      sortedGroups.map((g) => {
         const paidLabel = paymentStatusHtml(g);
         return g.items.map((r) => '<tr>' +
           '<td data-label="Date &amp; Time">' + fmtDateTime(r.sale_date) + '</td>' +
@@ -765,6 +788,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     document.getElementById('pos-f-to').value = '';
     render();
   });
+  wireSortControl('pos-sort-field', 'pos-sort-dir', sort, render);
 
   const unsubscribe = subscribeToChanges(['sales_inventory_movements', 'sale_payments'], load);
   await load();
