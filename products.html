@@ -39,10 +39,13 @@ if (employee) {
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
         '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="f-search" placeholder="SKU or product name…"></div>' +
         '<div class="field"><label>Status</label><select id="f-status"><option value="all">All</option><option value="Active" selected>Active</option><option value="Discontinued">Discontinued</option></select></div>' +
-        '<div class="field"><label>Sort by Branch</label><select id="f-sort-branch"><option value="none">— none (SKU order) —</option>' +
-          branches.map((b) => '<option value="' + b.id + '">' + esc(b.name) + '</option>').join('') +
+        // One Sort control (Ren's 2026-09-21 Filter + Sort spec, section 36) -- generic
+        // fields plus this catalog's own "pcs at this branch" sort share one dropdown.
+        '<div class="field"><label>Sort By</label><select id="f-sort-branch">' +
+          '<option value="sku" selected>SKU</option><option value="item_name">Item Name</option>' +
+          '<optgroup label="Pcs at Branch">' + branches.map((b) => '<option value="' + b.id + '">' + esc(b.name) + '</option>').join('') + '</optgroup>' +
         '</select></div>' +
-        '<div class="field"><label>Order</label><select id="f-sort-dir"><option value="desc">Most pcs first</option><option value="asc">Fewest pcs first</option></select></div>' +
+        '<div class="field"><label>Direction</label><select id="f-sort-dir"><option value="asc" selected>Ascending</option><option value="desc">Descending</option></select></div>' +
         '<button type="button" class="btn small secondary" id="f-clear">Clear Filters</button>' +
       '</div>' +
     '</div>' +
@@ -77,8 +80,8 @@ if (employee) {
   document.getElementById('f-clear').addEventListener('click', () => {
     document.getElementById('f-search').value = '';
     document.getElementById('f-status').value = 'all';
-    document.getElementById('f-sort-branch').value = 'none';
-    document.getElementById('f-sort-dir').value = 'desc';
+    document.getElementById('f-sort-branch').value = 'sku';
+    document.getElementById('f-sort-dir').value = 'asc';
     filterBranchId = null;
     load();
   });
@@ -125,10 +128,18 @@ if (employee) {
     });
     document.getElementById('prod-tiles').innerHTML = tile(grandTotal.toLocaleString('en-PH'), 'Total Pcs (All Branches)') + branchTiles.join('');
 
-    const sortBranchId = document.getElementById('f-sort-branch').value;
-    if (sortBranchId !== 'none') {
-      const dirMul = document.getElementById('f-sort-dir').value === 'asc' ? 1 : -1;
-      const bId = Number(sortBranchId);
+    // Filtering (search/status/branch-column click) already picked `rows`; sort only
+    // reorders them (section 11).
+    const sortKey = document.getElementById('f-sort-branch').value;
+    const dirMul = document.getElementById('f-sort-dir').value === 'asc' ? 1 : -1;
+    const GENERIC_SORT_COMPARATORS = {
+      sku: (a, b) => a.sku.localeCompare(b.sku), item_name: (a, b) => a.item_name.localeCompare(b.item_name),
+    };
+    const genericCmp = GENERIC_SORT_COMPARATORS[sortKey];
+    if (genericCmp) {
+      rows = rows.slice().sort((a, b) => genericCmp(a, b) * dirMul);
+    } else if (sortKey !== 'none') {
+      const bId = Number(sortKey);
       rows = rows.slice().sort((a, b) => {
         const qa = Number((qtyBySku[a.sku] || {})[bId] || 0), qb = Number((qtyBySku[b.sku] || {})[bId] || 0);
         return (qa - qb) * dirMul;

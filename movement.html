@@ -51,7 +51,10 @@
   <div class="card">
     <h3>Order &amp; Item Status</h3>
     <p class="muted" style="margin-top:-4px;">Monitoring only — mirrors Pancake's own Orders stages, focused on the item being pulled/shipped rather than the customer conversation (Pancake already handles that). Not synced live yet; status can be corrected by hand below.</p>
-    <div class="field" style="max-width:380px;"><label>Search</label><input type="text" id="ois-search" placeholder="Item, SKU, order #, customer, or notes…"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+      <div class="field" style="max-width:380px;"><label>Search</label><input type="text" id="ois-search" placeholder="Item, SKU, order #, customer, or notes…"></div>
+      <span id="ois-sort-slot"></span>
+    </div>
     <div id="ois-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>
     <div id="ois-list" style="margin-top:10px;"><div class="muted">Loading…</div></div>
   </div>
@@ -67,6 +70,20 @@ import {
 } from './js/api.js';
 import { renderPosNav } from './js/posNav.js';
 import { branchBadge, branchOptionStyle } from './js/branchColors.js';
+import { sortControlHtml, wireSortControl, applySort, byText, byNumber } from './js/uiKit.js';
+
+// Global Filter + Sort rules (Ren, 2026-09-21, section 17: Record Movement) -- replaces
+// this board's old per-column header-click sort, invisible once the table collapses to
+// header-less cards on mobile, with the one shared Sort control used everywhere else.
+const OIS_SORT_FIELDS = [
+  { key: 'default', label: 'Default (most recent)' }, { key: 'item_name', label: 'Item' }, { key: 'qty', label: 'Qty' },
+  { key: 'branch', label: 'Branch' }, { key: 'status', label: 'Status' }, { key: 'order_reference', label: 'Order / Customer' }, { key: 'notes', label: 'Notes / By' },
+];
+const OIS_SORT_COMPARATORS = {
+  item_name: byText('item_name'), qty: byNumber('qty'), status: byText('status'),
+  order_reference: byText('order_reference'), notes: byText('notes'),
+  branch: (a, b) => String(a.branches?.name || '').localeCompare(String(b.branches?.name || '')),
+};
 
 const REMOVES = new Set(['Stock Out', 'Damage', 'Missing', 'Supplier Return', 'Sale']);
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
@@ -281,13 +298,14 @@ if (employee) {
   // alone has tens of thousands of orders after the historical backfill, so fetching
   // everything silently hit Supabase's default 1000-row cap and hid most of whatever
   // fell outside the most-recent 1000 rows (exactly how Awaiting Stock's real 90
-  // orders were showing as ~27 here). Sort controls sit inside each column's own
-  // <th>, same pattern as Bills/Refunds/the Scrap leaderboard.
+  // orders were showing as ~27 here).
   let orderItems = [];             // whatever the CURRENT tab + search returned (capped -- see api.js)
   let statusCounts = { all: 0 };   // per-status counts across the whole active dataset, for tab badges
   let oisStatusFilter = 'all';
   let oisSearch = '';
-  let oisSort = null, oisSortDir = 'desc';
+  const oisSort = { field: 'default', dir: 'desc' };
+  document.getElementById('ois-sort-slot').outerHTML = sortControlHtml(OIS_SORT_FIELDS, oisSort, 'ois-sort-field', 'ois-sort-dir');
+  wireSortControl('ois-sort-field', 'ois-sort-dir', oisSort, renderOrderItems);
   let oisSearchTimer = null;
 
   function tabKeysFor(filterId) {
@@ -361,21 +379,11 @@ if (employee) {
     const list = document.getElementById('ois-list');
     if (!rows.length) { list.innerHTML = '<p class="muted">No items match this search/filter.</p>'; return; }
 
-    if (oisSort) {
-      const dirMul = oisSortDir === 'desc' ? -1 : 1;
-      const getVal = (r) => oisSort === 'branch' ? (r.branches?.name || '') : r[oisSort];
-      rows = [...rows].sort((a, b) => {
-        const av = getVal(a), bv = getVal(b);
-        const cmp = oisSort === 'qty' ? Number(av || 0) - Number(bv || 0) : String(av || '').localeCompare(String(bv || ''));
-        return cmp * dirMul;
-      });
-    }
+    // Filtering (tab + search) already picked `rows`; sort only reorders them for
+    // display (section 11) -- via the shared Sort control above, not a per-column
+    // header click (invisible once this table collapses to cards on mobile).
+    rows = applySort(rows, oisSort, OIS_SORT_COMPARATORS);
 
-    const sortTh = (key, label) => {
-      const active = oisSort === key;
-      const arrow = active ? (oisSortDir === 'desc' ? ' ▼' : ' ▲') : '';
-      return '<th><button type="button" class="btn small' + (active ? '' : ' secondary') + '" data-ois-sort="' + key + '" style="padding:2px 8px;">' + label + arrow + '</button></th>';
-    };
     const statusOptionsFor = (current) => distinctStatuses.map((s) => '<option value="' + esc(s) + '"' + (s === current ? ' selected' : '') + '>' + esc(prettyStatus(s)) + '</option>').join('');
     // Subtotal reflects exactly what's on screen (status tab + search combined) --
     // most useful when the search narrows down to one item name/SKU, to see at a
@@ -422,7 +430,7 @@ if (employee) {
     ) : '';
 
     list.innerHTML = top5Line + subtotalLine + '<div class="table-scroll table-mini"><table><thead><tr>' +
-        sortTh('item_name', 'Item') + sortTh('qty', 'Qty') + sortTh('branch', 'Branch') + sortTh('status', 'Status') + sortTh('order_reference', 'Order / Customer') + sortTh('notes', 'Notes / By') + '<th></th>' +
+        '<th>Item</th><th>Qty</th><th>Branch</th><th>Status</th><th>Order / Customer</th><th>Notes / By</th><th></th>' +
       '</tr></thead><tbody>' +
       rows.map((r) => {
         const editable = isAdmin || !ADMIN_ONLY_EDIT_BRANCHES.includes(r.branch_id);
@@ -451,12 +459,6 @@ if (employee) {
       }).join('') +
       '</tbody></table></div>';
 
-    list.querySelectorAll('[data-ois-sort]').forEach((btn) => btn.addEventListener('click', () => {
-      const key = btn.dataset.oisSort;
-      if (oisSort === key) { oisSortDir = oisSortDir === 'desc' ? 'asc' : 'desc'; }
-      else { oisSort = key; oisSortDir = 'desc'; }
-      renderOrderItems();
-    }));
     list.querySelectorAll('[data-status-for]').forEach((sel) => sel.addEventListener('change', async () => {
       const id = sel.dataset.statusFor;
       sel.disabled = true;
