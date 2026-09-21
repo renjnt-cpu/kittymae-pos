@@ -77,7 +77,7 @@ const ADMIN_ONLY_EDIT_BRANCHES = [2, 4];
 // Everyone else only ever sees their OWN branch's online orders -- unlike
 // POS/Scrap/Subasta, an online order carries a customer's name and phone number, so
 // Ren asked this one tab to be locked down rather than left "view any branch."
-const UNSCOPED_POSITIONS = ['Sales Executive', 'Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
+const UNSCOPED_POSITIONS = ['Sales Admin Associate', 'Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
 
 /** Mounts the Online Orders board into `root` (an empty container this owns
  * entirely) scoped to `getBranchId()` at call time -- read as a function rather than

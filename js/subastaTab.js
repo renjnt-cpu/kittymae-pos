@@ -74,10 +74,10 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
       POSITION_MANAGERS.includes(employee.position);
   }
   // Add gate: everything canWriteHere() allows, plus any active employee for their
-  // own branch (subasta_any_employee_own_branch_insert), plus Sales Executive
+  // own branch (subasta_any_employee_own_branch_insert), plus Sales Admin Associate
   // company-wide -- "whole staff" can add, the group above can edit/delete.
   function canAddHere() {
-    return canWriteHere() || employee.branch_id === getBranchId() || employee.position === 'Sales Executive';
+    return canWriteHere() || employee.branch_id === getBranchId() || employee.position === 'Sales Admin Associate';
   }
   const branchOptions = (selected) => (branches || []).map((b) =>
     '<option value="' + b.id + '"' + (b.id === selected ? ' selected' : '') + '>' + esc(b.name) + '</option>').join('');

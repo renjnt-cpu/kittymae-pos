@@ -977,7 +977,7 @@ export async function approveBranchCapitalEntry(id) {
 }
 
 /** Admin sets a person's position directly from the Access Checklist -- position drives
- * several access rules (Sales Executive, Admin Assistant, ...) so this is where an
+ * several access rules (Sales Admin Associate, Admin Assistant, ...) so this is where an
  * Admin actually assigns it, rather than every position change needing a DB edit. */
 export async function updateEmployeePosition(employeeId, position) {
   const { error } = await supabase.from('employees').update({ position: position || null }).eq('id', employeeId);

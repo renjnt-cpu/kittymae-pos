@@ -100,7 +100,7 @@ function defaultForfeitDate(holdDateStr) {
 // Same branch-scope rule as assert_can_act_on_branch()/record_sale() -- whole staff
 // can hold/pay/complete/cancel a layaway for their own branch; this group can do it
 // for any branch.
-const UNSCOPED_POSITIONS = ['Sales Executive', 'Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
+const UNSCOPED_POSITIONS = ['Sales Admin Associate', 'Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
 const POSITION_MANAGERS = ['Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
 
 // 3 fixed slots (same pattern as this page's own Scrap/Subasta forms) instead of a

@@ -98,9 +98,9 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
       POSITION_MANAGERS.includes(employee.position);
   }
   // Ringing up a sale: everything canWriteHere() allows, plus any active employee for
-  // their own branch, plus Sales Executive company-wide (assert_can_act_on_branch()).
+  // their own branch, plus Sales Admin Associate company-wide (assert_can_act_on_branch()).
   function canAddHere() {
-    return canWriteHere() || employee.branch_id === getBranchId() || employee.position === 'Sales Executive';
+    return canWriteHere() || employee.branch_id === getBranchId() || employee.position === 'Sales Admin Associate';
   }
   const branchName = (id) => ((branches || []).find((b) => b.id === id) || {}).name || ('Branch #' + id);
   // sales_inventory_movements only carries employee_id -- resolved to a display name

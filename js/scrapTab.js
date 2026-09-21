@@ -71,13 +71,13 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       POSITION_MANAGERS.includes(employee.position);
   }
   // Add gate: everything canWriteHere() allows, plus literally any active employee
-  // for their own branch (scrap_any_employee_own_branch_insert), plus Sales
-  // Executive company-wide (scrap_sales_executive_insert -- no fixed branch_id).
+  // for their own branch (scrap_any_employee_own_branch_insert), plus Sales Admin
+  // Associate company-wide (scrap_sales_executive_insert -- no fixed branch_id).
   function canAddHere() {
-    return canWriteHere() || employee.branch_id === getBranchId() || employee.position === 'Sales Executive';
+    return canWriteHere() || employee.branch_id === getBranchId() || employee.position === 'Sales Admin Associate';
   }
   function canSeeScrapCash() {
-    return ['Admin', 'Manager'].includes(employee.role) || employee.position === 'Sales Executive' ||
+    return ['Admin', 'Manager'].includes(employee.role) || employee.position === 'Sales Admin Associate' ||
       (isScoped && getBranchId() === employee.branch_id);
   }
   const sort = { field: 'entry_date', dir: 'desc' };

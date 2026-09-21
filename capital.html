@@ -45,7 +45,7 @@ if (employee) {
 
   const isAdmin = employee.role === 'Admin';
   // Add + view is limited to Manager, Branch Supervisor, and Personal Assistant (plus
-  // Admin, who has everything) -- Sales Executive, Admin Assistant, and rank-and-file
+  // Admin, who has everything) -- Sales Admin Associate, Admin Assistant, and rank-and-file
   // employees no longer get in here at all (70_branch_capital_restricted_access.sql).
   // Only Admin approves or deletes now -- Manager's and Branch Supervisor's approve
   // rights were revoked in that same migration, so nobody but Ren can auto-approve
