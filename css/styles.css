@@ -119,6 +119,35 @@ button.btn.small { padding:4px 10px; font-size:12px; }
   .table-2col tr { display:grid; grid-template-columns:1fr 1fr; }
   .table-2col td { border-bottom:1px solid #f5f5f5; }
   .table-2col td.full-row { grid-column:1 / -1; }
+
+  /* Multiple payment lines inside one cell (Layaway's Completed/Cancelled/Forfeited
+     folders) -- give each its own bordered block instead of running them together as
+     one dense paragraph (Ren, 2026-09-21: "Payment History ... Do not compress
+     multiple payments into one narrow line"). */
+  .payment-line { border:1px solid #eee; border-radius:8px; padding:8px; margin-bottom:6px; }
+  .payment-line:last-child { margin-bottom:0; }
+  .payment-line .btn.small { min-height:32px; }
+}
+
+/* Wide, many-column tables (table-2col: Scrap/Subasta/Forfeiture Watch/Layaway's
+   status folders) still squeeze into unreadable, letter-per-line headers at plain
+   tablet widths (761-1023px) -- e.g. an iPad-portrait 768px width is ABOVE the
+   760px cutoff above, so they never got the card conversion at all (Ren,
+   2026-09-21, screenshot of Layaway's Completed folder rendering "S K U" one
+   letter per line). Shorter tables elsewhere (Bills, Transactions, ...) genuinely
+   fit fine in this range and are deliberately left as real tables -- this is
+   scoped to .table-2col specifically, not every .table-scroll. */
+@media (max-width:1023px) and (min-width:761px) {
+  .table-scroll.table-2col table, .table-scroll.table-2col tr, .table-scroll.table-2col td { display:block; width:100%; }
+  .table-scroll.table-2col thead tr { display:none; }
+  .table-scroll.table-2col tr:not(.edit-row) { margin-bottom:10px; border:1px solid #eee; border-radius:8px; overflow:hidden; }
+  .table-scroll.table-2col td { border-bottom:1px solid #f5f5f5; padding:8px 12px; white-space:normal !important; }
+  .table-scroll.table-2col td:last-child { border-bottom:none; }
+  .table-scroll.table-2col td[data-label]::before { content:attr(data-label); display:block; font-size:10px; text-transform:uppercase; letter-spacing:0.03em; color:var(--muted); margin-bottom:2px; }
+  .table-scroll.table-2col tr { display:grid; grid-template-columns:1fr 1fr; }
+  .table-scroll.table-2col td.full-row { grid-column:1 / -1; }
+  .payment-line { border:1px solid #eee; border-radius:8px; padding:8px; margin-bottom:6px; }
+  .payment-line:last-child { margin-bottom:0; }
 }
 
 /* ---- App Shell (P0) -- sidebar + header + independently-scrolling main

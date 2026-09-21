@@ -534,7 +534,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     const list = document.getElementById(containerId);
     if (!rows.length) { list.innerHTML = '<p class="muted">None' + (containerId === 'lw-list' ? ' for this filter.' : '.') + '</p>'; return; }
 
-    list.innerHTML = '<div class="table-scroll"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
+    list.innerHTML = '<div class="table-scroll table-2col"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
       '<colgroup><col style="width:13%"><col style="width:9%"><col style="width:7%"><col style="width:12%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:23%"></colgroup>' +
       '<thead><tr><th>SKU</th><th>Order ID</th><th>Qty</th><th>Customer</th><th>Amount</th><th>Total</th><th>Paid</th><th>Status</th><th></th></tr></thead><tbody>' +
       rows.map((h) => {
@@ -553,7 +553,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
             (group ? ' <span class="badge pending" style="font-size:9px;padding:1px 5px;" title="Part of a ' + group.length + '-item hold">' + (groupIdx + 1) + '/' + group.length + '</span>' : '') +
           '</td>' +
           '<td data-label="Qty">' + h.qty + '</td>' +
-          '<td data-label="Customer">' + esc(h.customer_name) + (h.contact_number ? '<div class="muted" style="font-size:10px;">' + esc(h.contact_number) + '</div>' : '') +
+          '<td data-label="Customer" class="full-row">' + esc(h.customer_name) + (h.contact_number ? '<div class="muted" style="font-size:10px;">' + esc(h.contact_number) + '</div>' : '') +
             (h.handler ? '<div class="muted" style="font-size:10px;">Handled by ' + esc(h.handler.full_name) + '</div>' : '') +
             (h.notes ? '<div class="muted" style="font-size:10px;">Note: ' + esc(h.notes) + '</div>' : '') + '</td>' +
           '<td data-label="Amount">' + money(h.unit_price) + '</td>' +
@@ -568,22 +568,26 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
             (h.status === 'Cancelled' && h.cancelled_at ? '<div class="muted" style="font-size:10px;">' + (h.canceller ? esc(h.canceller.full_name) + ' · ' : '') + fmtDateTime(h.cancelled_at) + '</div>' : '') +
             (h.status === 'Forfeited' && h.forfeited_at ? '<div class="muted" style="font-size:10px;">' + (h.forfeiter ? esc(h.forfeiter.full_name) + ' · ' : '') + fmtDateTime(h.forfeited_at) + '</div>' : '') +
           '</td>' +
-          '<td data-label="" style="font-size:11px;">' +
+          '<td data-label="" class="full-row" style="font-size:11px;">' +
             (h.layaway_payments && h.layaway_payments.length
               // Payment date + who recorded it (Ren, 2026-09-18: "add date when they
               // pay also to check") -- same info Forfeiture Watch's own payment list
               // already showed, now here too so it doesn't need a separate page visit.
               // Reference relabeled "Receipt/Txn #" and a Payment Status badge added
-              // per Ren's spec section 1.
-              ? h.layaway_payments.map((p) => '<div>' + money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' · Receipt/Txn #' + esc(p.reference_number) : '') +
+              // per Ren's spec section 1. Each payment gets its own bordered
+              // .payment-line block (Ren's spec section 16: "Do not compress multiple
+              // payments into one narrow line") instead of running them together.
+              ? h.layaway_payments.map((p) => '<div class="payment-line">' + money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' · Receipt/Txn #' + esc(p.reference_number) : '') +
                   ' <span class="badge ' + (paymentStatusById[p.id] === 'Paid in Full' ? 'ok' : 'pending') + '" style="font-size:9px;padding:1px 5px;">' + paymentStatusById[p.id] + '</span>' +
-                  (p.attachment_path ? ' <button type="button" class="btn small secondary" data-act="view-proof" data-path="' + esc(p.attachment_path) + '" style="padding:1px 6px;">Proof</button>' : '') +
-                  (canManage ? ' <button class="btn small secondary" data-act="del-payment" data-id="' + p.id + '" style="padding:1px 6px;">✕</button>' : '') +
-                  '<div class="muted" style="font-size:10px;">' + fmtDate(p.paid_at) + (p.employees ? ' · ' + esc(p.employees.full_name) : '') + '</div>' +
+                  '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">' +
+                    (p.attachment_path ? '<button type="button" class="btn small secondary" data-act="view-proof" data-path="' + esc(p.attachment_path) + '" style="padding:1px 6px;">Proof</button>' : '') +
+                    (canManage ? '<button class="btn small secondary" data-act="del-payment" data-id="' + p.id + '" style="padding:1px 6px;">✕</button>' : '') +
+                    '<span class="muted" style="font-size:10px;">' + fmtDate(p.paid_at) + (p.employees ? ' · ' + esc(p.employees.full_name) : '') + '</span>' +
+                  '</div>' +
                 '</div>').join('')
               : '') +
             (groupIdx === 0 && groupOnHold.length > 1 && (canAct || canManage)
-              ? '<div style="margin-bottom:4px;display:flex;gap:4px;">' +
+              ? '<div style="margin-bottom:4px;display:flex;flex-wrap:wrap;gap:4px;">' +
                   (canAct ? '<button class="btn small secondary" data-act="complete-group" data-group="' + esc(h.group_id) + '">Complete All (' + groupOnHold.length + ')</button>' : '') +
                   // Cancelling/removing a hold is Admin-only -- narrower than everything
                   // else here, matching cancel_layaway's own server-side gate (Ren,
@@ -606,7 +610,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
                       '<button class="btn small" type="submit">Add Payment</button>' +
                     '</form>'
                   : '') +
-                '<div style="margin-top:4px;display:flex;gap:4px;">' +
+                '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">' +
                   (canAct ? '<button class="btn small secondary" data-act="complete" data-id="' + h.id + '">Complete</button>' : '') +
                   (canManage ? '<button class="btn small secondary" data-act="edit-hold" data-id="' + h.id + '">Edit</button>' : '') +
                   (canFinalDelete ? '<button class="btn small secondary" data-act="cancel" data-id="' + h.id + '">Cancel</button>' : '') +
