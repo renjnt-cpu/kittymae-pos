@@ -714,7 +714,7 @@ if (employee) {
       // repeat on every row of a multi-item sale rather than using rowspan, so the
       // existing data-label mobile-stacking CSS (which has no concept of rowspan)
       // keeps working unchanged on narrow screens.
-      box.innerHTML = '<div class="table-scroll"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
+      box.innerHTML = '<div class="table-scroll table-2col"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
         '<thead><tr><th>Date &amp; Time</th><th>Order</th><th>Customer</th><th>SKU</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Total</th><th>Payment</th><th></th></tr></thead>' +
         '<tbody>' +
         groups.map((g) => {
@@ -726,14 +726,14 @@ if (employee) {
           return g.items.map((r, i) => '<tr>' +
             '<td data-label="Date &amp; Time">' + fmtDateTime(r.sale_date) + '</td>' +
             '<td data-label="Order">' + esc(r.order_number || '—') + '</td>' +
-            '<td data-label="Customer">' + esc(r.customer_name || '—') + '</td>' +
+            '<td data-label="Customer" class="full-row">' + esc(r.customer_name || '—') + '</td>' +
             '<td data-label="SKU">' + esc(r.sku) + '</td>' +
-            '<td data-label="Item">' + esc(r.products?.item_name || '—') + (r.notes ? '<div class="muted" style="font-size:10px;">Note: ' + esc(r.notes) + '</div>' : '') + '</td>' +
+            '<td data-label="Item" class="full-row">' + esc(r.products?.item_name || '—') + (r.notes ? '<div class="muted" style="font-size:10px;">Note: ' + esc(r.notes) + '</div>' : '') + '</td>' +
             '<td data-label="Qty">' + r.qty + '</td>' +
             '<td data-label="Unit Price">' + money(r.unit_price) + '</td>' +
             '<td data-label="Line Total">' + money(Number(r.unit_price || 0) * r.qty) + '</td>' +
-            '<td data-label="Payment">' + paidLabel + '</td>' +
-            '<td style="white-space:nowrap;">' +
+            '<td data-label="Payment" class="full-row">' + paidLabel + '</td>' +
+            '<td class="full-row" style="white-space:nowrap;">' +
               // Edit/Edit Payment now gated by canEditAmount (Auditor/Supervisor only),
               // not canEditSale -- correcting an amount is narrower than everything
               // else this broader group can still do (e.g. Delete Sale below).

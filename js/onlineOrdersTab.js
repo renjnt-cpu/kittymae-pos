@@ -259,12 +259,16 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
     const editable = canEdit();
     list.innerHTML = top5Line + subtotalLine +
       (editable ? '' : '<p class="muted" style="margin:0 0 6px;">View only for this branch — only Admin can change status or delete here.</p>') +
-      '<div class="table-scroll table-mini"><table><thead><tr>' +
+      // table-2col (not table-mini -- that's for genuinely short 3-column tables like
+      // Scrap/Subasta's Current Balance) since this has 6 columns with multi-line
+      // content (Item+SKU, Order/Customer, Notes/By), the same shape that broke into
+      // letter-per-line headers on Layaway's status tables before that fix.
+      '<div class="table-scroll table-2col"><table><thead><tr>' +
         sortTh('item_name', 'Item') + sortTh('qty', 'Qty') + sortTh('status', 'Status') + sortTh('order_reference', 'Order / Customer') + sortTh('notes', 'Notes / By') + '<th></th>' +
       '</tr></thead><tbody>' +
       rows.map((r) =>
         '<tr>' +
-          '<td data-label="Item">' +
+          '<td data-label="Item" class="full-row">' +
             '<button type="button" data-history-toggle="' + r.id + '" data-history-sku="' + esc(r.sku || '') + '" data-history-name="' + esc(r.item_name) + '" ' +
               'style="background:none;border:none;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer;">' +
               '<strong style="text-decoration:underline;text-decoration-style:dotted;">' + esc(r.item_name) + '</strong>' +
@@ -277,13 +281,13 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
               ? '<select data-status-for="' + r.id + '" class="badge ' + statusBadgeClass(r.status) + '" style="border:none;font:inherit;">' + statusOptionsFor(r.status) + '</select>'
               : '<span class="badge ' + statusBadgeClass(r.status) + '">' + esc(prettyStatus(r.status)) + '</span>') +
           '</td>' +
-          '<td data-label="Order / Customer" style="font-size:11px;">' + esc(r.order_reference || '—') + (r.customer_name ? '<div class="muted">' + esc(r.customer_name) + '</div>' : '') + '</td>' +
-          '<td data-label="Notes / By" style="font-size:11px;">' + esc(r.notes || '') +
+          '<td data-label="Order / Customer" class="full-row" style="font-size:11px;">' + esc(r.order_reference || '—') + (r.customer_name ? '<div class="muted">' + esc(r.customer_name) + '</div>' : '') + '</td>' +
+          '<td data-label="Notes / By" class="full-row" style="font-size:11px;">' + esc(r.notes || '') +
             (r.creator ? '<div class="muted" style="font-size:10px;">Added by ' + esc(r.creator.full_name) + '</div>' : '') +
           '</td>' +
-          '<td>' + (editable ? '<button class="btn small secondary" type="button" data-delete-id="' + r.id + '">Delete</button>' : '') + '</td>' +
+          '<td class="full-row">' + (editable ? '<button class="btn small secondary" type="button" data-delete-id="' + r.id + '">Delete</button>' : '') + '</td>' +
         '</tr>' +
-        '<tr class="history-row" data-history-for="' + r.id + '" style="display:none;"><td colspan="6"></td></tr>'
+        '<tr class="history-row" data-history-for="' + r.id + '" style="display:none;"><td colspan="6" class="full-row"></td></tr>'
       ).join('') +
       '</tbody></table></div>';
 
@@ -337,13 +341,13 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
     row.querySelector('td').innerHTML =
       '<div style="padding:8px 4px;">' +
         '<div class="muted" style="font-size:11px;margin-bottom:6px;">' + matches.length + ' order' + (matches.length === 1 ? '' : 's') + ' for this item, across every status and branch</div>' +
-        '<div class="table-scroll"><table><thead><tr><th>Order / Customer</th><th>Status</th><th>Qty</th><th>Notes</th><th>Date</th></tr></thead><tbody>' +
+        '<div class="table-scroll table-2col"><table><thead><tr><th>Order / Customer</th><th>Status</th><th>Qty</th><th>Notes</th><th>Date</th></tr></thead><tbody>' +
         matches.map((m) =>
           '<tr>' +
-            '<td data-label="Order / Customer">' + esc(m.order_reference || '—') + (m.customer_name ? '<div class="muted" style="font-size:11px;">' + esc(m.customer_name) + '</div>' : '') + '</td>' +
+            '<td data-label="Order / Customer" class="full-row">' + esc(m.order_reference || '—') + (m.customer_name ? '<div class="muted" style="font-size:11px;">' + esc(m.customer_name) + '</div>' : '') + '</td>' +
             '<td data-label="Status"><span class="badge ' + statusBadgeClass(m.status) + '">' + esc(prettyStatus(m.status)) + '</span></td>' +
             '<td data-label="Qty">' + m.qty + '</td>' +
-            '<td data-label="Notes" style="font-size:11px;">' + esc(m.notes || '—') + '</td>' +
+            '<td data-label="Notes" class="full-row" style="font-size:11px;">' + esc(m.notes || '—') + '</td>' +
             '<td data-label="Date" style="font-size:11px;white-space:nowrap;">' + fmtDate(m.created_at) + '</td>' +
           '</tr>'
         ).join('') +
