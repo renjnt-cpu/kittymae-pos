@@ -14,7 +14,7 @@ const ACTIVITY_LINKS = {
   layaway_holds: 'branches.html?tab=layaway&open=',
   scrap_entries: 'branches.html?tab=scrap&open=',
   subasta_items: 'branches.html?tab=subasta',
-  pull_out_records: ERP + 'pull-out.html',
+  pull_out_records: ERP + 'pull-out.html?open=',
   inventory_transfers: ERP + 'transfers.html',
   inventory_transactions: 'movement.html',
   refunds: ERP + 'refunds.html',
