@@ -12,7 +12,7 @@ import {
   requestLayawayForfeitDate, listLayawayForfeitDateRequests, approveLayawayForfeitDate, rejectLayawayForfeitDate,
 } from './api.js?v=20260922a';
 import { PAYMENT_METHODS } from './paymentMethods.js?v=20260922a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate } from './uiKit.js?v=20260922a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20260922a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -95,7 +95,7 @@ function daysSince(dateStr) {
 function defaultForfeitDate(holdDateStr) {
   const d = new Date(holdDateStr + 'T00:00:00');
   d.setDate(d.getDate() + FORFEITURE_DAYS);
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
 }
 // Same branch-scope rule as assert_can_act_on_branch()/record_sale() -- whole staff
 // can hold/pay/complete/cancel a layaway for their own branch; this group can do it
@@ -222,7 +222,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
             // CURRENT_DATE with no way to set it at creation time -- fixing it after
             // the fact required an Admin to use Forfeiture Watch's own Date Purchased
             // editor.
-            '<div class="field"><label>Date</label><input type="date" name="holdDate" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
+            '<div class="field"><label>Date</label><input type="date" name="holdDate" value="' + localDateStr() + '"></div>' +
             '<div class="field"><label>Customer Name *</label><input type="text" name="customerName" required></div>' +
             '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
           '</div>' +
@@ -833,7 +833,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
                   // Defaults to today but editable -- lets staff record the real date a
                   // payment actually happened instead of whenever it got typed in
                   // (Ren, 2026-09-18: "add date when they pay").
-                  '<input type="date" name="paidAt" value="' + new Date().toISOString().slice(0, 10) + '" title="Date Paid" style="padding:5px 7px;border:1px solid #ddd;border-radius:6px;font-size:12px;">' +
+                  '<input type="date" name="paidAt" value="' + localDateStr() + '" title="Date Paid" style="padding:5px 7px;border:1px solid #ddd;border-radius:6px;font-size:12px;">' +
                   '<input type="file" name="proof" accept="image/*,.pdf" style="max-width:140px;font-size:12px;" title="Proof of Payment">' +
                   '<button class="btn small" type="submit">Add Payment</button>' +
                 '</form>'

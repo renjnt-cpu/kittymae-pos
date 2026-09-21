@@ -11,7 +11,7 @@ import {
   uploadScrapAttachment, getScrapAttachmentUrl, convertScrapToSubasta, subscribeToChanges,
 } from './api.js?v=20260922a';
 import { PAYMENT_METHODS } from './paymentMethods.js?v=20260922a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate } from './uiKit.js?v=20260922a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20260922a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 18): Scrap sortable by Date/
 // Metal-Karat/Weight/Amount/Type/Customer.
@@ -97,8 +97,8 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
         '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="sc-f-search" placeholder="Metal, grams, customer, payment, source, date…"></div>' +
         '<div class="field"><label>Metal</label><select id="sc-f-metal"><option value="all">All</option><option>Gold</option><option>Silver</option></select></div>' +
         '<div class="field"><label>Type</label><select id="sc-f-type"><option value="all">All</option><option>In</option><option>Out</option></select></div>' +
-        '<div class="field"><label>From</label><input type="date" id="sc-f-from" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
-        '<div class="field"><label>To</label><input type="date" id="sc-f-to" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
+        '<div class="field"><label>From</label><input type="date" id="sc-f-from" value="' + localDateStr() + '"></div>' +
+        '<div class="field"><label>To</label><input type="date" id="sc-f-to" value="' + localDateStr() + '"></div>' +
         sortControlHtml(SC_SORT_FIELDS, sort, 'sc-sort-field', 'sc-sort-dir') +
         '<button type="button" class="btn small secondary" id="sc-f-clear">Clear Filters</button>' +
       '</div>' +
@@ -115,7 +115,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
         '<form id="sc-form" style="display:flex;flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:8px;">' +
           '<div class="drawer-section">' +
             '<h4>Entry</h4>' +
-            '<div class="field"><label>Date</label><input type="date" name="entryDate" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
+            '<div class="field"><label>Date</label><input type="date" name="entryDate" value="' + localDateStr() + '"></div>' +
             '<div class="field"><label>Type *</label><select name="entryType"><option value="In">In (bought from customer)</option><option value="Out">Out (sold to refiner)</option></select></div>' +
             '<div class="field"><label>Metal *</label><select name="metalType" id="sc-metal" required><option>Gold</option><option>Silver</option></select></div>' +
             '<div class="field"><label>Karat / Purity</label><select name="karat" id="sc-karat">' + karatOptionsFor('Gold') + '</select></div>' +
@@ -211,7 +211,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       if (f.attachment.files[0]) await uploadScrapAttachment(getBranchId(), newScrapId, f.attachment.files[0]);
       toast(msgId, 'Entry added.', false);
       f.reset();
-      f.entryDate.value = new Date().toISOString().slice(0, 10);
+      f.entryDate.value = localDateStr();
       document.getElementById('sc-karat').innerHTML = karatOptionsFor(f.metalType.value);
       document.getElementById('sc-karat-other-field').style.display = 'none';
       closeFormDrawer();

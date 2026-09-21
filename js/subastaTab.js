@@ -10,7 +10,7 @@ import {
   listSubastaItems, createSubastaItem, updateSubastaItem, deleteSubastaItem, searchProducts, subscribeToChanges,
 } from './api.js?v=20260922a';
 import { PAYMENT_METHODS } from './paymentMethods.js?v=20260922a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate } from './uiKit.js?v=20260922a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20260922a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 19): Subasta sortable by Pawn
 // Date/Item/SKU/Weight/Sale Price/Status.
@@ -307,7 +307,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
 
     const counts = SUB_STATUSES.reduce((acc, s) => { acc[s] = rows.filter((r) => r.status === s).length; return acc; }, {});
     const soldTotal = rows.filter((r) => r.status === 'Sold').reduce((s, r) => s + Number(r.sale_price || 0), 0);
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = localDateStr();
     const soldToday = rows.filter((r) => r.status === 'Sold' && r.sale_date === todayStr).reduce((s, r) => s + Number(r.sale_price || 0), 0);
     const totalWeight = rows.reduce((s, r) => s + Number(r.weight_grams || 0), 0);
     document.getElementById('sb-tiles').innerHTML =

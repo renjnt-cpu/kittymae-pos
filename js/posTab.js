@@ -15,7 +15,7 @@ import {
 } from './api.js?v=20260922a';
 import { branchColor } from './branchColors.js?v=20260922a';
 import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20260922a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort } from './uiKit.js?v=20260922a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr } from './uiKit.js?v=20260922a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 12): Sales Transactions sortable
 // across Date & Time/Order/Customer/SKU/Qty/Amount/Payment. The ledger is one row per
@@ -286,7 +286,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
 
   const cartItems = () => posCart.filter((it) => it.sku && it.qty > 0).map((it) => ({ sku: it.sku, qty: it.qty, unitPrice: it.unitPrice }));
   const posForm = document.getElementById('pos-form');
-  posForm.saleDate.value = new Date().toISOString().slice(0, 10);
+  posForm.saleDate.value = localDateStr();
   function updateTotals() {
     const items = cartItems();
     const subtotal = items.reduce((s, it) => s + (it.unitPrice || 0) * (it.qty || 0), 0);
@@ -364,7 +364,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
       });
       toast(msgId, 'Sale completed — ' + items.length + ' item(s), ' + money(items.reduce((s, it) => s + (it.unitPrice || 0) * it.qty, 0)) + '.', false);
       f.reset();
-      posForm.saleDate.value = new Date().toISOString().slice(0, 10);
+      posForm.saleDate.value = localDateStr();
       posCart = [];
       renderCart();
       updateTotals();

@@ -3,6 +3,7 @@
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
 import { supabase } from './supabaseClient.js?v=20260922a';
+import { localDateStr } from './uiKit.js?v=20260922a';
 
 /** Resolves the signed-in employee's id for "created_by"/"paid_by"/etc attribution.
  * Goes through the current_employee() RPC (which joins employee_auth_links) rather
@@ -418,7 +419,7 @@ export async function createBill({ name, category, accountName, accountNumber, a
 
 export async function setBillStatus(id, status) {
   const patch = { status, updated_at: new Date().toISOString() };
-  patch.paid_date = status === 'Paid' ? new Date().toISOString().slice(0, 10) : null;
+  patch.paid_date = status === 'Paid' ? localDateStr() : null;
   if (status === 'Paid') {
     patch.paid_by = await currentEmployeeId();
   } else {
@@ -587,7 +588,7 @@ export async function createScrapEntry({ branchId, entryDate, entryType, metalTy
   const empId = await currentEmployeeId();
   const totalAmount = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
   const { data, error } = await supabase.from('scrap_entries').insert({
-    branch_id: branchId, entry_date: entryDate || new Date().toISOString().slice(0, 10),
+    branch_id: branchId, entry_date: entryDate || localDateStr(),
     entry_type: entryType || 'In', metal_type: metalType, karat: karat || null,
     weight_grams: weightGrams, price_per_gram: pricePerGram || null, total_amount: totalAmount || null,
     customer_name: customerName || null, contact_number: contactNumber || null,
@@ -747,7 +748,7 @@ export async function createRefund({ customerName, orderReference, itemDescripti
   const { data, error } = await supabase.from('refunds').insert({
     customer_name: customerName, order_reference: orderReference || null,
     item_description: itemDescription || null, purchase_date: purchaseDate || null,
-    date_requested: dateRequested || new Date().toISOString().slice(0, 10),
+    date_requested: dateRequested || localDateStr(),
     refund_amount: refundAmount, refund_method: refundMethod || 'GCash',
     account_name: accountName || null, account_number: accountNumber || null,
     reason: reason || null, notes: notes || null, created_by: empId,
@@ -900,7 +901,7 @@ export async function createLbcShipment({ branchId, orderId, customerName, track
   const empId = await currentEmployeeId();
   const { error } = await supabase.from('lbc_shipments').insert({
     branch_id: branchId || null, order_id: orderId, customer_name: customerName,
-    tracking_number: trackingNumber || null, ship_date: shipDate || new Date().toISOString().slice(0, 10),
+    tracking_number: trackingNumber || null, ship_date: shipDate || localDateStr(),
     cod_amount: codAmount || null, notes: notes || null, created_by: empId,
   });
   if (error) throw new Error(error.message);
@@ -923,7 +924,7 @@ export async function setLbcStatus(id, status) {
 
 export async function setLbcRemitted(id, remitted) {
   const { error } = await supabase.from('lbc_shipments')
-    .update({ remitted, remitted_date: remitted ? new Date().toISOString().slice(0, 10) : null, updated_at: new Date().toISOString() })
+    .update({ remitted, remitted_date: remitted ? localDateStr() : null, updated_at: new Date().toISOString() })
     .eq('id', id);
   if (error) throw new Error(error.message);
 }
@@ -966,7 +967,7 @@ export async function getBranchCapitalRemaining() {
 export async function createBranchCapitalEntry({ branchId, entryDate, amount, purpose, notes, status, metalType, karat, weightGrams }) {
   const empId = await currentEmployeeId();
   const { error } = await supabase.from('branch_capital_entries').insert({
-    branch_id: branchId, entry_date: entryDate || new Date().toISOString().slice(0, 10),
+    branch_id: branchId, entry_date: entryDate || localDateStr(),
     amount, purpose: purpose || null, notes: notes || null, created_by: empId,
     status: status || 'Approved',
     metal_type: metalType || null, karat: karat || null, weight_grams: weightGrams || null,
@@ -1074,7 +1075,7 @@ export async function createLayawayHold({ sku, branchId, qty, customerName, cont
 export async function addLayawayPayment(holdId, amount, paymentMethod, referenceNumber, attachmentPath, paidAt) {
   const { data, error } = await supabase.rpc('add_layaway_payment', {
     p_hold_id: holdId, p_amount: amount, p_payment_method: paymentMethod, p_reference_number: referenceNumber || null,
-    p_attachment_path: attachmentPath || null, p_paid_at: paidAt || new Date().toISOString().slice(0, 10),
+    p_attachment_path: attachmentPath || null, p_paid_at: paidAt || localDateStr(),
   });
   if (error) throw new Error(error.message);
   return data;

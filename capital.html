@@ -17,7 +17,7 @@ import { initShell, toast, esc } from './js/shell.js?v=20260922a';
 import { getBranches, listBranchCapitalEntries, getBranchCapitalBalances, getBranchCapitalRemaining, createBranchCapitalEntry, approveBranchCapitalEntry, deleteBranchCapitalEntry, subscribeToChanges } from './js/api.js?v=20260922a';
 import { renderPosNav } from './js/posNav.js?v=20260922a';
 import { branchBadge, branchOptionStyle } from './js/branchColors.js?v=20260922a';
-import { sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate } from './js/uiKit.js?v=20260922a';
+import { sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './js/uiKit.js?v=20260922a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 32-ish: Branch transaction
 // details).
@@ -74,7 +74,7 @@ if (employee) {
       '</p>' +
       '<form id="cap-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
         '<div class="field"><label>Branch *</label><select name="branchId" required>' + branchOptions() + '</select></div>' +
-        '<div class="field"><label>Date</label><input type="date" name="entryDate" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
+        '<div class="field"><label>Date</label><input type="date" name="entryDate" value="' + localDateStr() + '"></div>' +
         '<div class="field"><label>Amount (PHP) *</label><input type="number" name="amount" step="0.01" required></div>' +
         '<div class="field"><label>Purpose</label><select name="purposeType" id="purpose-type"><option>Scrap</option><option>Other</option></select></div>' +
         '<div class="field" id="purpose-other-field" style="display:none;"><label>Specify</label><input type="text" name="purposeOther" placeholder="What does \'Other\' mean here?"></div>' +
@@ -146,7 +146,7 @@ if (employee) {
       });
       toast('cap-msg', isManagerial ? 'Entry added.' : 'Entry added — pending approval.', false);
       f.reset();
-      f.entryDate.value = new Date().toISOString().slice(0, 10);
+      f.entryDate.value = localDateStr();
       document.getElementById('purpose-other-field').style.display = 'none';
       document.getElementById('cap-karat-field').style.display = 'none';
       document.getElementById('cap-weight-field').style.display = 'none';

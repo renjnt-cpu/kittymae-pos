@@ -70,7 +70,7 @@ import {
 } from './js/api.js?v=20260922a';
 import { renderPosNav } from './js/posNav.js?v=20260922a';
 import { branchBadge, branchOptionStyle } from './js/branchColors.js?v=20260922a';
-import { sortControlHtml, wireSortControl, applySort, byText, byNumber } from './js/uiKit.js?v=20260922a';
+import { sortControlHtml, wireSortControl, applySort, byText, byNumber, localDateStr } from './js/uiKit.js?v=20260922a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 17: Record Movement) -- replaces
 // this board's old per-column header-click sort, invisible once the table collapses to
@@ -233,7 +233,7 @@ if (employee) {
     try {
       const branchId = isScoped ? employee.branch_id : null;
       if (branchId == null && isScoped) { box.innerHTML = ''; return; }
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localDateStr();
       const rows = await listSales({ branchId: branchId ?? undefined, fromDate: today, toDate: today });
       const totalQty = rows.reduce((s, r) => s + r.qty, 0);
       const totalAmount = rows.reduce((s, r) => s + Number(r.qty) * Number(r.unit_price || 0), 0);

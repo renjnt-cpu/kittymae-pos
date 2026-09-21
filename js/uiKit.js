@@ -92,3 +92,16 @@ export const byNumber = (key) => (a, b) => Number(a[key] || 0) - Number(b[key] |
 // Date/datetime strings (ISO "YYYY-MM-DD" or timestamptz) sort correctly as plain
 // text, so this is really just byText with a clearer name at call sites.
 export const byDate = (key) => (a, b) => String(a[key] || '').localeCompare(String(b[key] || ''));
+
+// "Today" (or an arbitrary Date) as a local YYYY-MM-DD string -- NOT
+// date.toISOString().slice(0, 10), which reports UTC's calendar day. In Manila
+// (UTC+8) that's wrong for 8 hours every day (local midnight through 7:59am is
+// still "yesterday" in UTC) and, for any Date built from a local-midnight string
+// (new Date('2026-09-25T00:00:00')) plus a day offset, wrong ALWAYS -- local
+// midnight is always the previous UTC calendar day at a positive UTC offset. Found
+// 2026-09-21 when a POS sale rung up in the middle of the night saved under
+// yesterday's date and didn't show up where staff expected it.
+export function localDateStr(d) {
+  d = d || new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
