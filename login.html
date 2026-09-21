@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/styles.css?v=20260922a">
 </head>
 <body>
 <div class="center-screen" id="screen">
@@ -25,8 +25,8 @@
 </div>
 
 <script type="module">
-import { supabase } from './js/supabaseClient.js';
-import { signInWithGoogle, signInWithIdPassword, linkEmployee } from './js/auth.js';
+import { supabase } from './js/supabaseClient.js?v=20260922a';
+import { signInWithGoogle, signInWithIdPassword, linkEmployee } from './js/auth.js?v=20260922a';
 
 document.getElementById('google-btn').addEventListener('click', async () => {
   try { await signInWithGoogle(); }

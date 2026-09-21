@@ -2,7 +2,7 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js';
+import { supabase } from './supabaseClient.js?v=20260922a';
 
 /** Resolves the signed-in employee's id for "created_by"/"paid_by"/etc attribution.
  * Goes through the current_employee() RPC (which joins employee_auth_links) rather

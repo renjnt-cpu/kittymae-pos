@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/styles.css?v=20260922a">
 </head>
 <body>
 <main>
@@ -22,10 +22,10 @@
 </main>
 
 <script type="module">
-import { initShell, esc, toast } from './js/shell.js';
-import { getBranches, getInventory, subscribeToChanges } from './js/api.js';
-import { renderPosNav } from './js/posNav.js';
-import { branchButtonStyle } from './js/branchColors.js';
+import { initShell, esc, toast } from './js/shell.js?v=20260922a';
+import { getBranches, getInventory, subscribeToChanges } from './js/api.js?v=20260922a';
+import { renderPosNav } from './js/posNav.js?v=20260922a';
+import { branchButtonStyle } from './js/branchColors.js?v=20260922a';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 
