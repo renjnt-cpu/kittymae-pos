@@ -13,1011 +13,194 @@
 </main>
 
 <script type="module">
+// Branches page: a branch picker plus five per-branch modules (POS, Layaway, Scrap,
+// Subasta, Online Orders), each its own self-contained tab module mounted into its
+// own root -- this page only owns the branch selection, the tab bar, the forfeited-
+// layaway warning, and the activity-feed deep links.
 import { initShell, toast, esc } from './js/shell.js';
-import {
-  getBranches, searchProducts, listActiveEmployees,
-  createPosSale, listSales, listSalePayments, updatePosSaleItem, updatePosSalePayments, markCodCollected, deletePosSale,
-  subscribeToChanges, listLayaways,
-} from './js/api.js';
+import { getBranches, subscribeToChanges, listLayaways } from './js/api.js';
 import { renderPosNav } from './js/posNav.js';
 import { branchButtonStyle } from './js/branchColors.js';
+import { initPosTab } from './js/posTab.js';
 import { initOnlineOrdersTab } from './js/onlineOrdersTab.js';
 import { initLayawayTab } from './js/layawayTab.js';
 import { initScrapTab } from './js/scrapTab.js';
 import { initSubastaTab } from './js/subastaTab.js';
-import { PAYMENT_METHODS, POS_PAYMENT_METHODS } from './js/paymentMethods.js';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons } from './js/uiKit.js';
 
-const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
-// Per Gram jewelry (Ren, 2026-09-18: "since its jewelry per piece i also sell per
-// gram... we will based it per grams") -- a Per Gram SKU's price = its rate
-// (current_gold_rate_per_g) x its weight, computed here (not stored) so it auto-fills
-// into the cart but is still just a starting point staff can adjust by hand.
-const effectivePrice = (p) => p.pricing_mode === 'Per Gram'
-  ? (p.current_gold_rate_per_g != null && p.gross_weight_g != null ? p.current_gold_rate_per_g * p.gross_weight_g : null)
-  : p.system_selling_price;
-
-// POS product-grid filters -- same CHECK-constrained values as products.product_line/
-// metal_purity (02_products_inventory.sql), not a separate free-text list.
-const POS_PRODUCT_LINES = ['18K Saudi Gold', '18K Coated', 'Moissanite', 'Silver 925/999', 'Stainless/Fashion'];
-const POS_METAL_PURITIES = ['24K', '21K', '20K', '18K', '925', '999', 'N/A'];
-
-// 3 fixed slots instead of a dynamic add/remove list -- covers any real split (rarely
-// more than 2 methods on one transaction) without the complexity of managing rows
-// inside innerHTML-rendered forms. Slots left blank/zero are just ignored on submit.
-function paymentSlotsHtml(prefix, existing, opts) {
-  const label0 = (opts && opts.label0) || 'Payment Method';
-  const requireFirst = !(opts && opts.optional);
-  const withReference = opts && opts.withReference;
-  const methods = (opts && opts.methods) || PAYMENT_METHODS;
-  const rows = existing && existing.length ? existing : [];
-  let html = '';
-  for (let i = 0; i < 3; i++) {
-    const row = rows[i] || {};
-    const isRequired = i === 0 && requireFirst;
-    const label = i === 0 ? label0 + (isRequired ? ' *' : ' (optional)') : label0 + ' ' + (i + 1) + ' (optional)';
-    const amtLabel = 'Amount (PHP)' + (isRequired ? ' *' : '');
-    html +=
-      '<div class="field"><label>' + label + '</label><select name="' + prefix + 'Method' + i + '"' + (isRequired ? ' required' : '') + '>' +
-        (!isRequired ? '<option value="">— none —</option>' : '') +
-        methods.map((m) => '<option' + (row.method === m ? ' selected' : '') + '>' + m + '</option>').join('') +
-      '</select></div>' +
-      '<div class="field"><label>' + amtLabel + '</label><input type="number" name="' + prefix + 'Amount' + i + '" step="0.01" min="0"' + (isRequired ? ' required' : '') + (row.amount ? ' value="' + row.amount + '"' : '') + '></div>' +
-      (withReference ? '<div class="field"><label>Reference Number</label><input type="text" name="' + prefix + 'Reference' + i + '"' + (row.reference ? ' value="' + row.reference + '"' : '') + '></div>' : '');
-  }
-  return html;
-}
-function readPaymentSlots(f, prefix) {
-  const payments = [];
-  for (let i = 0; i < 3; i++) {
-    const method = f[prefix + 'Method' + i]?.value;
-    const amount = Number(f[prefix + 'Amount' + i]?.value || 0);
-    const reference = f[prefix + 'Reference' + i]?.value?.trim() || '';
-    if (method && amount > 0) payments.push({ method, amount, reference });
-  }
-  return payments;
-}
 
 const employee = await initShell();
 if (employee) {
   renderPosNav(employee, 'branches.html');
   const root = document.getElementById('branches-root');
+  const branches = await getBranches();
+  // Branches are the primary lens here -- always exactly one selected. Anyone with a
+  // fixed branch_id starts on their own branch (Branch Supervisor is also locked
+  // there); company-wide employees (branch_id null) start on the first branch.
+  let selectedBranch = employee.branch_id ?? branches[0].id;
+  const branchName = (id) => (branches.find((b) => b.id === id) || {}).name || '';
 
-  {
-    // Any active employee can reach this page now -- "whole staff" can add a Scrap or
-    // Subasta entry for their own branch (canAddHere()), everyone can view every
-    // branch, and editing/deleting stays with canWriteHere()'s stricter group.
-    const isScoped = employee.role === 'Branch Supervisor';
-    // Editing/deleting a completed POS sale correction (update_pos_sale_item/
-    // delete_pos_sale enforce this same gate server-side, via
-    // is_admin_manager_supervisor_or_team_leader()) -- Ren, 2026-09-16: "add an edited
-    // details only for me supervisor manager", deliberately narrower than who can ring
-    // up a sale in the first place; extended 2026-09-17 to also cover Branch Team
-    // Leader ("sales admin associate encoded in the pos but team leader and branch can
-    // also edit the details if theres an error") -- a position, not a role, so it's a
-    // separate check from the role list.
-    const canEditSale = ['Admin', 'Manager', 'Branch Supervisor'].includes(employee.role) || employee.position === 'Branch Team Leader';
-    // Ren's spec sections 121-132, confirmed 2026-09-21: correcting an already-recorded
-    // amount (Unit Price, Qty, or a sale's whole payment split) is narrower than the
-    // above -- only the Auditor position or anyone holding a Supervisor-named position/
-    // role, deliberately excluding Admin/Manager/Branch Team Leader unless they also
-    // hold one of those. Delete Sale (a void, not an edit) keeps canEditSale above.
-    // Mirrors is_amount_editor() in the database exactly.
-    const canEditAmount = employee.position === 'Auditor' || employee.role === 'Branch Supervisor' || (employee.position || '').includes('Supervisor');
-    const branches = await getBranches();
-    // For the "Sales by Admin & Payment Method" pivot below -- sales_inventory_movements
-    // only carries employee_id, so this resolves it to a display name the same way
-    // every other admin-attributed list in this app does (get_employee_names()).
-    const employeeNameById = Object.fromEntries((await listActiveEmployees()).map((e) => [e.id, e.full_name]));
-    // Branches are the primary lens here — always exactly one selected, no combined
-    // "All Branches" view. Branch Supervisor is locked to their own; anyone else with
-    // a fixed branch_id (regular branch-tied staff) still starts on their own branch
-    // too, just not locked there -- landing on someone else's branch by default meant
-    // canAddHere()'s own-branch check read false until they noticed and switched tabs,
-    // making Complete Sale look broken. Only truly company-wide employees (Admin/
-    // Manager/Sales Executive-position staff, branch_id null) start on the first branch.
-    let selectedBranch = employee.branch_id ?? branches[0].id;
-    const branchName = (id) => (branches.find((b) => b.id === id) || {}).name || '';
+  // Each module reports its own filtered count for the tab bar (MASTER UI rule 20).
+  let posCount = 0, pos = null;
+  let layawayCount = 0, layaway = null;
+  let scrapCount = 0, scrap = null;
+  let subastaCount = 0, subasta = null;
+  let onlineOrdersCount = 0, onlineOrders = null;
+  let activeSubTab = 'pos';
 
-    // Declared up here (not near loadPos() below) for the same reason as
-    // POSITION_MANAGERS above -- renderScrapSubTabs() reads these counts and is
-    // called once immediately after root.innerHTML is set, before any loader has run.
-    let allPosSales = [], posPaymentsByGroup = {};
-    // Module pill counts follow each module's own active filters, never an
-    // unfiltered total beside a filtered list (MASTER UI rule 20).
-    let posFilteredCount = 0, subastaFilteredCount = 0, subasta = null;
-    let onlineOrdersCount = 0, onlineOrders = null;
-    let layawayCount = 0, layaway = null;
-    let scrapCount = 0, scrap = null;
-    let activeSubTab = 'pos';
+  root.innerHTML =
+    // Forfeited-layaway warning for the selected branch (Ren, 2026-09-21, section 2)
+    // -- parked inside the Global Activity panel's pinned slot once the feed mounts
+    // (spec 312/326); hidden until refreshForfeitedNotice() finds something.
+    '<div id="pos-forfeited-notice" class="act-pinned-warning" style="display:none;"></div>' +
+    '<div class="card">' +
+      '<h3>Branch</h3>' +
+      '<div id="branch-buttons" style="display:flex;gap:8px;flex-wrap:wrap;"></div>' +
+    '</div>' +
+    '<div id="scrap-sub-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 14px;"></div>' +
 
-    // Shared by every row's Edit/Delete buttons -- mirrors the backend RLS exactly
-    // (Admin/Manager anywhere, Branch Supervisor only their own branch, or the
-    // Operations Supervisor/Inventory Supervisor/Admin Assistant position group
-    // anywhere -- is_position_manager() in 62_position_managers_refund_scrap_subasta.sql)
-    // so a button is never shown enabled only to fail with a permission error.
-    // Declared here (not further down, near where it's read) because
-    // renderBranchButtons() -- called below, before the rest of this block runs --
-    // calls canAddHere() -> canWriteHere() -> POSITION_MANAGERS; a `const` declared
-    // after that first call site would throw "Cannot access before initialization"
-    // on every single page load, for every employee.
-    const POSITION_MANAGERS = ['Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
-    function canWriteHere() {
-      return ['Admin', 'Manager'].includes(employee.role) || (isScoped && selectedBranch === employee.branch_id) ||
-        POSITION_MANAGERS.includes(employee.position);
-    }
-
-    // Add gate: everything canWriteHere() allows, plus literally any active employee
-    // for their own branch (scrap_any_employee_own_branch_insert /
-    // subasta_any_employee_own_branch_insert), plus Sales Executive company-wide
-    // (scrap_sales_executive_insert -- she doesn't have a fixed branch_id, rotates
-    // weekly) -- "whole staff" can add, only the position-manager group above (or
-    // Admin/Manager/own-branch Supervisor) can edit or delete afterward.
-    function canAddHere() {
-      return canWriteHere() || employee.branch_id === selectedBranch || employee.position === 'Sales Executive';
-    }
-
-    root.innerHTML =
-      // Ren, 2026-09-21, section 2: a small non-blocking notice for the currently
-      // selected branch's Forfeited layaways, so staff don't mistake one for still
-      // active -- position:fixed puts it in the lower-left regardless of scroll
-      // position; a lower z-index than the mobile Order sheet (50) keeps it out of the
-      // way of normal POS operations. Hidden (display:none) until refreshForfeitedNotice()
-      // actually finds something.
-      // Now parked inside the Global Activity panel's pinned slot once the feed mounts
-      // (spec 312: forfeited stays a high-priority warning, not a fading toast; 326:
-      // the old fixed box is upgraded into that panel) -- see adoptForfeitedNotice().
-      '<div id="pos-forfeited-notice" class="act-pinned-warning" style="display:none;"></div>' +
-      '<div class="card">' +
-        '<h3>Branch</h3>' +
-        '<div id="branch-buttons" style="display:flex;gap:8px;flex-wrap:wrap;"></div>' +
-      '</div>' +
-
-      '<div id="scrap-sub-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 14px;"></div>' +
-
-      '<div id="tab-panel-pos">' +
+    '<div id="tab-panel-pos">' +
       '<h2>POS (Walk-In) <span class="muted" id="pos-branch-label" style="font-weight:normal;"></span></h2>' +
-      // Summary tiles directly under the module header, ahead of the filters (Ren's
-      // MASTER UI rules 2/3) -- they follow the same From/To/Search as the ledger.
-      '<div class="tiles" id="pos-tiles"></div>' +
-      // Filter card moved above both the pivot and the sales list it drives (Ren,
-      // 2026-09-16: "the date range must be put above so once they filter it also
-      // reflect all the data") -- fFrom/fTo in renderPos() filter both; fSearch only
-      // narrows the list below, but lives in the same toolbar since it's one filter UI.
-      '<div class="card">' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-          '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="pos-f-search" placeholder="SKU, item, customer, order…"></div>' +
-          '<div class="field"><label>From</label><input type="date" id="pos-f-from"></div>' +
-          '<div class="field"><label>To</label><input type="date" id="pos-f-to"></div>' +
-          '<button type="button" class="btn small secondary" id="pos-f-clear">Clear Filters</button>' +
-        '</div>' +
-      '</div>' +
-      '<div id="pos-active"></div>' +
-      '<h3 style="margin-top:0;">Sales by Admin &amp; Payment Method <span class="muted" style="font-weight:normal;font-size:12px;">— reflects the From/To date range above, all admins for this branch</span></h3>' +
-      '<div id="pos-by-admin" style="margin-bottom:20px;"><div class="muted">Loading…</div></div>' +
-
-      '<div class="pos-layout">' +
-        '<div class="pos-catalog">' +
-          '<div class="pos-toolbar">' +
-            '<div class="field" style="flex:1;min-width:180px;"><label>Search Products</label><input type="text" id="pos-cat-search" autocomplete="off" placeholder="SKU or item name…"></div>' +
-            '<div class="field"><label>Product Line</label><select id="pos-cat-line"><option value="">All</option>' + POS_PRODUCT_LINES.map((l) => '<option>' + l + '</option>').join('') + '</select></div>' +
-            '<button type="button" class="btn small secondary" id="pos-cat-more-toggle">More filters</button>' +
-          '</div>' +
-          '<div class="pos-toolbar-more" id="pos-cat-more" style="display:none;">' +
-            '<div class="field"><label>Purity</label><select id="pos-cat-purity"><option value="">All</option>' + POS_METAL_PURITIES.map((p) => '<option>' + p + '</option>').join('') + '</select></div>' +
-            '<label class="pos-check"><input type="checkbox" id="pos-cat-instock"> In stock at this branch</label>' +
-          '</div>' +
-          '<div id="pos-cat-grid" class="pos-grid"><p class="muted">Search a SKU or item name to start.</p></div>' +
-        '</div>' +
-        '<div class="pos-order" id="pos-order-panel">' +
-          '<div class="card">' +
-            '<div style="display:flex;justify-content:space-between;align-items:center;">' +
-              '<h3 style="margin:0;">New Sale</h3>' +
-              '<button type="button" class="btn small secondary pos-order-close" id="pos-order-close">✕ Close</button>' +
-            '</div>' +
-            '<p class="muted" style="margin-top:4px;">Tap a product on the left to add it. Stock is deducted immediately on Complete Sale.</p>' +
-            '<div id="pos-write-note"></div>' +
-            '<div id="pos-order-msg"></div>' +
-            '<form id="pos-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
-              '<label style="font-size:13px;font-weight:600;">Items *</label>' +
-              '<div id="pos-cart-lines"><p class="muted" style="font-size:12px;">No items yet — tap a product to add it.</p></div>' +
-              '<div class="field"><label>Order / Reference No.</label><input type="text" name="orderId"></div>' +
-              '<div class="field"><label>Date</label><input type="date" name="saleDate"></div>' +
-              '<div class="field"><label>Customer Name</label><input type="text" name="customerName"></div>' +
-              '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
-              '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
-              paymentSlotsHtml('pos', [], { label0: 'Payment Method', optional: true, withReference: true, methods: POS_PAYMENT_METHODS }) +
-              '<div class="card" style="background:#f7f5f0;margin:6px 0;padding:10px 14px;">' +
-                '<div style="display:flex;justify-content:space-between;font-size:13px;"><span>Subtotal</span><b id="pos-subtotal">₱0.00</b></div>' +
-                '<div style="display:flex;justify-content:space-between;font-size:13px;"><span>Paid</span><b id="pos-paid">₱0.00</b></div>' +
-                '<div style="display:flex;justify-content:space-between;font-size:13px;"><span id="pos-balance-label">Balance Due</span><b id="pos-balance">₱0.00</b></div>' +
-              '</div>' +
-              '<button class="btn" type="submit">Complete Sale</button>' +
-            '</form>' +
-          '</div>' +
-        '</div>' +
-        '<button type="button" class="pos-order-fab" id="pos-order-fab"></button>' +
-      '</div>' +
-
-      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-top:6px;">' +
-        '<h3 style="margin:0;">Sales Transactions</h3>' +
-        // Section 41-51: a Summary popover scoped to whatever's currently visible in
-        // the table below -- Branch/From/To/Search all applied -- distinct from the
-        // "Sales by Admin & Payment Method" pivot above, which is date-only (not
-        // narrowed by search). Same underlying groups/posPaymentsByGroup data either
-        // way, so the two can never disagree (Ren's spec section 51: "same source of
-        // truth").
-        '<div style="position:relative;">' +
-          '<button type="button" class="btn small secondary" id="pos-summary-toggle">Summary ▾</button>' +
-          '<div id="pos-summary-panel" class="pos-summary-panel" style="display:none;"></div>' +
-        '</div>' +
-      '</div>' +
-      '<div id="pos-list"><div class="muted">Loading…</div></div>' +
-      '</div>' +
-
-      '<div id="tab-panel-layaway" style="display:none;">' +
+      '<div id="pos-root"></div>' +
+    '</div>' +
+    '<div id="tab-panel-layaway" style="display:none;">' +
       '<h2>Layaway <span class="muted" id="layaway-branch-label" style="font-weight:normal;"></span></h2>' +
       '<div id="layaway-root"></div>' +
-      '</div>' +
-
-      '<div id="tab-panel-scrap" style="display:none;">' +
+    '</div>' +
+    '<div id="tab-panel-scrap" style="display:none;">' +
       '<h2 id="scrap-heading">Scrap <span class="muted" id="scrap-branch-label" style="font-weight:normal;"></span></h2>' +
       '<div id="scrap-root"></div>' +
-      '</div>' +
-
-      '<div id="tab-panel-subasta" style="display:none;">' +
+    '</div>' +
+    '<div id="tab-panel-subasta" style="display:none;">' +
       '<h2 id="subasta-heading">Subasta <span class="muted" id="sub-branch-label" style="font-weight:normal;"></span></h2>' +
       '<div id="subasta-root"></div>' +
-      '</div>' +
-
-      '<div id="tab-panel-online" style="display:none;">' +
+    '</div>' +
+    '<div id="tab-panel-online" style="display:none;">' +
       '<h2>Online Orders <span class="muted" id="online-branch-label" style="font-weight:normal;"></span></h2>' +
       '<p class="muted" style="margin-top:-4px;">Monitoring only — synced live from Pancake for this branch\'s online (Facebook/Messenger) orders. Status can be corrected by hand below if Pancake\'s own value is off.</p>' +
       '<div id="online-orders-root"></div>' +
-      '</div>';
+    '</div>';
 
-    renderBranchButtons();
+  renderBranchButtons();
+  renderScrapSubTabs();
+
+  const common = { esc, toast, msgId: 'br-msg', getBranchId: () => selectedBranch, employee };
+  onlineOrders = initOnlineOrdersTab({
+    root: document.getElementById('online-orders-root'), ...common,
+    onCountsUpdate: (count) => { onlineOrdersCount = count; renderScrapSubTabs(); },
+  });
+  // Re-render now that onlineOrders exists -- a view-restricted employee's Online
+  // Orders heading shows their own branch, which the first render above couldn't know.
+  renderBranchButtons();
+  pos = await initPosTab({ root: document.getElementById('pos-root'), ...common, branches, onCountUpdate: (count) => { posCount = count; renderScrapSubTabs(); } });
+  layaway = await initLayawayTab({ root: document.getElementById('layaway-root'), ...common, onCountUpdate: (count) => { layawayCount = count; renderScrapSubTabs(); } });
+  scrap = await initScrapTab({ root: document.getElementById('scrap-root'), ...common, onCountUpdate: (count) => { scrapCount = count; renderScrapSubTabs(); } });
+  subasta = await initSubastaTab({ root: document.getElementById('subasta-root'), ...common, branches, onCountUpdate: (count) => { subastaCount = count; renderScrapSubTabs(); } });
+  await refreshForfeitedNotice();
+  // Someone forfeiting a hold (or Admin reopening one) from the Layaway tab should
+  // update the warning without needing a branch switch to refresh it.
+  subscribeToChanges('layaway_holds', refreshForfeitedNotice);
+
+  // ---- tab bar: POS first (the main day-to-day action), then Layaway, Scrap,
+  // Subasta, Online Orders. All five stay mounted so switching never loses a filter
+  // or an open drawer; each pill's count follows that module's own active filters. ----
+  const SUB_TABS = ['pos', 'layaway', 'scrap', 'subasta', 'online'];
+  function renderScrapSubTabs() {
+    const pill = (key, label, dot, count) => {
+      const active = activeSubTab === key;
+      return '<button type="button" data-tab="' + key + '" style="cursor:pointer;font:inherit;padding:8px 16px;border-radius:20px;display:inline-flex;align-items:center;gap:7px;' +
+        (active ? 'background:var(--rose);border:1px solid var(--rose);color:var(--ink);font-weight:600;' : 'background:#fff;border:1px solid #ddd;color:#555;') + '">' +
+        '<span style="width:8px;height:8px;border-radius:50%;background:' + dot + ';display:inline-block;"></span>' + esc(label) +
+        '<span style="background:' + (active ? 'rgba(255,255,255,0.65)' : '#f0f0f0') + ';border-radius:10px;padding:1px 7px;font-size:11px;">' + count + '</span>' +
+      '</button>';
+    };
+    const box = document.getElementById('scrap-sub-tabs');
+    box.innerHTML = pill('pos', 'POS', '#2e7d32', posCount) +
+      pill('layaway', 'Layaway', '#c2185b', layawayCount) +
+      pill('scrap', 'Scrap', '#b06a1f', scrapCount) + pill('subasta', 'Subasta', '#7c3aa8', subastaCount) +
+      pill('online', 'Online Orders', '#1a56b0', onlineOrdersCount);
+    box.querySelectorAll('[data-tab]').forEach((btn) => btn.addEventListener('click', () => showSubTab(btn.dataset.tab)));
+  }
+  function showSubTab(key) {
+    if (!SUB_TABS.includes(key)) return;
+    activeSubTab = key;
+    SUB_TABS.forEach((k) => { document.getElementById('tab-panel-' + k).style.display = activeSubTab === k ? '' : 'none'; });
     renderScrapSubTabs();
+  }
 
-    // ---- POS (Walk-In), P1 responsive redesign: search/filter a product grid,
-    // tap a card to add it to an in-memory cart, adjust qty/price in the order
-    // panel on the right (a floating "Order" button + full-screen sheet below
-    // 1024px, matching the app shell's own breakpoint). readPosItemRows()/
-    // resetPosItemRows() keep their original names/shapes since the submit
-    // handler below (and updatePosTotals()) were built against them -- only
-    // where the data comes from changed, not the contract. ----
-    let posCart = [];
-    let posCatalogResults = [];
-    let posCatalogQuery = '';
-    let posCatalogLine = '';
-    let posCatalogPurity = '';
-    let posCatalogInStockOnly = false;
-    let posCatalogSearchToken = 0, posCatalogSearchTimer = null;
+  // ---- Global Activity feed integration (spec 312/321) ----
+  // (a) The Forfeited notice moves into the feed panel's pinned slot so there's one
+  //     notification box. The feed mounts async from the shell, so handle both orders.
+  const adoptForfeitedNotice = () => {
+    const feed = window.__kmActivity;
+    const notice = document.getElementById('pos-forfeited-notice');
+    if (feed && notice && notice.parentElement !== feed.pinnedSlot) { feed.pinnedSlot.appendChild(notice); feed.refreshPanelVisibility(); }
+  };
+  adoptForfeitedNotice();
+  document.addEventListener('km-activity-ready', adoptForfeitedNotice);
+  // (b) A clicked notification opens its record right here (no reload) when this page
+  //     is already open; from another page it arrives via ?tab=&open= instead.
+  const openers = {
+    pos_sale: (id) => { showSubTab('pos'); pos?.openDetail(id); },
+    layaway_holds: (id) => { showSubTab('layaway'); layaway?.openDetail(Number(id)); },
+    scrap_entries: (id) => { showSubTab('scrap'); scrap?.openDetail(Number(id)); },
+    subasta_items: (id) => { showSubTab('subasta'); subasta?.openDetail(Number(id)); },
+  };
+  window.__kmOpenRecord = (table, id) => { if (!openers[table]) return false; openers[table](id); return true; };
+  const deepLink = new URLSearchParams(window.location.search);
+  const tabToTable = { pos: 'pos_sale', layaway: 'layaway_holds', scrap: 'scrap_entries', subasta: 'subasta_items' };
+  if (deepLink.get('tab')) showSubTab(deepLink.get('tab'));
+  if (deepLink.get('open') && tabToTable[deepLink.get('tab')]) openers[tabToTable[deepLink.get('tab')]](deepLink.get('open'));
 
-    function renderPosCatalogGrid() {
-      const grid = document.getElementById('pos-cat-grid');
-      if (!posCatalogQuery.trim()) { grid.innerHTML = '<p class="muted">Search a SKU or item name to start.</p>'; return; }
-      let rows = posCatalogResults;
-      if (posCatalogLine) rows = rows.filter((p) => p.product_line === posCatalogLine);
-      if (posCatalogPurity) rows = rows.filter((p) => p.metal_purity === posCatalogPurity);
-      if (posCatalogInStockOnly) rows = rows.filter((p) => (p.qty_available || 0) > 0);
-      if (!rows.length) { grid.innerHTML = '<p class="muted">No matching SKUs for this search/filter.</p>'; return; }
-      grid.innerHTML = rows.map((p) => {
-        const stock = p.qty_available;
-        return '<div class="pos-card" data-sku="' + esc(p.sku) + '">' +
-          '<div class="pos-card-thumb">💍</div>' +
-          '<div class="pos-card-name">' + esc(p.item_name) + '</div>' +
-          '<div class="pos-card-meta">' + esc(p.sku) + (p.product_line ? ' · ' + esc(p.product_line) : '') + (p.metal_purity ? ' · ' + esc(p.metal_purity) : '') + '</div>' +
-          (p.gross_weight_g != null ? '<div class="pos-card-meta">' + p.gross_weight_g + 'g</div>' : '') +
-          '<div class="pos-card-price">' + money(effectivePrice(p)) + (p.pricing_mode === 'Per Gram' ? ' <span class="muted" style="font-size:10px;">(' + money(p.current_gold_rate_per_g) + '/g)</span>' : '') + '</div>' +
-          (stock != null ? '<div class="pos-card-stock' + (stock <= 0 ? ' low' : '') + '">' + (stock > 0 ? stock + ' in stock' : 'Out of stock') + '</div>' : '') +
-        '</div>';
-      }).join('');
-      grid.querySelectorAll('.pos-card').forEach((card) => {
-        card.addEventListener('click', () => addToPosCart(card.dataset.sku));
-      });
-    }
+  function renderBranchButtons() {
+    const box = document.getElementById('branch-buttons');
+    // Everyone can VIEW every branch here; each module decides on its own whether the
+    // signed-in employee may add/edit for the selected branch.
+    box.innerHTML = branches.map((b) =>
+      '<button type="button" class="btn" style="' + branchButtonStyle(b.id, branches, b.id === selectedBranch) + '" data-id="' + b.id + '">' + esc(b.name) + '</button>'
+    ).join('');
+    box.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', async () => {
+      selectedBranch = Number(btn.dataset.id);
+      renderBranchButtons();
+      await Promise.all([pos?.reload(), layaway?.reload(), scrap?.reload(), subasta?.reload(), onlineOrders?.reload(), refreshForfeitedNotice()]);
+    }));
+    const label = ' — ' + branchName(selectedBranch);
+    document.getElementById('pos-branch-label').textContent = label;
+    document.getElementById('layaway-branch-label').textContent = label;
+    document.getElementById('scrap-branch-label').textContent = label;
+    document.getElementById('sub-branch-label').textContent = label;
+    // A view-restricted employee's Online Orders board always shows their own branch
+    // (onlineOrdersTab.js's isViewRestricted), so its heading must say that branch.
+    document.getElementById('online-branch-label').textContent = onlineOrders?.isViewRestricted
+      ? ' — ' + branchName(onlineOrders.ownBranchId)
+      : label;
+  }
 
-    function addToPosCart(sku) {
-      const product = posCatalogResults.find((p) => p.sku === sku);
-      if (!product) return;
-      const existing = posCart.find((c) => c.sku === sku);
-      if (existing) existing.qty += 1;
-      else posCart.push({ sku: product.sku, itemName: product.item_name, qty: 1, unitPrice: effectivePrice(product) ?? null });
-      renderPosCart();
-      updatePosTotals();
-    }
-
-    function renderPosCart() {
-      const box = document.getElementById('pos-cart-lines');
-      if (!posCart.length) {
-        box.innerHTML = '<p class="muted" style="font-size:12px;">No items yet — tap a product to add it.</p>';
-      } else {
-        box.innerHTML = posCart.map((it, i) =>
-          '<div class="pos-cart-line" data-i="' + i + '">' +
-            '<div style="flex:1;min-width:0;">' +
-              '<div class="pos-cart-line-name">' + esc(it.itemName) + '</div>' +
-              '<div class="pos-cart-line-sku">' + esc(it.sku) + '</div>' +
-            '</div>' +
-            '<input type="number" class="pos-cart-line-qty" min="1" value="' + it.qty + '" title="Qty">' +
-            '<input type="number" class="pos-cart-line-price" step="0.01" min="0" value="' + (it.unitPrice ?? '') + '" placeholder="PHP" title="Unit Price">' +
-            '<button type="button" class="pos-cart-remove" title="Remove">✕</button>' +
+  // Ren, 2026-09-21, section 2: "If a layaway transaction has already been marked as
+  // FORFEITED, show a small notification/note inside the POS ... should NOT block
+  // normal POS operations." Scoped to the selected branch; a failed lookup is
+  // non-critical and just leaves the notice as it was.
+  async function refreshForfeitedNotice() {
+    const box = document.getElementById('pos-forfeited-notice');
+    if (!box) return;
+    try {
+      const holds = await listLayaways(selectedBranch);
+      const forfeited = holds.filter((h) => h.status === 'Forfeited');
+      if (!forfeited.length) { box.style.display = 'none'; box.innerHTML = ''; window.__kmActivity?.refreshPanelVisibility(); return; }
+      box.style.display = '';
+      window.__kmActivity?.refreshPanelVisibility();
+      box.innerHTML =
+        '<div style="font-weight:bold;color:#a15c00;">⚠ FORFEITED LAYAWAY' + (forfeited.length > 1 ? 'S' : '') + '</div>' +
+        '<div class="muted" style="margin:2px 0 6px;">This layaway transaction has already been forfeited -- do not process it as an active layaway.</div>' +
+        forfeited.slice(0, 3).map((h) =>
+          '<div style="margin-top:4px;padding-top:4px;border-top:1px dashed #e2c88a;">' +
+            esc(h.customer_name) + (h.order_id ? ' · Order ' + esc(h.order_id) : '') + '<br>' +
+            esc(h.sku) + '<br>' +
+            '<span class="muted">Forfeited ' + fmtDateTime(h.forfeited_at) + '</span>' +
           '</div>'
-        ).join('');
-        box.querySelectorAll('.pos-cart-line').forEach((line) => {
-          const i = Number(line.dataset.i);
-          line.querySelector('.pos-cart-line-qty').addEventListener('input', (ev) => { posCart[i].qty = Number(ev.target.value || 0); updatePosTotals(); updatePosOrderFab(); });
-          line.querySelector('.pos-cart-line-price').addEventListener('input', (ev) => { posCart[i].unitPrice = ev.target.value ? Number(ev.target.value) : null; updatePosTotals(); updatePosOrderFab(); });
-          line.querySelector('.pos-cart-remove').addEventListener('click', () => { posCart.splice(i, 1); renderPosCart(); updatePosTotals(); });
-        });
-      }
-      updatePosOrderFab();
-    }
-
-    function updatePosOrderFab() {
-      const fab = document.getElementById('pos-order-fab');
-      const items = posCart.reduce((s, it) => s + (it.qty || 0), 0);
-      const total = posCart.reduce((s, it) => s + (it.unitPrice || 0) * (it.qty || 0), 0);
-      fab.innerHTML = '<span>Order</span><span>' + items + ' item' + (items === 1 ? '' : 's') + ' · ' + money(total) + '</span>';
-    }
-
-    async function runPosCatalogSearch() {
-      const q = posCatalogQuery.trim();
-      if (!q) { posCatalogResults = []; renderPosCatalogGrid(); return; }
-      const token = ++posCatalogSearchToken;
-      try {
-        const results = await searchProducts(q, selectedBranch);
-        if (token !== posCatalogSearchToken) return;
-        posCatalogResults = results;
-        renderPosCatalogGrid();
-      } catch (err) { /* a failed lookup shouldn't block the rest of the page */ }
-    }
-    document.getElementById('pos-cat-search').addEventListener('input', (ev) => {
-      posCatalogQuery = ev.target.value;
-      clearTimeout(posCatalogSearchTimer);
-      if (!posCatalogQuery.trim()) { posCatalogResults = []; renderPosCatalogGrid(); return; }
-      posCatalogSearchTimer = setTimeout(runPosCatalogSearch, 200);
-    });
-    document.getElementById('pos-cat-line').addEventListener('change', (ev) => { posCatalogLine = ev.target.value; renderPosCatalogGrid(); });
-    document.getElementById('pos-cat-purity').addEventListener('change', (ev) => { posCatalogPurity = ev.target.value; renderPosCatalogGrid(); });
-    document.getElementById('pos-cat-instock').addEventListener('change', (ev) => { posCatalogInStockOnly = ev.target.checked; renderPosCatalogGrid(); });
-    document.getElementById('pos-cat-more-toggle').addEventListener('click', () => {
-      const more = document.getElementById('pos-cat-more');
-      more.style.display = more.style.display === 'none' ? '' : 'none';
-    });
-    document.getElementById('pos-order-fab').addEventListener('click', () => document.getElementById('pos-order-panel').classList.add('open'));
-    document.getElementById('pos-order-close').addEventListener('click', () => document.getElementById('pos-order-panel').classList.remove('open'));
-
-    function readPosItemRows() {
-      return posCart.filter((it) => it.sku && it.qty > 0).map((it) => ({ sku: it.sku, qty: it.qty, unitPrice: it.unitPrice }));
-    }
-    function resetPosItemRows() { posCart = []; renderPosCart(); }
-    renderPosCart();
-
-    const posForm = document.getElementById('pos-form');
-    posForm.saleDate.value = new Date().toISOString().slice(0, 10);
-    function updatePosTotals() {
-      const items = readPosItemRows();
-      const subtotal = items.reduce((s, it) => s + (it.unitPrice || 0) * (it.qty || 0), 0);
-      const paid = readPaymentSlots(posForm, 'pos').reduce((s, p) => s + p.amount, 0);
-      const balance = subtotal - paid;
-      document.getElementById('pos-subtotal').textContent = money(subtotal);
-      document.getElementById('pos-paid').textContent = money(paid);
-      document.getElementById('pos-balance-label').textContent = balance > 0 ? 'Balance Due' : 'Change Due';
-      document.getElementById('pos-balance').textContent = money(Math.abs(balance));
-      document.getElementById('pos-balance').style.color = balance > 0 ? '#b23c3c' : (balance < 0 ? '#2e7d4f' : '');
-    }
-    posForm.addEventListener('input', updatePosTotals);
-    updatePosTotals();
-
-    posForm.addEventListener('submit', async (ev) => {
-      ev.preventDefault();
-      const f = ev.target;
-      const btn = f.querySelector('button[type=submit]');
-      const items = readPosItemRows();
-      // pos-order-msg (not br-msg) so this is visible on mobile, where the order
-      // panel is a full-screen sheet (position:fixed;inset:0;z-index:50) that
-      // otherwise completely covers br-msg at the top of <main> -- Complete Sale
-      // looked like it silently did nothing, when it was actually failing (or
-      // succeeding) behind an invisible message (Ren, 2026-09-16: "everyone cannot
-      // save an entry in POS"). Success still toasts to br-msg since the sheet
-      // closes on success, returning to the now-visible main view.
-      if (!items.length) { toast('pos-order-msg', 'Add at least one item to sell.', true); return; }
-      const badQty = items.find((it) => !it.qty || it.qty <= 0);
-      if (badQty) { toast('pos-order-msg', 'Qty must be a positive number for ' + badQty.sku + '.', true); return; }
-
-      const payments = readPaymentSlots(f, 'pos');
-      btn.disabled = true;
-      try {
-        await createPosSale({
-          branchId: selectedBranch, items,
-          customerName: f.customerName.value.trim(), contactNumber: f.contactNumber.value.trim(),
-          orderNumber: f.orderId.value.trim(), payments, saleDate: f.saleDate.value || null,
-          notes: f.notes.value.trim(),
-        });
-        toast('br-msg', 'Sale completed — ' + items.length + ' item(s), ' + money(items.reduce((s, it) => s + (it.unitPrice || 0) * it.qty, 0)) + '.', false);
-        f.reset();
-        posForm.saleDate.value = new Date().toISOString().slice(0, 10);
-        resetPosItemRows();
-        updatePosTotals();
-        document.getElementById('pos-order-panel').classList.remove('open');
-        await loadPos();
-      } catch (err) {
-        toast('pos-order-msg', String(err.message || err), true);
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
-    document.getElementById('pos-f-search').addEventListener('input', renderPos);
-    document.getElementById('pos-f-from').addEventListener('change', renderPos);
-    document.getElementById('pos-f-to').addEventListener('change', renderPos);
-    document.getElementById('pos-f-clear').addEventListener('click', () => {
-      document.getElementById('pos-f-search').value = '';
-      document.getElementById('pos-f-from').value = '';
-      document.getElementById('pos-f-to').value = '';
-      renderPos();
-    });
-
-    // Ren's spec section 41: click toggles the popover; clicking anywhere else closes
-    // it. Wired once here (not inside renderPos(), which only replaces #pos-tiles/
-    // #pos-list/#pos-by-admin's own innerHTML, not this button) rather than on every
-    // re-render, which would stack duplicate listeners.
-    document.getElementById('pos-summary-toggle').addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      const panel = document.getElementById('pos-summary-panel');
-      panel.style.display = panel.style.display === 'none' ? '' : 'none';
-    });
-    document.addEventListener('click', (ev) => {
-      const panel = document.getElementById('pos-summary-panel');
-      if (panel && panel.style.display !== 'none' && !panel.contains(ev.target) && ev.target.id !== 'pos-summary-toggle') {
-        panel.style.display = 'none';
-      }
-    });
-
-    async function loadPos() {
-      const list = document.getElementById('pos-list');
-      list.innerHTML = '<div class="muted">Loading…</div>';
-      try {
-        const rows = await listSales({ branchId: selectedBranch });
-        allPosSales = rows.filter((r) => r.sale_group_id);
-        const groupIds = [...new Set(allPosSales.map((r) => r.sale_group_id))];
-        const payments = await listSalePayments(groupIds);
-        posPaymentsByGroup = {};
-        payments.forEach((p) => { (posPaymentsByGroup[p.sale_group_id] || (posPaymentsByGroup[p.sale_group_id] = [])).push(p); });
-        renderPos();
-      } catch (err) {
-        list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
-      }
-    }
-
-    function groupPosSales(rows) {
-      const byGroup = {}, order = [];
-      rows.forEach((r) => {
-        if (!byGroup[r.sale_group_id]) { byGroup[r.sale_group_id] = []; order.push(r.sale_group_id); }
-        byGroup[r.sale_group_id].push(r);
-      });
-      return order.map((gid) => ({ groupId: gid, items: byGroup[gid] }));
-    }
-
-    // Pivot: rows = who processed the sale, columns = payment method, cell = sum of
-    // amounts actually paid that way (sale_payments.amount -- not the item subtotal,
-    // since a sale can split across methods) -- same shape as the "SUM of TOTAL by
-    // ADMIN x STATUS" pivot Ren already tracks in the old spreadsheet.
-    function renderPosByAdminPayment(rows) {
-      const box = document.getElementById('pos-by-admin');
-      const groups = groupPosSales(rows);
-      const totalsByAdmin = {}; // employeeId -> { [method]: sum } -- Collected money only
-      const codPendingByAdmin = {}; // employeeId -> sum of COD still Pending Collection
-      const methodsSeen = [];
-      groups.forEach((g) => {
-        const empId = g.items[0].employee_id;
-        const bucket = totalsByAdmin[empId] || (totalsByAdmin[empId] = {});
-        (posPaymentsByGroup[g.groupId] || []).forEach((p) => {
-          // Ren's spec section 189: Pending-Collection COD isn't cash in hand yet --
-          // do not include it in the collected-money columns/Grand Total, track it
-          // separately instead.
-          if (p.payment_method === 'COD' && p.payment_status === 'Pending Collection') {
-            codPendingByAdmin[empId] = (codPendingByAdmin[empId] || 0) + Number(p.amount);
-            return;
-          }
-          if (!methodsSeen.includes(p.payment_method)) methodsSeen.push(p.payment_method);
-          bucket[p.payment_method] = (bucket[p.payment_method] || 0) + Number(p.amount);
-        });
-      });
-      const methods = POS_PAYMENT_METHODS.filter((m) => methodsSeen.includes(m)).concat(methodsSeen.filter((m) => !POS_PAYMENT_METHODS.includes(m)));
-      const adminIds = Object.keys(totalsByAdmin).sort((a, b) => (employeeNameById[a] || '').localeCompare(employeeNameById[b] || ''));
-      const hasCodPending = Object.values(codPendingByAdmin).some((v) => v > 0);
-
-      if (!adminIds.length) { box.innerHTML = '<p class="muted">No walk-in sales for this filter.</p>'; return; }
-
-      const colTotals = Object.fromEntries(methods.map((m) => [m, 0]));
-      let grandTotal = 0, codPendingTotal = 0;
-
-      box.innerHTML = '<div class="table-scroll"><table><thead><tr><th>Admin</th>' +
-        methods.map((m) => '<th>' + esc(m) + '</th>').join('') +
-        (hasCodPending ? '<th>COD Pending</th>' : '') +
-        '<th>Grand Total</th></tr></thead><tbody>' +
-        adminIds.map((empId) => {
-          const bucket = totalsByAdmin[empId];
-          let rowTotal = 0;
-          const cells = methods.map((m) => {
-            const amt = bucket[m] || 0;
-            colTotals[m] += amt;
-            rowTotal += amt;
-            return '<td data-label="' + esc(m) + '">' + (amt ? money(amt) : '—') + '</td>';
-          }).join('');
-          grandTotal += rowTotal;
-          const codPending = codPendingByAdmin[empId] || 0;
-          codPendingTotal += codPending;
-          return '<tr><td data-label="Admin"><b>' + esc(employeeNameById[empId] || 'Unknown') + '</b></td>' + cells +
-            (hasCodPending ? '<td data-label="COD Pending">' + (codPending ? '<span class="badge pending">' + money(codPending) + '</span>' : '—') + '</td>' : '') +
-            '<td data-label="Grand Total"><b>' + money(rowTotal) + '</b></td></tr>';
-        }).join('') +
-        '</tbody><tfoot><tr><td data-label="Admin"><b>Grand Total</b></td>' +
-        methods.map((m) => '<td data-label="' + esc(m) + '"><b>' + money(colTotals[m]) + '</b></td>').join('') +
-        (hasCodPending ? '<td data-label="COD Pending"><b>' + money(codPendingTotal) + '</b></td>' : '') +
-        '<td data-label="Grand Total"><b>' + money(grandTotal) + '</b></td></tr></tfoot></table></div>';
-    }
-
-    // Ren's spec sections 41-48: a Summary popover for whatever's CURRENTLY VISIBLE in
-    // the table below (search included, unlike the pivot above) -- same groups/
-    // posPaymentsByGroup data as everything else on this page, just aggregated a
-    // different way, so it can never disagree with the pivot or the transaction list.
-    // Only categories this schema actually has (payment method, admin, SKU) are
-    // shown -- no invented "Returning Customer"/"Status Breakdown" fields, since there
-    // is no customer table and no void/cancel status here (a deleted sale is just gone,
-    // per delete_pos_sale()).
-    function renderPosSummary(groups) {
-      const panel = document.getElementById('pos-summary-panel');
-      if (!groups.length) { panel.innerHTML = '<p class="muted" style="margin:0;">No transactions for this filter.</p>'; return; }
-
-      const orderCount = groups.length;
-      let itemsSold = 0, lineItems = 0;
-      const skuQty = {}, skuName = {};
-      const totalsByAdmin = {};
-      const methodTotals = {};
-      let grandTotal = 0, codPendingTotal = 0;
-
-      groups.forEach((g) => {
-        const empId = g.items[0].employee_id;
-        totalsByAdmin[empId] = (totalsByAdmin[empId] || 0);
-        g.items.forEach((r) => {
-          lineItems++;
-          itemsSold += r.qty;
-          skuQty[r.sku] = (skuQty[r.sku] || 0) + r.qty;
-          skuName[r.sku] = r.products?.item_name || r.sku;
-        });
-        (posPaymentsByGroup[g.groupId] || []).forEach((p) => {
-          // Ren's spec section 189: Pending-Collection COD isn't cash in hand yet --
-          // kept out of the payment-method totals/Grand Total/Sales by Admin, shown
-          // as its own separate line instead.
-          if (p.payment_method === 'COD' && p.payment_status === 'Pending Collection') {
-            codPendingTotal += Number(p.amount);
-            return;
-          }
-          methodTotals[p.payment_method] = (methodTotals[p.payment_method] || 0) + Number(p.amount);
-          totalsByAdmin[empId] += Number(p.amount);
-          grandTotal += Number(p.amount);
-        });
-      });
-
-      const methods = POS_PAYMENT_METHODS.filter((m) => methodTotals[m]).concat(Object.keys(methodTotals).filter((m) => !POS_PAYMENT_METHODS.includes(m)));
-      const adminIds = Object.keys(totalsByAdmin).sort((a, b) => (employeeNameById[a] || '').localeCompare(employeeNameById[b] || ''));
-      const topSkus = Object.keys(skuQty).sort((a, b) => skuQty[b] - skuQty[a]).slice(0, 5);
-
-      panel.innerHTML =
-        '<h4>Transactions</h4>' +
-        '<div class="row"><span>Total Orders</span><b>' + orderCount + '</b></div>' +
-        '<div class="row"><span>Items Sold</span><b>' + itemsSold + '</b></div>' +
-        '<div class="row"><span>Unique SKUs</span><b>' + Object.keys(skuQty).length + '</b></div>' +
-        '<h4 style="margin-top:12px;">Sales</h4>' +
-        methods.map((m) => '<div class="row"><span>' + esc(m) + '</span><b>' + money(methodTotals[m]) + '</b></div>').join('') +
-        '<div class="row total"><span>Grand Total</span><b>' + money(grandTotal) + '</b></div>' +
-        (codPendingTotal ? '<div class="row" style="color:#a15c00;"><span>COD Pending Collection</span><b>' + money(codPendingTotal) + '</b></div>' : '') +
-        '<details style="margin-top:10px;"><summary>Sales by Admin (' + adminIds.length + ')</summary>' +
-          '<div style="margin-top:6px;">' +
-            adminIds.map((id) => '<div class="row"><span>' + esc(employeeNameById[id] || 'Unknown') + '</span><b>' + money(totalsByAdmin[id]) + '</b></div>').join('') +
-          '</div>' +
-        '</details>' +
-        '<details style="margin-top:8px;"><summary>Top Selling Items</summary>' +
-          '<div style="margin-top:6px;">' +
-            topSkus.map((sku, i) => '<div class="row"><span>' + (i + 1) + '. ' + esc(skuName[sku]) + ' (' + esc(sku) + ')</span><b>' + skuQty[sku] + ' pcs</b></div>').join('') +
-          '</div>' +
-        '</details>' +
-        '<p class="muted" style="margin:10px 0 0;font-size:11px;">Lines: ' + lineItems + ' · matches the Search/From/To/Branch filters above.</p>';
-    }
-
-    function renderPos() {
-      const fSearch = document.getElementById('pos-f-search').value.trim().toLowerCase();
-      const fFrom = document.getElementById('pos-f-from').value;
-      const fTo = document.getElementById('pos-f-to').value;
-
-      let rows = allPosSales;
-      if (fFrom) rows = rows.filter((r) => r.sale_date >= fFrom);
-      if (fTo) rows = rows.filter((r) => r.sale_date <= fTo + 'T23:59:59');
-
-      renderPosByAdminPayment(rows); // date-filtered only -- not narrowed by the free-text search below
-
-      let groups = groupPosSales(rows);
-      if (fSearch) groups = groups.filter((g) => g.items.some((r) =>
-        r.sku.toLowerCase().includes(fSearch) || (r.products?.item_name || '').toLowerCase().includes(fSearch) ||
-        (r.customer_name || '').toLowerCase().includes(fSearch) || (r.order_number || '').toLowerCase().includes(fSearch)));
-
-      renderPosSummary(groups); // search-filtered too, unlike the pivot above
-      // Pill count, tiles, active-filter strip and ledger all follow these same
-      // filters (MASTER UI rules 6/19/20/28).
-      posFilteredCount = groups.length;
-      renderScrapSubTabs();
-
-      const totalAmount = groups.reduce((s, g) => s + g.items.reduce((s2, r) => s2 + Number(r.unit_price || 0) * r.qty, 0), 0);
-      document.getElementById('pos-tiles').innerHTML = tile(groups.length, 'Sales') + tile(money(totalAmount), 'Total Amount');
-      const posActive = document.getElementById('pos-active');
-      posActive.innerHTML = activeFiltersHtml([{ label: 'Search', value: esc(fSearch) }, { label: 'From', value: esc(fFrom) }, { label: 'To', value: esc(fTo) }], 'pos-f-clear');
-      wireProxyButtons(posActive);
-
-      const box = document.getElementById('pos-list');
-      if (!groups.length) {
-        box.innerHTML = emptyStateHtml({ message: 'No walk-in sales for this filter.', hasFilters: !!(fSearch || fFrom || fTo), clearId: 'pos-f-clear' });
-        wireProxyButtons(box);
-        return;
-      }
-
-      // One flat, formal ledger table for every sale instead of a card-per-sale with a
-      // nested mini-table inside it (Ren, 2026-09-16: "arrange this POS as formal line
-      // those records easily find it" / "still looking the record like this its not
-      // normal make it organized"). One row per line item; Date/Order/Customer/Payment
-      // repeat on every row of a multi-item sale rather than using rowspan, so the
-      // existing data-label mobile-stacking CSS (which has no concept of rowspan)
-      // keeps working unchanged on narrow screens.
-      box.innerHTML = '<div class="table-scroll table-2col"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
-        '<thead><tr><th>Date &amp; Time</th><th>Order</th><th>Customer</th><th>SKU</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Total</th><th>Payment</th><th></th></tr></thead>' +
-        '<tbody>' +
-        groups.map((g) => {
-          const subtotal = g.items.reduce((s, r) => s + Number(r.unit_price || 0) * r.qty, 0);
-          const payments = posPaymentsByGroup[g.groupId] || [];
-          const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
-          // Ren's spec sections 186/191: COD shown as its own method, never folded
-          // into Cash, with a Pending Collection badge and a Mark Collected action
-          // (gated to canEditSale -- a status change, not an amount edit, so it
-          // doesn't need the narrower canEditAmount/Auditor gate) until the
-          // courier/customer actually pays it.
-          const paidLabel = (paid >= subtotal ? 'Paid in full' : money(paid) + ' paid') +
-            (payments.length ? '<div class="muted" style="font-size:10px;">' + payments.map((p) =>
-              esc(p.payment_method) + (p.reference_number ? ' (' + esc(p.reference_number) + ')' : '') +
-              (p.payment_method === 'COD'
-                ? (p.payment_status === 'Pending Collection'
-                    ? ' <span class="badge pending">Pending Collection</span>' + (canEditSale ? ' <button type="button" class="btn small secondary" data-act="mark-cod-collected" data-id="' + p.id + '" style="padding:1px 6px;">Mark Collected</button>' : '')
-                    : ' <span class="badge ok">Collected</span>')
-                : '')
-            ).join('<br>') + '</div>' : '');
-          return g.items.map((r, i) => '<tr>' +
-            '<td data-label="Date &amp; Time">' + fmtDateTime(r.sale_date) + '</td>' +
-            '<td data-label="Order">' + esc(r.order_number || '—') + '</td>' +
-            '<td data-label="Customer" class="full-row">' + esc(r.customer_name || '—') + '</td>' +
-            '<td data-label="SKU">' + esc(r.sku) + '</td>' +
-            '<td data-label="Item" class="full-row">' + esc(r.products?.item_name || '—') + (r.notes ? '<div class="muted" style="font-size:10px;">Note: ' + esc(r.notes) + '</div>' : '') + '</td>' +
-            '<td data-label="Qty">' + r.qty + '</td>' +
-            '<td data-label="Unit Price">' + money(r.unit_price) + '</td>' +
-            '<td data-label="Line Total">' + money(Number(r.unit_price || 0) * r.qty) + '</td>' +
-            '<td data-label="Payment" class="full-row">' + paidLabel + '</td>' +
-            '<td class="full-row" style="white-space:nowrap;">' +
-              // Edit/Edit Payment now gated by canEditAmount (Auditor/Supervisor only),
-              // not canEditSale -- correcting an amount is narrower than everything
-              // else this broader group can still do (e.g. Delete Sale below).
-              (canEditAmount ? '<button type="button" class="btn small secondary" data-act="edit-sale-item" data-id="' + r.id + '">Edit</button>' : '') +
-              // Delete Sale/Edit Payment operate on the whole group regardless of which
-              // line's button is clicked, so they only need to appear once -- shown on
-              // this group's first row.
-              (canEditAmount && i === 0 ? ' <button type="button" class="btn small secondary" data-act="edit-payment" data-group="' + esc(g.groupId) + '">Edit Payment</button>' : '') +
-              (canEditSale && i === 0 ? ' <button type="button" class="btn small secondary" data-act="delete-sale" data-group="' + esc(g.groupId) + '">Delete Sale</button>' : '') +
-            '</td>' +
-          '</tr>' + (canEditAmount ? posSaleEditRowHtml(r) : '')).join('') + (canEditAmount ? posPaymentEditRowHtml(g) : '');
-        }).join('') +
-        '</tbody></table></div>';
-
-      // canEditSale (Delete Sale) and canEditAmount (Edit/Edit Payment) can now diverge
-      // -- e.g. an Auditor-position Staff member has canEditAmount but not canEditSale
-      // -- so this guard covers either, and each block below only ever finds buttons
-      // that were actually rendered for this employee.
-      if (!canEditSale && !canEditAmount) return;
-      box.querySelectorAll('[data-act="delete-sale"]').forEach((btn) => btn.addEventListener('click', async () => {
-        if (!confirm('Delete this whole sale? All its items go back to Available stock and this cannot be undone.')) return;
-        try { await deletePosSale(btn.dataset.group); toast('br-msg', 'Sale deleted.', false); await loadPos(); }
-        catch (err) { toast('br-msg', String(err.message || err), true); }
-      }));
-      box.querySelectorAll('[data-act="mark-cod-collected"]').forEach((btn) => btn.addEventListener('click', async () => {
-        if (!confirm('Mark this COD payment as collected?')) return;
-        try { await markCodCollected(Number(btn.dataset.id)); toast('br-msg', 'COD payment marked collected.', false); await loadPos(); }
-        catch (err) { toast('br-msg', String(err.message || err), true); }
-      }));
-      box.querySelectorAll('[data-act="edit-sale-item"]').forEach((btn) => btn.addEventListener('click', () => {
-        const row = box.querySelector('.pos-sale-edit-row[data-move-id="' + btn.dataset.id + '"]');
-        if (!row) return;
-        const opening = row.style.display === 'none';
-        box.querySelectorAll('.pos-sale-edit-row, .pos-payment-edit-row').forEach((r) => { r.style.display = 'none'; });
-        if (opening) row.style.display = '';
-      }));
-      box.querySelectorAll('[data-act="edit-payment"]').forEach((btn) => btn.addEventListener('click', () => {
-        const row = box.querySelector('.pos-payment-edit-row[data-group-id="' + btn.dataset.group + '"]');
-        if (!row) return;
-        const opening = row.style.display === 'none';
-        box.querySelectorAll('.pos-sale-edit-row, .pos-payment-edit-row').forEach((r) => { r.style.display = 'none'; });
-        if (opening) row.style.display = '';
-      }));
-      box.querySelectorAll('[data-act="close-payment-edit"]').forEach((btn) => btn.addEventListener('click', () => {
-        const row = box.querySelector('.pos-payment-edit-row[data-group-id="' + btn.dataset.group + '"]');
-        if (row) row.style.display = 'none';
-      }));
-      // Ren's spec section 33: editing a sale's payment method must move the amount off
-      // the old column and onto the new one -- update_pos_sale_payments() replaces the
-      // whole sale_payments split for the group in one call, so there's never a moment
-      // where both the old and new method show an amount.
-      box.querySelectorAll('.pos-payment-edit-form').forEach((form) => form.addEventListener('submit', async (ev) => {
-        ev.preventDefault();
-        const f = ev.target;
-        const btn = f.querySelector('button[type=submit]');
-        const payments = readPaymentSlots(f, 'editPay');
-        if (!payments.length) { toast('br-msg', 'At least one payment method and amount is required.', true); return; }
-        const reason = f.paymentReason.value.trim();
-        if (!reason) { toast('br-msg', 'A reason is required to change a sale\'s payment method.', true); return; }
-        const oldPayments = posPaymentsByGroup[f.dataset.group] || [];
-        // Plain confirm() dialog shows raw text, not HTML -- no esc() here (that would
-        // show literal "&amp;"-style entities instead of the real characters).
-        const oldSummary = oldPayments.map((p) => p.payment_method + ' ' + money(p.amount)).join(', ') || '—';
-        const newSummary = payments.map((p) => p.method + ' ' + money(p.amount)).join(', ');
-        if (!confirm('Confirm payment method change?\n\nOld: ' + oldSummary + '\nNew: ' + newSummary + '\n\nReason: ' + reason)) return;
-        btn.disabled = true;
-        try {
-          await updatePosSalePayments(f.dataset.group, payments, reason);
-          toast('br-msg', 'Payment updated.', false);
-          await loadPos();
-        } catch (err) {
-          toast('br-msg', String(err.message || err), true);
-          btn.disabled = false;
-        }
-      }));
-      box.querySelectorAll('[data-act="close-sale-item"]').forEach((btn) => btn.addEventListener('click', () => {
-        const row = box.querySelector('.pos-sale-edit-row[data-move-id="' + btn.dataset.id + '"]');
-        if (row) row.style.display = 'none';
-      }));
-      box.querySelectorAll('[data-act="save-sale-item"]').forEach((btn) => btn.addEventListener('click', async () => {
-        const row = box.querySelector('.pos-sale-edit-row[data-move-id="' + btn.dataset.id + '"]');
-        if (!row) return;
-        const sku = row.querySelector('[name=sku]').value.trim();
-        const qty = Number(row.querySelector('[name=qty]').value);
-        const unitPrice = row.querySelector('[name=unitPrice]').value ? Number(row.querySelector('[name=unitPrice]').value) : null;
-        const customerName = row.querySelector('[name=customerName]').value.trim();
-        const contactNumber = row.querySelector('[name=contactNumber]').value.trim();
-        const orderNumber = row.querySelector('[name=orderNumber]').value.trim();
-        const notes = row.querySelector('[name=notes]').value.trim();
-        const reason = row.querySelector('[name=reason]').value.trim();
-        if (!sku || !qty || qty <= 0) { toast('br-msg', 'SKU and a positive Qty are required.', true); return; }
-        const original = allPosSales.find((x) => x.id === Number(btn.dataset.id));
-        const amountChanged = original && (Number(original.unit_price) !== Number(unitPrice) || Number(original.qty) !== qty);
-        // Ren's spec section 126: reason required whenever the amount/qty actually
-        // changes -- checked here too (not just server-side) so the user isn't
-        // surprised by a rejected save after already reviewing the confirmation below.
-        if (amountChanged && !reason) { toast('br-msg', 'A reason is required when changing the amount or quantity.', true); return; }
-        // Ren's spec section 127: confirm old vs new amount before saving.
-        if (amountChanged && !confirm(
-          'Confirm amount change?\n\nOld Amount: ' + money(original.unit_price) + '\nNew Amount: ' + money(unitPrice) +
-          '\nDifference: ' + money(Number(unitPrice || 0) - Number(original.unit_price || 0)) + '\n\nReason: ' + reason
-        )) return;
-        try {
-          await updatePosSaleItem({ movementId: Number(btn.dataset.id), sku, qty, unitPrice, customerName, contactNumber, orderNumber, notes, reason });
-          toast('br-msg', 'Sale item updated.', false);
-          await loadPos();
-        } catch (err) {
-          toast('br-msg', String(err.message || err), true);
-        }
-      }));
-    }
-
-    // Correct a mistake on one line of a completed sale (Admin/Manager/Branch
-    // Supervisor only, matching update_pos_sale_item's own server-side gate) -- hidden
-    // by default, toggled open by that row's "Edit" button. colspan=10 spans every
-    // column of the formal ledger table above.
-    function posSaleEditRowHtml(r) {
-      return '<tr class="edit-row pos-sale-edit-row" data-move-id="' + r.id + '" style="display:none;"><td colspan="10">' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;padding:8px 0;">' +
-          '<div class="field" style="width:110px;"><label>SKU</label><input type="text" name="sku" value="' + esc(r.sku) + '"></div>' +
-          '<div class="field" style="width:70px;"><label>Qty</label><input type="number" name="qty" min="1" value="' + r.qty + '"></div>' +
-          '<div class="field" style="width:110px;"><label>Unit Price</label><input type="number" name="unitPrice" step="0.01" min="0" value="' + (r.unit_price ?? '') + '"></div>' +
-          '<div class="field" style="width:130px;"><label>Customer Name</label><input type="text" name="customerName" value="' + esc(r.customer_name || '') + '"></div>' +
-          '<div class="field" style="width:110px;"><label>Contact Number</label><input type="text" name="contactNumber" value="' + esc(r.contact_number || '') + '"></div>' +
-          '<div class="field" style="width:110px;"><label>Order / Ref No.</label><input type="text" name="orderNumber" value="' + esc(r.order_number || '') + '"></div>' +
-          '<div class="field" style="width:150px;"><label>Notes</label><input type="text" name="notes" value="' + esc(r.notes || '') + '"></div>' +
-          // Reason required when Amount or Qty actually changes (Ren's spec section
-          // 126) -- enforced again server-side by update_pos_sale_item() regardless.
-          '<div class="field" style="width:180px;"><label>Reason (required if amount/qty changes)</label><input type="text" name="reason"></div>' +
-          '<button type="button" class="btn small" data-act="save-sale-item" data-id="' + r.id + '">Save</button>' +
-          '<button type="button" class="btn small secondary" data-act="close-sale-item" data-id="' + r.id + '">Cancel</button>' +
-        '</div>' +
-      '</td></tr>';
-    }
-
-    // Correct a sale's whole payment-method split at once (Ren's spec section 33) --
-    // one row per group (not per line item, since sale_payments keys on sale_group_id),
-    // prefilled with its current payments via the same paymentSlotsHtml()/
-    // readPaymentSlots() helpers the New Sale form itself uses.
-    function posPaymentEditRowHtml(g) {
-      const existing = posPaymentsByGroup[g.groupId] || [];
-      return '<tr class="edit-row pos-payment-edit-row" data-group-id="' + esc(g.groupId) + '" style="display:none;"><td colspan="10">' +
-        '<form class="pos-payment-edit-form" data-group="' + esc(g.groupId) + '" style="padding:8px 0;">' +
-          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-            paymentSlotsHtml('editPay', existing, { withReference: true, methods: POS_PAYMENT_METHODS }) +
-            '<div class="field" style="width:180px;"><label>Reason *</label><input type="text" name="paymentReason" required></div>' +
-          '</div>' +
-          '<div style="display:flex;gap:4px;margin-top:6px;">' +
-            '<button class="btn small" type="submit">Save Payment</button>' +
-            '<button type="button" class="btn small secondary" data-act="close-payment-edit" data-group="' + esc(g.groupId) + '">Cancel</button>' +
-          '</div>' +
-        '</form>' +
-      '</td></tr>';
-    }
-
-    onlineOrders = initOnlineOrdersTab({
-      root: document.getElementById('online-orders-root'), esc, toast, msgId: 'br-msg',
-      getBranchId: () => selectedBranch,
-      onCountsUpdate: (count) => { onlineOrdersCount = count; renderScrapSubTabs(); },
-      employee,
-    });
-    // Re-render now that onlineOrders exists -- the very first renderBranchButtons()
-    // call above ran before this, so a view-restricted employee's Online Orders
-    // heading would otherwise show selectedBranch instead of their own branch until
-    // the next branch-button click.
-    renderBranchButtons();
-    layaway = await initLayawayTab({
-      root: document.getElementById('layaway-root'), esc, toast, msgId: 'br-msg',
-      getBranchId: () => selectedBranch, employee,
-      onCountUpdate: (count) => { layawayCount = count; renderScrapSubTabs(); },
-    });
-    scrap = await initScrapTab({
-      root: document.getElementById('scrap-root'), esc, toast, msgId: 'br-msg',
-      getBranchId: () => selectedBranch, employee,
-      onCountUpdate: (count) => { scrapCount = count; renderScrapSubTabs(); },
-    });
-    subasta = await initSubastaTab({
-      root: document.getElementById('subasta-root'), esc, toast, msgId: 'br-msg',
-      getBranchId: () => selectedBranch, employee, branches,
-      onCountUpdate: (count) => { subastaFilteredCount = count; renderScrapSubTabs(); },
-    });
-    await Promise.all([loadPos(), refreshForfeitedNotice()]);
-    subscribeToChanges(['sales_inventory_movements', 'sale_payments'], loadPos);
-    // Someone forfeiting a hold (or Admin reopening one) from the Layaway tab should
-    // update this notice without needing a branch switch to refresh it.
-    subscribeToChanges('layaway_holds', refreshForfeitedNotice);
-
-    // ---- POS/Layaway/Scrap/Subasta/Online Orders tab bar -- switching between the
-    // five full sections instead of stacking them, one after another, on an
-    // ever-longer page. POS comes first (it's the main day-to-day action for a
-    // branch), Layaway next (the other item-reservation flow, grouped beside POS),
-    // then Scrap, then Subasta, then Online Orders last; all five sections stay
-    // fully loaded underneath regardless of which is showing, so switching back and
-    // forth never loses a filter or an open edit row. Pill styling/count-badge look
-    // mirrors the category tabs on a typical POS product screen. ----
-    const SUB_TABS = ['pos', 'layaway', 'scrap', 'subasta', 'online'];
-    function renderScrapSubTabs() {
-      const pill = (key, label, dot, count) => {
-        const active = activeSubTab === key;
-        return '<button type="button" data-tab="' + key + '" style="cursor:pointer;font:inherit;padding:8px 16px;border-radius:20px;display:inline-flex;align-items:center;gap:7px;' +
-          (active ? 'background:var(--rose);border:1px solid var(--rose);color:var(--ink);font-weight:600;' : 'background:#fff;border:1px solid #ddd;color:#555;') + '">' +
-          '<span style="width:8px;height:8px;border-radius:50%;background:' + dot + ';display:inline-block;"></span>' + esc(label) +
-          '<span style="background:' + (active ? 'rgba(255,255,255,0.65)' : '#f0f0f0') + ';border-radius:10px;padding:1px 7px;font-size:11px;">' + count + '</span>' +
-        '</button>';
-      };
-      const box = document.getElementById('scrap-sub-tabs');
-      box.innerHTML = pill('pos', 'POS', '#2e7d32', posFilteredCount) +
-        pill('layaway', 'Layaway', '#c2185b', layawayCount) +
-        pill('scrap', 'Scrap', '#b06a1f', scrapCount) + pill('subasta', 'Subasta', '#7c3aa8', subastaFilteredCount) +
-        pill('online', 'Online Orders', '#1a56b0', onlineOrdersCount);
-      box.querySelectorAll('[data-tab]').forEach((btn) => btn.addEventListener('click', () => showSubTab(btn.dataset.tab)));
-    }
-    function showSubTab(key) {
-      if (!SUB_TABS.includes(key)) return;
-      activeSubTab = key;
-      SUB_TABS.forEach((k) => { document.getElementById('tab-panel-' + k).style.display = activeSubTab === k ? '' : 'none'; });
-      renderScrapSubTabs();
-    }
-
-    // ---- Global Activity feed integration (spec 312/321) ----
-    // (a) The Forfeited notice moves into the feed panel's pinned slot so there's one
-    //     notification box, with forfeits kept as a standing warning above the live
-    //     toasts. The feed mounts async from posNav.js, so handle both orders.
-    const adoptForfeitedNotice = () => {
-      const feed = window.__kmActivity;
-      const notice = document.getElementById('pos-forfeited-notice');
-      if (feed && notice && notice.parentElement !== feed.pinnedSlot) { feed.pinnedSlot.appendChild(notice); feed.refreshPanelVisibility(); }
-    };
-    adoptForfeitedNotice();
-    document.addEventListener('km-activity-ready', adoptForfeitedNotice);
-    // (b) A clicked notification opens its record right here (no reload) when this
-    //     page is already open; from another page it arrives via ?tab=&open= instead.
-    window.__kmOpenRecord = (table, id) => {
-      if (table === 'layaway_holds') { showSubTab('layaway'); layaway?.openDetail(Number(id)); return true; }
-      if (table === 'scrap_entries') { showSubTab('scrap'); scrap?.openDetail(Number(id)); return true; }
-      if (table === 'subasta_items') { showSubTab('subasta'); subasta?.openDetail(Number(id)); return true; }
-      if (table === 'pos_sale') { showSubTab('pos'); return true; }
-      return false;
-    };
-    const deepLink = new URLSearchParams(window.location.search);
-    if (deepLink.get('tab')) showSubTab(deepLink.get('tab'));
-    if (deepLink.get('open')) {
-      const openId = Number(deepLink.get('open'));
-      if (deepLink.get('tab') === 'layaway') layaway?.openDetail(openId);
-      if (deepLink.get('tab') === 'scrap') scrap?.openDetail(openId);
-      if (deepLink.get('tab') === 'subasta') subasta?.openDetail(openId);
-    }
-
-    function renderBranchButtons() {
-      const box = document.getElementById('branch-buttons');
-      // Everyone can now VIEW every branch here — Branch Supervisor just can't ADD for
-      // a branch that isn't theirs (the write RLS policy already rejects that; this just
-      // disables the form instead of letting them hit a confusing error).
-      box.innerHTML = branches.map((b) =>
-        '<button type="button" class="btn" style="' + branchButtonStyle(b.id, branches, b.id === selectedBranch) + '" data-id="' + b.id + '">' + esc(b.name) + '</button>'
-      ).join('');
-      box.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', async () => {
-        selectedBranch = Number(btn.dataset.id);
-        renderBranchButtons();
-        await Promise.all([loadPos(), subasta?.reload(), scrap?.reload(), onlineOrders?.reload(), layaway?.reload(), runPosCatalogSearch(), refreshForfeitedNotice()]);
-      }));
-      const label = ' — ' + branchName(selectedBranch);
-      document.getElementById('pos-branch-label').textContent = label;
-      document.getElementById('sub-branch-label').textContent = label;
-      document.getElementById('scrap-branch-label').textContent = label;
-      // A view-restricted employee's Online Orders board always shows their own
-      // branch (see onlineOrdersTab.js's isViewRestricted), regardless of which
-      // button is highlighted above for the other tabs -- so its heading must say
-      // that branch, not selectedBranch, or the label would lie about what's shown.
-      document.getElementById('online-branch-label').textContent = onlineOrders?.isViewRestricted
-        ? ' — ' + branchName(onlineOrders.ownBranchId)
-        : label;
-      document.getElementById('layaway-branch-label').textContent = label;
-
-      document.querySelectorAll('#pos-form button[type="submit"]').forEach((btn) => { btn.disabled = !canAddHere(); });
-      const note = canAddHere() ? '' : employee.branch_id
-        ? '<p class="muted" style="font-size:11px;">View only — you can only add items for ' + esc(branchName(employee.branch_id)) + '.</p>'
-        : '<p class="muted" style="font-size:11px;">View only.</p>';
-      document.querySelectorAll('#pos-write-note').forEach((el) => { el.innerHTML = note; });
-      // Scrap and Subasta own their own "+ New" disabled-state/note (each module's
-      // render(), re-run via reload() below) since canAddHere() there depends on
-      // getBranchId() and is scoped to that module now.
-    }
-
-    // Ren, 2026-09-21, section 2: "If a layaway transaction has already been marked as
-    // FORFEITED, show a small notification/note inside the POS ... visible to Admin,
-    // Staff, Supervisor ... should NOT block normal POS operations." Scoped to
-    // whichever branch is currently selected -- refreshed on branch switch, same as
-    // every other per-branch tab here. A failed lookup here is non-critical (shouldn't
-    // block ringing up a sale), so it just leaves the notice as it was.
-    async function refreshForfeitedNotice() {
-      const box = document.getElementById('pos-forfeited-notice');
-      if (!box) return;
-      try {
-        const holds = await listLayaways(selectedBranch);
-        const forfeited = holds.filter((h) => h.status === 'Forfeited');
-        if (!forfeited.length) { box.style.display = 'none'; box.innerHTML = ''; window.__kmActivity?.refreshPanelVisibility(); return; }
-        box.style.display = '';
-        window.__kmActivity?.refreshPanelVisibility();
-        box.innerHTML =
-          '<div style="font-weight:bold;color:#a15c00;">⚠ FORFEITED LAYAWAY' + (forfeited.length > 1 ? 'S' : '') + '</div>' +
-          '<div class="muted" style="margin:2px 0 6px;">This layaway transaction has already been forfeited -- do not process it as an active layaway.</div>' +
-          forfeited.slice(0, 3).map((h) =>
-            '<div style="margin-top:4px;padding-top:4px;border-top:1px dashed #e2c88a;">' +
-              esc(h.customer_name) + (h.order_id ? ' · Order ' + esc(h.order_id) : '') + '<br>' +
-              esc(h.sku) + '<br>' +
-              '<span class="muted">Forfeited ' + fmtDateTime(h.forfeited_at) + '</span>' +
-            '</div>'
-          ).join('') +
-          (forfeited.length > 3 ? '<div class="muted" style="margin-top:4px;">+' + (forfeited.length - 3) + ' more at this branch</div>' : '');
-      } catch (err) { /* non-critical -- leave the notice as it was rather than block POS */ }
-    }
-
-
-    function tile(num, label) { return '<div class="tile"><div class="num">' + num + '</div><div class="lbl">' + label + '</div></div>'; }
+        ).join('') +
+        (forfeited.length > 3 ? '<div class="muted" style="margin-top:4px;">+' + (forfeited.length - 3) + ' more at this branch</div>' : '');
+    } catch (err) { /* non-critical -- leave the notice as it was rather than block POS */ }
   }
 }
 </script>

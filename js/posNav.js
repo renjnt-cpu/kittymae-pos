@@ -10,7 +10,7 @@ import { initActivityFeed } from './activityFeed.js';
 // event's record_table. Pages this app doesn't have link across to the ERP.
 const ERP = 'https://renjnt-cpu.github.io/kittymae-inventory-system/';
 const ACTIVITY_LINKS = {
-  pos_sale: 'branches.html?tab=pos',
+  pos_sale: 'branches.html?tab=pos&open=',
   layaway_holds: 'branches.html?tab=layaway&open=',
   scrap_entries: 'branches.html?tab=scrap&open=',
   subasta_items: 'branches.html?tab=subasta',
