@@ -8,7 +8,7 @@
 import {
   listLayaways, createLayawayHold, addLayawayPayment, completeLayaway, cancelLayaway, deleteLayawayPayment,
   setLayawayForfeitDate, setLayawayHoldDate, uploadLayawayPaymentProof, getLayawayPaymentProofUrl,
-  searchProducts, listActiveEmployees, subscribeToChanges, editLayawayHold, deleteLayawayHold, forfeitLayawayHold,
+  searchProducts, listLayawayHandlers, subscribeToChanges, editLayawayHold, deleteLayawayHold, forfeitLayawayHold,
   requestLayawayForfeitDate, listLayawayForfeitDateRequests, approveLayawayForfeitDate, rejectLayawayForfeitDate,
 } from './api.js?v=20260922a';
 import { PAYMENT_METHODS } from './paymentMethods.js?v=20260922a';
@@ -158,7 +158,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   // now"), reversing the same-day-earlier change that let Manager/Branch Supervisor
   // do it too. Matches cancel_layaway's own server-side gate exactly.
   const canFinalDelete = employee.role === 'Admin';
-  const staff = await listActiveEmployees();
+  const staff = await listLayawayHandlers();
   // Three independent { field, dir } states -- one per distinct dataset on this tab
   // (spec section 9: same state drives desktop/tablet/mobile, but a dataset switch
   // like On Hold list -> Monthly rollup -> Forfeiture Watch is a genuinely different

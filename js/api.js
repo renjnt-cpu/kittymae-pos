@@ -840,6 +840,17 @@ export async function listActiveEmployees() {
   return (data || []).slice().sort((a, b) => a.full_name.localeCompare(b.full_name));
 }
 
+/** Narrower roster for Layaway's "Handled By" picker -- unlike listActiveEmployees(),
+ * excludes Layover (a different company) entirely, and Miss Kittymae's own
+ * Administrative-department helpers/drivers except Personal Assistant (Ren,
+ * 2026-09-22: none of the excluded group would ever actually handle a jewelry
+ * layaway). list_layaway_handlers() in the 2026-09-22 migration. */
+export async function listLayawayHandlers() {
+  const { data, error } = await supabase.rpc('list_layaway_handlers');
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
 export async function listAssetCustodianItems() {
   const { data, error } = await supabase.from('asset_custodian_items')
     .select('*, branches(name)')
