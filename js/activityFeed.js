@@ -92,20 +92,31 @@ export async function initActivityFeed({ employee, headerEl, esc, links }) {
   let unread = 0;
   let history = [];                // rows currently in the drawer
   let histOldest = null;
+  let panelOpenByUser = false;     // Ren, 2026-09-22: a pinned warning must never pop
+                                   // this open by itself -- only the bell (or a
+                                   // genuinely new live toast, unchanged) does.
 
-  function refreshPanelVisibility() {
-    // A pinned block that's parked here but currently hidden (e.g. no forfeited
-    // layaways at the selected branch) shouldn't keep an empty panel on screen.
+  // A pinned warning (e.g. Forfeited Layaways) has to surface on the bell somehow even
+  // when there's no "unread" activity event behind it -- otherwise clicking the bell
+  // to find it has no prompt at all now that it no longer pops itself open (Ren,
+  // 2026-09-22). Falls back to the real unread count when nothing's pinned.
+  function updateBadge() {
+    const badge = $('act-badge');
     const pinnedShown = Array.from(pinnedSlot.children).some((c) => c.style.display !== 'none');
-    const has = visible.length > 0 || pinnedShown;
+    if (pinnedShown) { badge.textContent = unread > 0 ? (unread > 99 ? '99+' : String(unread)) : '!'; badge.hidden = false; }
+    else { badge.textContent = unread > 99 ? '99+' : String(unread); badge.hidden = unread === 0; }
+  }
+  function refreshPanelVisibility() {
+    const has = panelOpenByUser || visible.length > 0;
     panel.classList.toggle('show', has);
     $('act-more').textContent = pending.length ? '+ ' + pending.length + ' more' : '';
+    updateBadge();
   }
+  function togglePanel() { panelOpenByUser = !panelOpenByUser; refreshPanelVisibility(); }
+  function closePanel() { panelOpenByUser = false; refreshPanelVisibility(); }
   function setUnread(n) {
     unread = Math.max(0, n);
-    const badge = $('act-badge');
-    badge.textContent = unread > 99 ? '99+' : String(unread);
-    badge.hidden = unread === 0;
+    updateBadge();
   }
 
   // ---- rendering ------------------------------------------------------------
@@ -222,6 +233,7 @@ export async function initActivityFeed({ employee, headerEl, esc, links }) {
   $('act-panel-close').addEventListener('click', () => {
     pending.length = 0;
     visible.slice().forEach(removeVisible);
+    closePanel();
   });
 
   function onNewEvent(ev) {
@@ -302,8 +314,15 @@ export async function initActivityFeed({ employee, headerEl, esc, links }) {
     drawerBackdrop.classList.remove('open');
     drawer.classList.remove('open');
   }
-  bell.addEventListener('click', openHistory);
-  $('act-viewall').addEventListener('click', openHistory);
+  // Ren, 2026-09-22: "REMOVE NOTIFICATION SHOW THIS ON BELL ON THE UPPER RIGHT" --
+  // the bell now opens/closes this lightweight panel (pinned warnings + recent live
+  // activity) in place, instead of jumping straight to the full History drawer. "View
+  // All Activity" inside the panel still reaches that fuller, filterable drawer.
+  bell.addEventListener('click', (ev) => { ev.stopPropagation(); togglePanel(); });
+  $('act-viewall').addEventListener('click', () => { closePanel(); openHistory(); });
+  document.addEventListener('click', (ev) => {
+    if (panelOpenByUser && !panel.contains(ev.target) && ev.target !== bell) closePanel();
+  });
   $('act-hist-close').addEventListener('click', closeHistory);
   $('act-hist-close2').addEventListener('click', closeHistory);
   drawerBackdrop.addEventListener('click', closeHistory);

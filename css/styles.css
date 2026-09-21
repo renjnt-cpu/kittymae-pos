@@ -285,7 +285,10 @@ main { flex:1 1 auto; min-height:0; overflow-y:auto; width:100%; }
 .act-bell { position:relative; background:none; border:none; font-size:18px; cursor:pointer; padding:4px 6px; line-height:1; color:var(--ink); }
 .act-badge { position:absolute; top:-3px; right:-5px; background:var(--warn); color:#fff; font-size:10px; font-weight:700; border-radius:10px; padding:1px 5px; min-width:16px; text-align:center; line-height:1.3; }
 .act-badge[hidden] { display:none; }
-.act-panel { position:fixed; left:12px; bottom:12px; width:300px; max-width:calc(100vw - 24px); z-index:45; display:none; flex-direction:column; gap:8px; pointer-events:none; }
+/* Anchored under the bell, upper right (Ren, 2026-09-22: "SHOW THIS ON BELL ON THE
+   UPPER RIGHT") -- it used to float bottom-left, disconnected from the bell that now
+   deliberately opens it. */
+.act-panel { position:fixed; top:64px; right:12px; width:320px; max-width:calc(100vw - 24px); z-index:45; display:none; flex-direction:column; gap:8px; pointer-events:none; }
 .act-panel.show { display:flex; }
 .act-panel > * { pointer-events:auto; }
 .act-panel-head { display:flex; justify-content:space-between; align-items:center; font-size:11px; letter-spacing:0.06em; color:var(--muted); font-weight:700; }
@@ -313,7 +316,7 @@ main { flex:1 1 auto; min-height:0; overflow-y:auto; width:100%; }
 .act-filters .field { min-width:0; flex:1 1 120px; }
 .act-filters select, .act-filters input { font-size:12px; padding:5px 6px; width:100%; }
 @media (max-width:760px) {
-  .act-panel { left:8px; right:8px; bottom:auto; top:64px; width:auto; max-width:none; }
+  .act-panel { left:8px; right:8px; width:auto; max-width:none; }
   .act-item { padding:8px 28px 8px 10px; }
 }
 
