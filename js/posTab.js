@@ -86,8 +86,13 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   // Supervisor role, or the Branch Team Leader position.
   const canEditSale = ['Admin', 'Manager', 'Branch Supervisor'].includes(employee.role) || employee.position === 'Branch Team Leader';
   // Correcting an already-recorded amount (Unit Price, Qty, or the payment split) is
-  // narrower (Ren's spec 121-132) -- mirrors is_amount_editor() exactly.
-  const canEditAmount = employee.position === 'Auditor' || employee.role === 'Branch Supervisor' || (employee.position || '').includes('Supervisor');
+  // narrower (Ren's spec 121-132) -- mirrors is_amount_editor() exactly. Editor and
+  // Branch Team Leader added 2026-09-22 per Ren: "AUDITOR, EDITOR, SUPERVISOR, BRANCH
+  // TEAM LEADER CAN EDIT THE TRANSACTION" (Editor/Supervisor already carried the
+  // matching transaction.edit_amount DB grant; Branch Team Leader's grant was added
+  // alongside this change so the UI and the server-side gate agree).
+  const canEditAmount = ['Auditor', 'Editor', 'Branch Team Leader'].includes(employee.position) ||
+    employee.role === 'Branch Supervisor' || (employee.position || '').includes('Supervisor');
   function canWriteHere() {
     return ['Admin', 'Manager'].includes(employee.role) || (isScoped && getBranchId() === employee.branch_id) ||
       POSITION_MANAGERS.includes(employee.position);
@@ -104,8 +109,15 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   const sort = { field: 'sale_date', dir: 'desc' };
 
   root.innerHTML =
-    '<div class="module-topbar"><div></div><div style="text-align:right;">' +
+    // Summary sits right beside + New Sale (Ren, 2026-09-22: "UNDER POS PUT SUMMARY
+    // BESIDE NEW SALE") instead of down by the ledger heading -- same button/popover,
+    // same ids, just relocated; scope/data (spec 41-51) is unchanged.
+    '<div class="module-topbar"><div></div><div style="text-align:right;display:flex;gap:8px;align-items:flex-start;justify-content:flex-end;flex-wrap:wrap;">' +
       '<button type="button" class="btn" id="pos-new-btn">+ New Sale</button>' +
+      '<div style="position:relative;">' +
+        '<button type="button" class="btn small secondary" id="pos-summary-toggle">Summary ▾</button>' +
+        '<div id="pos-summary-panel" class="pos-summary-panel" style="display:none;"></div>' +
+      '</div>' +
       '<div id="pos-write-note"></div>' +
     '</div></div>' +
     '<div class="tiles" id="pos-tiles"></div>' +
@@ -124,16 +136,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     '<div id="pos-active"></div>' +
     '<h3 style="margin-top:0;">Sales by Admin &amp; Payment Method <span class="muted" style="font-weight:normal;font-size:12px;">— reflects the From/To date range above, all admins for this branch</span></h3>' +
     '<div id="pos-by-admin" style="margin-bottom:20px;"><div class="muted">Loading…</div></div>' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-top:6px;">' +
-      '<h3 style="margin:0;">Sales Transactions</h3>' +
-      // Ren's spec 41-51: a Summary popover scoped to whatever's currently visible in
-      // the ledger (Branch/From/To/Search all applied) -- same groups/payments data
-      // as the pivot above, so the two can never disagree.
-      '<div style="position:relative;">' +
-        '<button type="button" class="btn small secondary" id="pos-summary-toggle">Summary ▾</button>' +
-        '<div id="pos-summary-panel" class="pos-summary-panel" style="display:none;"></div>' +
-      '</div>' +
-    '</div>' +
+    '<h3 style="margin-top:6px;">Sales Transactions</h3>' +
     '<div id="pos-list"><div class="muted">Loading…</div></div>' +
 
     // ---- Form Drawer: New Sale (product search + cart + checkout) ----
