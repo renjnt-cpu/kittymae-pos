@@ -17,6 +17,18 @@ import { initShell, toast, esc } from './js/shell.js';
 import { getBranches, listBranchCapitalEntries, getBranchCapitalBalances, getBranchCapitalRemaining, createBranchCapitalEntry, approveBranchCapitalEntry, deleteBranchCapitalEntry, subscribeToChanges } from './js/api.js';
 import { renderPosNav } from './js/posNav.js';
 import { branchBadge, branchOptionStyle } from './js/branchColors.js';
+import { sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate } from './js/uiKit.js';
+
+// Global Filter + Sort rules (Ren, 2026-09-21, section 32-ish: Branch transaction
+// details).
+const CAP_SORT_FIELDS = [
+  { key: 'entry_date', label: 'Date' }, { key: 'branch', label: 'Branch' }, { key: 'amount', label: 'Amount' },
+  { key: 'purpose', label: 'Purpose' }, { key: 'status', label: 'Status' },
+];
+const CAP_SORT_COMPARATORS = {
+  entry_date: byDate('entry_date'), amount: byNumber('amount'), purpose: byText('purpose'), status: byText('status'),
+  branch: (a, b) => String(a.branches?.name || '').localeCompare(String(b.branches?.name || '')),
+};
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + 'g';
@@ -52,6 +64,7 @@ if (employee) {
   const branchOptions = (selected) => branches.map((b) =>
     '<option value="' + b.id + '"' + (b.id === selected ? ' selected' : '') + ' style="' + branchOptionStyle(b.id, branches) + '">' + esc(b.name) + '</option>'
   ).join('');
+  const sort = { field: 'entry_date', dir: 'desc' };
 
   const addFormHtml =
     '<div class="card">' +
@@ -95,6 +108,7 @@ if (employee) {
               '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
                 '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="f-search" placeholder="Purpose, notes…"></div>' +
                 (isAdmin ? '<div class="field"><label>Branch</label><select id="f-branch"><option value="all">All Branches</option>' + branchOptions() + '</select></div>' : '') +
+                sortControlHtml(CAP_SORT_FIELDS, sort, 'cap-sort-field', 'cap-sort-dir') +
                 '<button type="button" class="btn small secondary" id="f-clear">Clear Filters</button>' +
               '</div>' +
             '</div>'
@@ -150,6 +164,7 @@ if (employee) {
   if (canFullView) {
     document.getElementById('f-search').addEventListener('input', render);
     if (isAdmin) document.getElementById('f-branch').addEventListener('change', render);
+    wireSortControl('cap-sort-field', 'cap-sort-dir', sort, render);
     document.getElementById('f-clear').addEventListener('click', () => {
       document.getElementById('f-search').value = '';
       if (isAdmin) document.getElementById('f-branch').value = 'all';
@@ -255,6 +270,8 @@ if (employee) {
 
     const list = document.getElementById('cap-list');
     if (!rows.length) { list.innerHTML = '<p class="muted">No capital entries for this filter.</p>'; return; }
+    // Filtering already picked `rows`; sort only reorders them (section 11).
+    rows = applySort(rows, sort, CAP_SORT_COMPARATORS);
     list.innerHTML = '<div class="table-scroll table-2col"><table><tr><th>Branch</th><th>Date</th><th>Amount</th><th>Metal / Grams</th><th>Purpose</th><th>Notes</th><th>Status</th><th></th></tr>' +
       rows.map((r) => {
         const pending = r.status === 'Pending Approval';
