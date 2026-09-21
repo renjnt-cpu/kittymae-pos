@@ -91,8 +91,8 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   // TEAM LEADER CAN EDIT THE TRANSACTION" (Editor/Supervisor already carried the
   // matching transaction.edit_amount DB grant; Branch Team Leader's grant was added
   // alongside this change so the UI and the server-side gate agree).
-  const canEditAmount = ['Auditor', 'Editor', 'Branch Team Leader'].includes(employee.position) ||
-    employee.role === 'Branch Supervisor' || (employee.position || '').includes('Supervisor');
+  const canEditAmount = ['Admin', 'Branch Supervisor'].includes(employee.role) || ['Auditor', 'Editor', 'Branch Team Leader'].includes(employee.position) ||
+    (employee.position || '').includes('Supervisor');
   function canWriteHere() {
     return ['Admin', 'Manager'].includes(employee.role) || (isScoped && getBranchId() === employee.branch_id) ||
       POSITION_MANAGERS.includes(employee.position);
