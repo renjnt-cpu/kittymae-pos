@@ -106,101 +106,97 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   }
 
   root.innerHTML =
-    '<div class="layout-2col">' +
-      '<div class="layout-2col-side">' +
-        '<div class="card">' +
-          '<h3>Hold Item(s)</h3>' +
-          '<p class="muted" style="margin-top:-4px;">Each item leaves the sellable pool immediately (moves to Reserved) but stays on hand until either completed as a sale or cancelled. Add more than one item to hold a whole order for one customer at once.</p>' +
-          '<form id="lw-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
-            '<label style="font-size:13px;font-weight:600;">Items *</label>' +
-            '<div id="lw-items"></div>' +
-            '<button type="button" class="btn small secondary" id="lw-add-item" style="align-self:flex-start;margin:-4px 0 10px;">+ Add another item</button>' +
-            '<div class="field"><label>Order ID</label><input type="text" name="orderId"></div>' +
-            '<div class="field"><label>Customer Name *</label><input type="text" name="customerName" required></div>' +
-            '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
-            '<div class="field"><label>Forfeit Date (optional)</label><input type="date" name="forfeitDate"></div>' +
-            '<div class="field"><label>Admin (Handled By)</label><select name="handledBy"><option value="">— none —</option>' +
-              staff.map((s) => '<option value="' + s.id + '"' + (s.id === employee.id ? ' selected' : '') + '>' + esc(s.full_name) + '</option>').join('') +
-            '</select></div>' +
-            paymentSlotsHtml() +
-            '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
-            '<button class="btn" type="submit">Hold Item(s)</button>' +
-          '</form>' +
-        '</div>' +
-        // Status categories stacked directly under the Hold Item Entry form, in the
-        // same narrow side column, so they read as physically "under" it instead of
-        // floating at the top of the wide main column beside it (Ren, 2026-09-21,
-        // section 3, and again 2026-09-21: "status ... are in the center make it
-        // under the hold item entry" -- the first pass only reordered them within
-        // .layout-2col-main, which sits beside .layout-2col-side, not below it).
-        // One folder per status besides On Hold itself (Ren, 2026-09-16: "make a
-        // folder per layaway status for cancelled, delete, completed, on hold"),
-        // collapsed by default, same pattern as Transfers' own status folders. The On
-        // Hold list's own Search box further narrows what shows inside each.
-        '<div style="margin-top:16px;">' +
-          '<h3 style="margin-top:0;">Status</h3>' +
-          '<details class="card">' +
-            '<summary style="cursor:pointer;font-weight:bold;">Completed <span class="muted" id="lw-completed-count" style="font-weight:normal;"></span></summary>' +
-            '<div id="lw-list-completed" style="margin-top:10px;"></div>' +
-          '</details>' +
-          '<details class="card" style="margin-top:10px;">' +
-            '<summary style="cursor:pointer;font-weight:bold;">Cancelled <span class="muted" id="lw-cancelled-count" style="font-weight:normal;"></span></summary>' +
-            '<div id="lw-list-cancelled" style="margin-top:10px;"></div>' +
-          '</details>' +
-          // Forfeited: a customer never came back to pay before the Forfeit Date, as
-          // opposed to Cancelled (a deliberate back-out) -- Ren, 2026-09-17, wanted
-          // these told apart instead of both landing in the same Cancelled bucket.
-          '<details class="card" style="margin-top:10px;">' +
-            '<summary style="cursor:pointer;font-weight:bold;">Forfeited <span class="muted" id="lw-forfeited-count" style="font-weight:normal;"></span></summary>' +
-            '<div id="lw-list-forfeited" style="margin-top:10px;"></div>' +
-          '</details>' +
+    // Status now leads the whole tab, full width, ahead of Hold Item Entry (Ren,
+    // 2026-09-21, section 110/116: "Status section must appear directly after Sales
+    // Summary... Hold Item Entry is still required, but it must now appear after the
+    // Status section" -- the earlier .layout-2col arrangement paired Hold Item Entry
+    // and Status side-by-side in two columns, which can't express an "above/below"
+    // order at desktop widths at all; this drops that two-column wrapper for this tab
+    // in favor of one straight top-to-bottom flow of full-width sections, which is
+    // also what "landscape" (section 111-118) means for a many-column record: give it
+    // the whole width instead of a cramped 300px sidebar. One folder per status
+    // besides On Hold itself (Ren, 2026-09-16: "make a folder per layaway status for
+    // cancelled, delete, completed, on hold"), collapsed by default. The On Hold
+    // list's own Search box further narrows what shows inside each.
+    '<h3 style="margin-top:0;">Status</h3>' +
+    '<details class="card">' +
+      '<summary style="cursor:pointer;font-weight:bold;">Completed <span class="muted" id="lw-completed-count" style="font-weight:normal;"></span></summary>' +
+      '<div id="lw-list-completed" style="margin-top:10px;"></div>' +
+    '</details>' +
+    '<details class="card" style="margin-top:10px;">' +
+      '<summary style="cursor:pointer;font-weight:bold;">Cancelled <span class="muted" id="lw-cancelled-count" style="font-weight:normal;"></span></summary>' +
+      '<div id="lw-list-cancelled" style="margin-top:10px;"></div>' +
+    '</details>' +
+    // Forfeited: a customer never came back to pay before the Forfeit Date, as
+    // opposed to Cancelled (a deliberate back-out) -- Ren, 2026-09-17, wanted
+    // these told apart instead of both landing in the same Cancelled bucket.
+    '<details class="card" style="margin-top:10px;">' +
+      '<summary style="cursor:pointer;font-weight:bold;">Forfeited <span class="muted" id="lw-forfeited-count" style="font-weight:normal;"></span></summary>' +
+      '<div id="lw-list-forfeited" style="margin-top:10px;"></div>' +
+    '</details>' +
 
-          // Admin-only review queue (Ren, 2026-09-17: "for approval of me if they want
-          // to edit it") -- open by default since a pending request is something to
-          // act on, not just browse, same convention as SKU Catalog's Pending Edit
-          // Requests.
-          (canFinalDelete
-            ? '<details class="card" id="lw-pending-forfeit-folder" style="margin-top:10px;" open>' +
-                '<summary style="cursor:pointer;font-weight:bold;">Pending Forfeit Date Requests <span class="muted" id="lw-pending-forfeit-count" style="font-weight:normal;"></span></summary>' +
-                '<div id="lw-pending-forfeit-list" style="margin-top:10px;"><div class="muted">Loading…</div></div>' +
-              '</details>'
-            : '') +
-        '</div>' +
+    // Admin-only review queue (Ren, 2026-09-17: "for approval of me if they want
+    // to edit it") -- open by default since a pending request is something to
+    // act on, not just browse, same convention as SKU Catalog's Pending Edit
+    // Requests.
+    (canFinalDelete
+      ? '<details class="card" id="lw-pending-forfeit-folder" style="margin-top:10px;" open>' +
+          '<summary style="cursor:pointer;font-weight:bold;">Pending Forfeit Date Requests <span class="muted" id="lw-pending-forfeit-count" style="font-weight:normal;"></span></summary>' +
+          '<div id="lw-pending-forfeit-list" style="margin-top:10px;"><div class="muted">Loading…</div></div>' +
+        '</details>'
+      : '') +
+
+    '<div class="card" style="margin-top:20px;">' +
+      '<h3 style="margin-top:0;">Hold Item(s)</h3>' +
+      '<p class="muted" style="margin-top:-4px;">Each item leaves the sellable pool immediately (moves to Reserved) but stays on hand until either completed as a sale or cancelled. Add more than one item to hold a whole order for one customer at once.</p>' +
+      '<form id="lw-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
+        '<label style="font-size:13px;font-weight:600;">Items *</label>' +
+        '<div id="lw-items"></div>' +
+        '<button type="button" class="btn small secondary" id="lw-add-item" style="align-self:flex-start;margin:-4px 0 10px;">+ Add another item</button>' +
+        '<div class="field"><label>Order ID</label><input type="text" name="orderId"></div>' +
+        '<div class="field"><label>Customer Name *</label><input type="text" name="customerName" required></div>' +
+        '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
+        '<div class="field"><label>Forfeit Date (optional)</label><input type="date" name="forfeitDate"></div>' +
+        '<div class="field"><label>Admin (Handled By)</label><select name="handledBy"><option value="">— none —</option>' +
+          staff.map((s) => '<option value="' + s.id + '"' + (s.id === employee.id ? ' selected' : '') + '>' + esc(s.full_name) + '</option>').join('') +
+        '</select></div>' +
+        paymentSlotsHtml() +
+        '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
+        '<button class="btn" type="submit">Hold Item(s)</button>' +
+      '</form>' +
+    '</div>' +
+
+    '<h2 style="margin-top:26px;">Monthly Monitoring</h2>' +
+    '<div class="card">' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+        '<div class="field"><label>From</label><input type="date" id="mm-from"></div>' +
+        '<div class="field"><label>To</label><input type="date" id="mm-to"></div>' +
+        '<button type="button" class="btn small secondary" id="mm-clear">All Time</button>' +
       '</div>' +
-      '<div class="layout-2col-main">' +
-        '<h2 style="margin-top:0;">Monthly Monitoring</h2>' +
-        '<div class="card">' +
-          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-            '<div class="field"><label>From</label><input type="date" id="mm-from"></div>' +
-            '<div class="field"><label>To</label><input type="date" id="mm-to"></div>' +
-            '<button type="button" class="btn small secondary" id="mm-clear">All Time</button>' +
-          '</div>' +
-        '</div>' +
-        '<div class="tiles" id="mm-tiles"></div>' +
-        '<div id="mm-table"></div>' +
-        // Ren, 2026-09-18: "when filter range show this who also pay the date when
-        // filter" -- the rollup above is by hold_date (when the item was purchased);
-        // this is the same From/To range applied to payments' OWN dates instead, so
-        // "who paid, how much, and when" for that period is checkable directly,
-        // rather than only inferable from the aggregate Total Paid number.
-        '<h3 style="margin-top:20px;">Payments Received <span class="muted" style="font-weight:normal;">— by payment date, same range as above</span></h3>' +
-        '<div id="mm-payments-table"></div>' +
+    '</div>' +
+    '<div class="tiles" id="mm-tiles"></div>' +
+    '<div id="mm-table"></div>' +
+    // Ren, 2026-09-18: "when filter range show this who also pay the date when
+    // filter" -- the rollup above is by hold_date (when the item was purchased);
+    // this is the same From/To range applied to payments' OWN dates instead, so
+    // "who paid, how much, and when" for that period is checkable directly,
+    // rather than only inferable from the aggregate Total Paid number.
+    '<h3 style="margin-top:20px;">Payments Received <span class="muted" style="font-weight:normal;">— by payment date, same range as above</span></h3>' +
+    '<div id="mm-payments-table"></div>' +
 
-        '<h2 style="margin-top:30px;">On Hold</h2>' +
-        '<div class="tiles" id="lw-tiles"></div>' +
-        '<div class="card">' +
-          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-            '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="lw-f-search" placeholder="SKU, customer, order ID, contact…"></div>' +
-            '<button type="button" class="btn small secondary" id="lw-f-clear">Clear Filters</button>' +
-          '</div>' +
-        '</div>' +
-        '<div id="lw-list"><div class="muted">Loading…</div></div>' +
-
-        '<h3 style="margin-top:22px;">Forfeiture Watch <span class="muted" style="font-weight:normal;">— On Hold items, oldest first (not affected by the date range above)</span></h3>' +
-        '<p class="muted" style="margin-top:-4px;">Unpaid holds are forfeited 2 months after Date Purchased. Rows turn red once an item is close to or past that. Date Purchased is fixed once set (Admin only can correct it); a Forfeit Date change by anyone else needs Admin approval.</p>' +
-        '<div id="fw-table"></div>' +
+    '<h2 style="margin-top:30px;">On Hold</h2>' +
+    '<div class="tiles" id="lw-tiles"></div>' +
+    '<div class="card">' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+        '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="lw-f-search" placeholder="SKU, customer, order ID, contact…"></div>' +
+        '<button type="button" class="btn small secondary" id="lw-f-clear">Clear Filters</button>' +
       '</div>' +
-    '</div>';
+    '</div>' +
+    '<div id="lw-list"><div class="muted">Loading…</div></div>' +
+
+    '<h3 style="margin-top:22px;">Forfeiture Watch <span class="muted" style="font-weight:normal;">— On Hold items, oldest first (not affected by the date range above)</span></h3>' +
+    '<p class="muted" style="margin-top:-4px;">Unpaid holds are forfeited 2 months after Date Purchased. Rows turn red once an item is close to or past that. Date Purchased is fixed once set (Admin only can correct it); a Forfeit Date change by anyone else needs Admin approval.</p>' +
+    '<div id="fw-table"></div>';
 
   // ---- Item rows: one or more SKU/Qty/Price lines under the same order, each with
   // its own autocomplete instance (same pattern as movement.html/branches.html's POS
