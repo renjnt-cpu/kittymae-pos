@@ -167,7 +167,10 @@ button.btn.small { padding:4px 10px; font-size:12px; }
 
 .app-main-col { flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column; }
 .app-header { background:var(--rose); color:var(--ink); padding:12px 20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-.app-page-title { font-size:17px; margin:0; flex:1 1 auto; }
+.app-title-block { flex:1 1 auto; min-width:0; }
+.app-page-title { font-size:17px; margin:0; }
+.app-breadcrumb { font-size:11px; color:var(--ink); opacity:0.7; margin-bottom:2px; }
+.app-breadcrumb-sep { opacity:0.6; }
 .app-menu-btn { display:none; background:none; border:none; font-size:20px; line-height:1; cursor:pointer; padding:2px 6px; color:var(--ink); }
 .app-backdrop { display:none; }
 

@@ -33,7 +33,12 @@ export function renderPosNav(employee, activeHref) {
     '<div class="app-main-col">' +
       '<header class="app-header">' +
         '<button type="button" class="app-menu-btn" id="app-menu-btn" aria-label="Open menu">☰</button>' +
-        '<h1 class="app-page-title">' + esc(active ? active.label : 'Kittymae POS') + '</h1>' +
+        '<div class="app-title-block">' +
+          // Ren's spec section 159 -- POS's own nav is a flat 5-item list (no groups
+          // worth having), so the breadcrumb's "section" is just the app itself.
+          (active ? '<div class="app-breadcrumb">Kittymae POS <span class="app-breadcrumb-sep">/</span> ' + esc(active.label) + '</div>' : '') +
+          '<h1 class="app-page-title">' + esc(active ? active.label : 'Kittymae POS') + '</h1>' +
+        '</div>' +
         '<div class="who" id="pos-nav-who"></div>' +
       '</header>' +
     '</div>';

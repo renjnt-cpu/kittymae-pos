@@ -225,10 +225,17 @@ export function initOnlineOrdersTab({ root, esc, toast, msgId, getBranchId, onCo
     };
     const truncated = rows.length >= ORDER_ITEM_STATUS_ROW_CAP;
     const subtotalQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
-    const subtotalLine = '<p class="muted" style="margin:0 0 6px;">' + rows.length + (truncated ? '+' : '') + ' item' + (rows.length === 1 && !truncated ? '' : 's') +
-      (search ? ' matching "' + esc(search) + '"' : '') + ' · Qty subtotal: <strong>' + subtotalQty + (truncated ? '+' : '') + '</strong>' +
-      (truncated ? ' <span style="color:#b45309;">— showing the ' + ORDER_ITEM_STATUS_ROW_CAP + ' most recent; search to narrow further</span>' : '') +
-      '</p>';
+    const uniqueOrders = new Set(rows.map((r) => r.order_reference).filter(Boolean)).size;
+    // Ren's spec section 160: KPI tiles instead of a plain summary sentence, matching
+    // the .tile/.tiles pattern every other module (POS/Layaway/Scrap/Subasta) already
+    // uses for this exact kind of "how much is on this filtered view" number.
+    const tile = (num, label) => '<div class="tile"><div class="num">' + num + '</div><div class="lbl">' + label + '</div></div>';
+    const subtotalLine = '<div class="tiles" style="margin-bottom:8px;">' +
+      tile(rows.length + (truncated ? '+' : ''), 'Items' + (search ? ' (filtered)' : '')) +
+      tile(uniqueOrders + (truncated ? '+' : ''), 'Orders') +
+      tile(subtotalQty + (truncated ? '+' : ''), 'Qty Subtotal') +
+      '</div>' +
+      (truncated ? '<p class="muted" style="margin:0 0 6px;color:#b45309;">Showing the ' + ORDER_ITEM_STATUS_ROW_CAP + ' most recent; search to narrow further.</p>' : '');
 
     const topCounts = new Map();
     rows.forEach((r) => {
