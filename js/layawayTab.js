@@ -93,6 +93,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   // everywhere else in the app -- it now covers deleting a payment and editing a
   // hold's details, matching edit_layaway_hold's own server-side gate exactly.
   const canManage = ['Admin', 'Manager', 'Branch Supervisor'].includes(employee.role) || POSITION_MANAGERS.includes(employee.position);
+  // Ren's spec sections 121-132, confirmed 2026-09-21: correcting an already-recorded
+  // amount (a hold's Unit Price/Qty/Total, or deleting a recorded payment) is narrower
+  // than canManage above -- only the Auditor position or anyone holding a
+  // Supervisor-named position/role. Mirrors is_amount_editor() in the database
+  // exactly, including the layaway_payments delete RLS policy.
+  const canEditAmount = employee.position === 'Auditor' || employee.role === 'Branch Supervisor' || (employee.position || '').includes('Supervisor');
   // Cancelling (the "final delete" of a layaway) is narrower still -- Admin only
   // (Ren, 2026-09-16: "i will be the one to final delete not supervisor or manager
   // now"), reversing the same-day-earlier change that let Manager/Branch Supervisor
@@ -239,6 +245,9 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         '<div class="field" style="width:120px;"><label>Order ID</label><input type="text" name="orderId" value="' + esc(h.order_id || '') + '"></div>' +
       '</div>' +
       '<div class="field" style="margin-top:6px;"><label>Notes</label><input type="text" name="notes" value="' + esc(h.notes || '') + '"></div>' +
+      // Reason required when Amount or Qty actually changes (Ren's spec section
+      // 126) -- enforced again server-side by edit_layaway_hold() regardless.
+      '<div class="field" style="margin-top:6px;"><label>Reason (required if amount/qty changes)</label><input type="text" name="reason"></div>' +
       '<div style="display:flex;gap:4px;margin-top:6px;">' +
         '<button type="button" class="btn small" data-act="save-edit-hold" data-id="' + h.id + '">Save</button>' +
         '<button type="button" class="btn small secondary" data-act="close-edit-hold" data-id="' + h.id + '">Cancel</button>' +
@@ -590,7 +599,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
                   (p.reference_number ? '<div class="muted" style="font-size:10px;margin-top:2px;">Receipt/Txn #' + esc(p.reference_number) + '</div>' : '') +
                   '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">' +
                     (p.attachment_path ? '<button type="button" class="btn small secondary" data-act="view-proof" data-path="' + esc(p.attachment_path) + '" style="padding:1px 6px;">Proof</button>' : '') +
-                    (canManage ? '<button class="btn small secondary" data-act="del-payment" data-id="' + p.id + '" style="padding:1px 6px;">✕</button>' : '') +
+                    (canEditAmount ? '<button class="btn small secondary" data-act="del-payment" data-id="' + p.id + '" style="padding:1px 6px;">✕</button>' : '') +
                     '<span class="muted" style="font-size:10px;">' + fmtDate(p.paid_at) + (p.employees ? ' · ' + esc(p.employees.full_name) : '') + '</span>' +
                   '</div>' +
                 '</div>').join('')
@@ -621,7 +630,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
                   : '') +
                 '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">' +
                   (canAct ? '<button class="btn small secondary" data-act="complete" data-id="' + h.id + '">Complete</button>' : '') +
-                  (canManage ? '<button class="btn small secondary" data-act="edit-hold" data-id="' + h.id + '">Edit</button>' : '') +
+                  (canEditAmount ? '<button class="btn small secondary" data-act="edit-hold" data-id="' + h.id + '">Edit</button>' : '') +
                   (canFinalDelete ? '<button class="btn small secondary" data-act="cancel" data-id="' + h.id + '">Cancel</button>' : '') +
                   // Forfeited is a separate final disposition from Cancelled -- the
                   // customer never came back to pay by the Forfeit Date, as opposed to
@@ -636,7 +645,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
                   // delete, completed, on hold").
                   (canFinalDelete ? '<button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '">Delete</button>' : '') +
                 '</div>' +
-                (canManage ? editHoldFormHtml(h) : '')
+                (canEditAmount ? editHoldFormHtml(h) : '')
               : '') +
             ((h.status === 'Cancelled' || h.status === 'Forfeited') && canFinalDelete
               ? '<button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '" style="margin-top:4px;">Delete</button>'
@@ -752,9 +761,21 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       const contactNumber = form.querySelector('[name=contactNumber]').value.trim();
       const orderId = form.querySelector('[name=orderId]').value.trim();
       const notes = form.querySelector('[name=notes]').value.trim();
+      const reason = form.querySelector('[name=reason]').value.trim();
       if (!sku || !qty || qty <= 0 || !customerName) { notify('SKU, a positive Qty, and Customer Name are required.', true); return; }
+      const original = allHolds.find((x) => x.id === Number(btn.dataset.id));
+      const amountChanged = original && (Number(original.unit_price) !== Number(unitPrice) || Number(original.qty) !== qty);
+      // Ren's spec section 126: reason required whenever the amount/qty actually
+      // changes -- checked here too (not just server-side) so the user isn't
+      // surprised by a rejected save after already reviewing the confirmation below.
+      if (amountChanged && !reason) { notify('A reason is required when changing the amount or quantity.', true); return; }
+      // Ren's spec section 127: confirm old vs new amount before saving.
+      if (amountChanged && !confirm(
+        'Confirm amount change?\n\nOld Amount: ' + money(original.unit_price) + '\nNew Amount: ' + money(unitPrice) +
+        '\nDifference: ' + money(Number(unitPrice || 0) - Number(original.unit_price || 0)) + '\n\nReason: ' + reason
+      )) return;
       try {
-        await editLayawayHold({ holdId: Number(btn.dataset.id), sku, qty, unitPrice, customerName, contactNumber, orderId, notes });
+        await editLayawayHold({ holdId: Number(btn.dataset.id), sku, qty, unitPrice, customerName, contactNumber, orderId, notes, reason });
         notify('Layaway updated.', false);
         await load();
       } catch (err) {

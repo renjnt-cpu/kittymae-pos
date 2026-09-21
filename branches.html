@@ -104,6 +104,13 @@ if (employee) {
     // also edit the details if theres an error") -- a position, not a role, so it's a
     // separate check from the role list.
     const canEditSale = ['Admin', 'Manager', 'Branch Supervisor'].includes(employee.role) || employee.position === 'Branch Team Leader';
+    // Ren's spec sections 121-132, confirmed 2026-09-21: correcting an already-recorded
+    // amount (Unit Price, Qty, or a sale's whole payment split) is narrower than the
+    // above -- only the Auditor position or anyone holding a Supervisor-named position/
+    // role, deliberately excluding Admin/Manager/Branch Team Leader unless they also
+    // hold one of those. Delete Sale (a void, not an edit) keeps canEditSale above.
+    // Mirrors is_amount_editor() in the database exactly.
+    const canEditAmount = employee.position === 'Auditor' || employee.role === 'Branch Supervisor' || (employee.position || '').includes('Supervisor');
     const branches = await getBranches();
     const branchOptions = (selected) => branches.map((b) =>
       '<option value="' + b.id + '"' + (b.id === selected ? ' selected' : '') + '>' + esc(b.name) + '</option>'
@@ -727,18 +734,25 @@ if (employee) {
             '<td data-label="Line Total">' + money(Number(r.unit_price || 0) * r.qty) + '</td>' +
             '<td data-label="Payment">' + paidLabel + '</td>' +
             '<td style="white-space:nowrap;">' +
-              (canEditSale ? '<button type="button" class="btn small secondary" data-act="edit-sale-item" data-id="' + r.id + '">Edit</button>' : '') +
+              // Edit/Edit Payment now gated by canEditAmount (Auditor/Supervisor only),
+              // not canEditSale -- correcting an amount is narrower than everything
+              // else this broader group can still do (e.g. Delete Sale below).
+              (canEditAmount ? '<button type="button" class="btn small secondary" data-act="edit-sale-item" data-id="' + r.id + '">Edit</button>' : '') +
               // Delete Sale/Edit Payment operate on the whole group regardless of which
               // line's button is clicked, so they only need to appear once -- shown on
               // this group's first row.
-              (canEditSale && i === 0 ? ' <button type="button" class="btn small secondary" data-act="edit-payment" data-group="' + esc(g.groupId) + '">Edit Payment</button>' : '') +
+              (canEditAmount && i === 0 ? ' <button type="button" class="btn small secondary" data-act="edit-payment" data-group="' + esc(g.groupId) + '">Edit Payment</button>' : '') +
               (canEditSale && i === 0 ? ' <button type="button" class="btn small secondary" data-act="delete-sale" data-group="' + esc(g.groupId) + '">Delete Sale</button>' : '') +
             '</td>' +
-          '</tr>' + (canEditSale ? posSaleEditRowHtml(r) : '')).join('') + (canEditSale ? posPaymentEditRowHtml(g) : '');
+          '</tr>' + (canEditAmount ? posSaleEditRowHtml(r) : '')).join('') + (canEditAmount ? posPaymentEditRowHtml(g) : '');
         }).join('') +
         '</tbody></table></div>';
 
-      if (!canEditSale) return;
+      // canEditSale (Delete Sale) and canEditAmount (Edit/Edit Payment) can now diverge
+      // -- e.g. an Auditor-position Staff member has canEditAmount but not canEditSale
+      // -- so this guard covers either, and each block below only ever finds buttons
+      // that were actually rendered for this employee.
+      if (!canEditSale && !canEditAmount) return;
       box.querySelectorAll('[data-act="delete-sale"]').forEach((btn) => btn.addEventListener('click', async () => {
         if (!confirm('Delete this whole sale? All its items go back to Available stock and this cannot be undone.')) return;
         try { await deletePosSale(btn.dataset.group); toast('br-msg', 'Sale deleted.', false); await loadPos(); }
@@ -772,9 +786,17 @@ if (employee) {
         const btn = f.querySelector('button[type=submit]');
         const payments = readPaymentSlots(f, 'editPay');
         if (!payments.length) { toast('br-msg', 'At least one payment method and amount is required.', true); return; }
+        const reason = f.paymentReason.value.trim();
+        if (!reason) { toast('br-msg', 'A reason is required to change a sale\'s payment method.', true); return; }
+        const oldPayments = posPaymentsByGroup[f.dataset.group] || [];
+        // Plain confirm() dialog shows raw text, not HTML -- no esc() here (that would
+        // show literal "&amp;"-style entities instead of the real characters).
+        const oldSummary = oldPayments.map((p) => p.payment_method + ' ' + money(p.amount)).join(', ') || '—';
+        const newSummary = payments.map((p) => p.method + ' ' + money(p.amount)).join(', ');
+        if (!confirm('Confirm payment method change?\n\nOld: ' + oldSummary + '\nNew: ' + newSummary + '\n\nReason: ' + reason)) return;
         btn.disabled = true;
         try {
-          await updatePosSalePayments(f.dataset.group, payments);
+          await updatePosSalePayments(f.dataset.group, payments, reason);
           toast('br-msg', 'Payment updated.', false);
           await loadPos();
         } catch (err) {
@@ -796,9 +818,21 @@ if (employee) {
         const contactNumber = row.querySelector('[name=contactNumber]').value.trim();
         const orderNumber = row.querySelector('[name=orderNumber]').value.trim();
         const notes = row.querySelector('[name=notes]').value.trim();
+        const reason = row.querySelector('[name=reason]').value.trim();
         if (!sku || !qty || qty <= 0) { toast('br-msg', 'SKU and a positive Qty are required.', true); return; }
+        const original = allPosSales.find((x) => x.id === Number(btn.dataset.id));
+        const amountChanged = original && (Number(original.unit_price) !== Number(unitPrice) || Number(original.qty) !== qty);
+        // Ren's spec section 126: reason required whenever the amount/qty actually
+        // changes -- checked here too (not just server-side) so the user isn't
+        // surprised by a rejected save after already reviewing the confirmation below.
+        if (amountChanged && !reason) { toast('br-msg', 'A reason is required when changing the amount or quantity.', true); return; }
+        // Ren's spec section 127: confirm old vs new amount before saving.
+        if (amountChanged && !confirm(
+          'Confirm amount change?\n\nOld Amount: ' + money(original.unit_price) + '\nNew Amount: ' + money(unitPrice) +
+          '\nDifference: ' + money(Number(unitPrice || 0) - Number(original.unit_price || 0)) + '\n\nReason: ' + reason
+        )) return;
         try {
-          await updatePosSaleItem({ movementId: Number(btn.dataset.id), sku, qty, unitPrice, customerName, contactNumber, orderNumber, notes });
+          await updatePosSaleItem({ movementId: Number(btn.dataset.id), sku, qty, unitPrice, customerName, contactNumber, orderNumber, notes, reason });
           toast('br-msg', 'Sale item updated.', false);
           await loadPos();
         } catch (err) {
@@ -821,6 +855,9 @@ if (employee) {
           '<div class="field" style="width:110px;"><label>Contact Number</label><input type="text" name="contactNumber" value="' + esc(r.contact_number || '') + '"></div>' +
           '<div class="field" style="width:110px;"><label>Order / Ref No.</label><input type="text" name="orderNumber" value="' + esc(r.order_number || '') + '"></div>' +
           '<div class="field" style="width:150px;"><label>Notes</label><input type="text" name="notes" value="' + esc(r.notes || '') + '"></div>' +
+          // Reason required when Amount or Qty actually changes (Ren's spec section
+          // 126) -- enforced again server-side by update_pos_sale_item() regardless.
+          '<div class="field" style="width:180px;"><label>Reason (required if amount/qty changes)</label><input type="text" name="reason"></div>' +
           '<button type="button" class="btn small" data-act="save-sale-item" data-id="' + r.id + '">Save</button>' +
           '<button type="button" class="btn small secondary" data-act="close-sale-item" data-id="' + r.id + '">Cancel</button>' +
         '</div>' +
@@ -837,6 +874,7 @@ if (employee) {
         '<form class="pos-payment-edit-form" data-group="' + esc(g.groupId) + '" style="padding:8px 0;">' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
             paymentSlotsHtml('editPay', existing, { withReference: true }) +
+            '<div class="field" style="width:180px;"><label>Reason *</label><input type="text" name="paymentReason" required></div>' +
           '</div>' +
           '<div style="display:flex;gap:4px;margin-top:6px;">' +
             '<button class="btn small" type="submit">Save Payment</button>' +

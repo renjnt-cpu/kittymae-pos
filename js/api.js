@@ -270,11 +270,11 @@ export async function createPosSale({ branchId, items, customerName, contactNumb
  * order ref/notes) -- Admin/Manager/Branch Supervisor only (update_pos_sale_item
  * enforces this server-side too). Reverses the original item's stock effect and
  * applies the corrected one so qty_available stays accurate. */
-export async function updatePosSaleItem({ movementId, sku, qty, unitPrice, customerName, contactNumber, orderNumber, notes }) {
+export async function updatePosSaleItem({ movementId, sku, qty, unitPrice, customerName, contactNumber, orderNumber, notes, reason }) {
   const { error } = await supabase.rpc('update_pos_sale_item', {
     p_movement_id: movementId, p_sku: sku, p_qty: qty, p_unit_price: unitPrice ?? null,
     p_customer_name: customerName || null, p_contact_number: contactNumber || null, p_order_number: orderNumber || null,
-    p_notes: notes || null,
+    p_notes: notes || null, p_reason: reason || null,
   });
   if (error) throw new Error(error.message);
 }
@@ -298,10 +298,11 @@ export async function listSalePayments(groupIds) {
  * edited payment method must move the amount off the old column and onto the new one,
  * not leave it under both) -- payments: [{method, amount, reference}]. Admin/Manager/
  * Branch Supervisor/Branch Team Leader only, matching update_pos_sale_item's own gate. */
-export async function updatePosSalePayments(saleGroupId, payments) {
+export async function updatePosSalePayments(saleGroupId, payments, reason) {
   const { error } = await supabase.rpc('update_pos_sale_payments', {
     p_sale_group_id: saleGroupId,
     p_payments: payments.map((p) => ({ method: p.method, amount: p.amount, reference: p.reference || null })),
+    p_reason: reason || null,
   });
   if (error) throw new Error(error.message);
 }
@@ -1087,11 +1088,11 @@ export async function forfeitLayawayHold(holdId, reason) {
  * notes) without cancelling and re-creating it -- Admin/Manager/Branch Supervisor
  * only (edit_layaway_hold enforces this server-side too). Keeps qty_available/
  * qty_reserved and the linked reservation transaction consistent with the correction. */
-export async function editLayawayHold({ holdId, sku, qty, customerName, contactNumber, unitPrice, orderId, notes }) {
+export async function editLayawayHold({ holdId, sku, qty, customerName, contactNumber, unitPrice, orderId, notes, reason }) {
   const { error } = await supabase.rpc('edit_layaway_hold', {
     p_hold_id: holdId, p_sku: sku, p_qty: qty, p_customer_name: customerName,
     p_contact_number: contactNumber || null, p_unit_price: unitPrice ?? null,
-    p_order_id: orderId || null, p_notes: notes || null,
+    p_order_id: orderId || null, p_notes: notes || null, p_reason: reason || null,
   });
   if (error) throw new Error(error.message);
 }
