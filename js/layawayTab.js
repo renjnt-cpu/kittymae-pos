@@ -554,8 +554,16 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '</td>' +
           '<td data-label="Qty">' + h.qty + '</td>' +
           '<td data-label="Customer" class="full-row">' + esc(h.customer_name) + (h.contact_number ? '<div class="muted" style="font-size:10px;">' + esc(h.contact_number) + '</div>' : '') +
-            (h.handler ? '<div class="muted" style="font-size:10px;">Handled by ' + esc(h.handler.full_name) + '</div>' : '') +
-            (h.notes ? '<div class="muted" style="font-size:10px;">Note: ' + esc(h.notes) + '</div>' : '') + '</td>' +
+            // Notes visually separated from the customer's own name/contact (Ren's spec
+            // section 58: Notes is its own grouped line, not run into Customer) --
+            // still the same <td> (adding a whole extra table column for an
+            // occasionally-empty field would widen every row for no benefit), just with
+            // its own small heading once there's actually a handler or note to show.
+            ((h.handler || h.notes) ? '<div class="muted" style="font-size:10px;margin-top:4px;padding-top:4px;border-top:1px dashed #eee;">' +
+              (h.handler ? 'Handled by ' + esc(h.handler.full_name) : '') +
+              (h.handler && h.notes ? '<br>' : '') +
+              (h.notes ? 'Note: ' + esc(h.notes) : '') +
+            '</div>' : '') + '</td>' +
           '<td data-label="Amount">' + money(h.unit_price) + '</td>' +
           '<td data-label="Total">' + money(h.total_price) + '</td>' +
           '<td data-label="Paid">' + money(paid) + (remaining !== null ? '<div class="muted" style="font-size:10px;">' + money(remaining) + ' left</div>' : '') + '</td>' +
@@ -568,17 +576,22 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
             (h.status === 'Cancelled' && h.cancelled_at ? '<div class="muted" style="font-size:10px;">' + (h.canceller ? esc(h.canceller.full_name) + ' · ' : '') + fmtDateTime(h.cancelled_at) + '</div>' : '') +
             (h.status === 'Forfeited' && h.forfeited_at ? '<div class="muted" style="font-size:10px;">' + (h.forfeiter ? esc(h.forfeiter.full_name) + ' · ' : '') + fmtDateTime(h.forfeited_at) + '</div>' : '') +
           '</td>' +
-          '<td data-label="" class="full-row" style="font-size:11px;">' +
+          '<td data-label="Payment History" class="full-row" style="font-size:11px;">' +
             (h.layaway_payments && h.layaway_payments.length
               // Payment date + who recorded it (Ren, 2026-09-18: "add date when they
               // pay also to check") -- same info Forfeiture Watch's own payment list
               // already showed, now here too so it doesn't need a separate page visit.
               // Reference relabeled "Receipt/Txn #" and a Payment Status badge added
               // per Ren's spec section 1. Each payment gets its own bordered
-              // .payment-line block (Ren's spec section 16: "Do not compress multiple
-              // payments into one narrow line") instead of running them together.
-              ? h.layaway_payments.map((p) => '<div class="payment-line">' + money(p.amount) + ' · ' + esc(p.payment_method) + (p.reference_number ? ' · Receipt/Txn #' + esc(p.reference_number) : '') +
-                  ' <span class="badge ' + (paymentStatusById[p.id] === 'Paid in Full' ? 'ok' : 'pending') + '" style="font-size:9px;padding:1px 5px;">' + paymentStatusById[p.id] + '</span>' +
+              // .payment-line block (Ren's spec section 16/66: "Do not compress
+              // multiple payments into one narrow line") with Amount/Method on their
+              // own leading line and Receipt kept as its own clearly-labeled piece,
+              // instead of one run-on sentence.
+              ? h.layaway_payments.map((p) => '<div class="payment-line">' +
+                  '<div>' + money(p.amount) + ' · ' + esc(p.payment_method) +
+                    ' <span class="badge ' + (paymentStatusById[p.id] === 'Paid in Full' ? 'ok' : 'pending') + '" style="font-size:9px;padding:1px 5px;">' + paymentStatusById[p.id] + '</span>' +
+                  '</div>' +
+                  (p.reference_number ? '<div class="muted" style="font-size:10px;margin-top:2px;">Receipt/Txn #' + esc(p.reference_number) + '</div>' : '') +
                   '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">' +
                     (p.attachment_path ? '<button type="button" class="btn small secondary" data-act="view-proof" data-path="' + esc(p.attachment_path) + '" style="padding:1px 6px;">Proof</button>' : '') +
                     (canManage ? '<button class="btn small secondary" data-act="del-payment" data-id="' + p.id + '" style="padding:1px 6px;">✕</button>' : '') +
