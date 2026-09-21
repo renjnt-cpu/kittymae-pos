@@ -555,6 +555,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
             (h.stock_status === 'Lacking' ? ' <span class="badge low" title="Not physically in stock yet -- needs to be sourced before this can be completed">Lacking</span>' : '') +
           '</td>' +
           '<td data-label="Order ID">' + esc(h.order_id || '—') +
+            // An On Hold item has already left the sellable pool (moves to Reserved --
+            // see the Hold Item(s) form's own note above), so it's visibly tagged right
+            // next to the Order ID, not just implied by the Status column, matching
+            // Ren's spec section 229: "Do not hide the reserved state inside notes
+            // only. It must be immediately visible."
+            (h.status === 'On Hold' ? ' <span class="badge transit" style="font-size:9px;padding:1px 5px;" title="This item is held for this customer -- not available for another sale.">Reserved</span>' : '') +
             (group ? ' <span class="badge pending" style="font-size:9px;padding:1px 5px;" title="Part of a ' + group.length + '-item hold">' + (groupIdx + 1) + '/' + group.length + '</span>' : '') +
           '</td>' +
           '<td data-label="Qty">' + h.qty + '</td>' +
