@@ -12,7 +12,7 @@ import {
   requestLayawayForfeitDate, listLayawayForfeitDateRequests, approveLayawayForfeitDate, rejectLayawayForfeitDate,
 } from './api.js?v=20260922b';
 import { PAYMENT_METHODS } from './paymentMethods.js?v=20260922b';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20260922b';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260922b';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -523,7 +523,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       const qty = Number(row.querySelector('.lw-item-qty').value || 0);
       const priceVal = row.querySelector('.lw-item-price').value;
       const stockStatus = row.querySelector('.lw-item-stock').value;
-      items.push({ sku, qty, unitPrice: priceVal ? Number(priceVal) : null, stockStatus });
+      items.push({ sku, qty, unitPrice: priceVal ? Number(priceVal) : null, stockStatus, row });
     });
     return items;
   }
@@ -538,9 +538,17 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     // btn.disabled below, before any validation or network call ever ran).
     const btn = document.querySelector('#lw-form-drawer .drawer-footer button[type=submit]');
     const items = readItemRows();
-    if (!items.length) { notify('Add at least one item (SKU) to hold.', true); return; }
+    if (!items.length) {
+      notify('Add at least one item (SKU) to hold.', true);
+      flagInvalid(itemsContainer.querySelector('.lw-item-row .lw-item-sku'));
+      return;
+    }
     const badQty = items.find((it) => !it.qty || it.qty <= 0);
-    if (badQty) { notify('Qty must be a positive number for ' + badQty.sku + '.', true); return; }
+    if (badQty) {
+      notify('Qty must be a positive number for ' + badQty.sku + '.', true);
+      flagInvalid(badQty.row.querySelector('.lw-item-qty'));
+      return;
+    }
 
     btn.disabled = true;
     // Multiple items are separate reservations under the hood (one layaway_holds row

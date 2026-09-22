@@ -15,7 +15,7 @@ import {
 } from './api.js?v=20260922b';
 import { branchColor } from './branchColors.js?v=20260922b';
 import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20260922b';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr } from './uiKit.js?v=20260922b';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20260922b';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 12): Sales Transactions sortable
 // across Date & Time/Order/Customer/SKU/Qty/Amount/Payment. The ledger is one row per
@@ -355,9 +355,18 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     const items = cartItems();
     // pos-order-msg lives inside the drawer so a validation/save error is visible on
     // a phone, where the drawer covers the page's own message area.
-    if (!items.length) { toast('pos-order-msg', 'Add at least one item to sell.', true); return; }
+    if (!items.length) {
+      toast('pos-order-msg', 'Add at least one item to sell.', true);
+      flagInvalid(document.getElementById('pos-cat-search'));
+      return;
+    }
     const badQty = items.find((it) => !it.qty || it.qty <= 0);
-    if (badQty) { toast('pos-order-msg', 'Qty must be a positive number for ' + badQty.sku + '.', true); return; }
+    if (badQty) {
+      toast('pos-order-msg', 'Qty must be a positive number for ' + badQty.sku + '.', true);
+      const idx = posCart.findIndex((it) => it.sku === badQty.sku);
+      flagInvalid(document.querySelector('.pos-cart-line[data-i="' + idx + '"] .pos-cart-line-qty'));
+      return;
+    }
     const payments = readPaymentSlots(f, 'pos');
     btn.disabled = true;
     try {
@@ -779,9 +788,17 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
         const qty = Number(f.qty.value);
         const unitPrice = f.unitPrice.value ? Number(f.unitPrice.value) : null;
         const reason = f.reason.value.trim();
-        if (!sku || !qty || qty <= 0) { toast(msgId, 'SKU and a positive Qty are required.', true); return; }
+        if (!sku || !qty || qty <= 0) {
+          toast(msgId, 'SKU and a positive Qty are required.', true);
+          flagInvalid(!sku ? f.sku : f.qty);
+          return;
+        }
         const amountChanged = Number(r.unit_price) !== Number(unitPrice) || Number(r.qty) !== qty;
-        if (amountChanged && !reason) { toast(msgId, 'A reason is required when changing the amount or quantity.', true); return; }
+        if (amountChanged && !reason) {
+          toast(msgId, 'A reason is required when changing the amount or quantity.', true);
+          flagInvalid(f.reason);
+          return;
+        }
         // Plain confirm() shows raw text -- no esc() here.
         if (amountChanged && !confirm('Confirm amount change?\n\nOld Amount: ' + money(r.unit_price) + '\nNew Amount: ' + money(unitPrice) +
           '\nDifference: ' + money(Number(unitPrice || 0) - Number(r.unit_price || 0)) + '\n\nReason: ' + reason)) return;

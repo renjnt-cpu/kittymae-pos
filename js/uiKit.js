@@ -105,3 +105,19 @@ export function localDateStr(d) {
   d = d || new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
+
+// Points directly at the field a validation toast is talking about -- a toast alone
+// says what's wrong but not where, easy to miss on a long form or a phone screen
+// (Ren, 2026-09-22: repeated "cannot save" reports that turned out to be a missed
+// required-field toast, not an actual save failure). Scrolls it into view, focuses
+// it, and outlines it in red until the person actually touches it.
+export function flagInvalid(el) {
+  if (!el) return;
+  el.style.outline = '2px solid #d32f2f';
+  el.style.outlineOffset = '1px';
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.focus();
+  const clear = () => { el.style.outline = ''; el.style.outlineOffset = ''; el.removeEventListener('input', clear); el.removeEventListener('change', clear); };
+  el.addEventListener('input', clear);
+  el.addEventListener('change', clear);
+}
