@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20260922d">
+<link rel="stylesheet" href="css/styles.css?v=20260922e">
 </head>
 <body>
 <main>
@@ -17,15 +17,15 @@
 // Subasta, Online Orders), each its own self-contained tab module mounted into its
 // own root -- this page only owns the branch selection, the tab bar, the forfeited-
 // layaway warning, and the activity-feed deep links.
-import { initShell, toast, esc } from './js/shell.js?v=20260922d';
-import { getBranches, subscribeToChanges, listLayaways } from './js/api.js?v=20260922d';
-import { renderPosNav } from './js/posNav.js?v=20260922d';
-import { branchButtonStyle } from './js/branchColors.js?v=20260922d';
-import { initPosTab } from './js/posTab.js?v=20260922d';
-import { initOnlineOrdersTab } from './js/onlineOrdersTab.js?v=20260922d';
-import { initLayawayTab } from './js/layawayTab.js?v=20260922d';
-import { initScrapTab } from './js/scrapTab.js?v=20260922d';
-import { initSubastaTab } from './js/subastaTab.js?v=20260922d';
+import { initShell, toast, esc } from './js/shell.js?v=20260922e';
+import { getBranches, subscribeToChanges, listLayaways } from './js/api.js?v=20260922e';
+import { renderPosNav } from './js/posNav.js?v=20260922e';
+import { branchButtonStyle } from './js/branchColors.js?v=20260922e';
+import { initPosTab } from './js/posTab.js?v=20260922e';
+import { initOnlineOrdersTab } from './js/onlineOrdersTab.js?v=20260922e';
+import { initLayawayTab } from './js/layawayTab.js?v=20260922e';
+import { initScrapTab } from './js/scrapTab.js?v=20260922e';
+import { initSubastaTab } from './js/subastaTab.js?v=20260922e';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
@@ -60,7 +60,7 @@ if (employee) {
     '<div id="scrap-sub-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 14px;"></div>' +
 
     '<div id="tab-panel-pos">' +
-      '<h2>POS (Walk-In) <span class="muted" id="pos-branch-label" style="font-weight:normal;"></span></h2>' +
+      '<h2>POS Walk In &amp; COD <span class="muted" id="pos-branch-label" style="font-weight:normal;"></span></h2>' +
       '<div id="pos-root"></div>' +
     '</div>' +
     '<div id="tab-panel-layaway" style="display:none;">' +
@@ -115,7 +115,7 @@ if (employee) {
       '</button>';
     };
     const box = document.getElementById('scrap-sub-tabs');
-    box.innerHTML = pill('pos', 'POS', '#2e7d32', posCount) +
+    box.innerHTML = pill('pos', 'POS Walk In & COD', '#2e7d32', posCount) +
       pill('layaway', 'Layaway', '#c2185b', layawayCount) +
       pill('scrap', 'Scrap', '#b06a1f', scrapCount) + pill('subasta', 'Subasta', '#7c3aa8', subastaCount) +
       pill('online', 'Online Orders', '#1a56b0', onlineOrdersCount);
