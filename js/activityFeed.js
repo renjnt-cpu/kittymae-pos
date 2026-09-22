@@ -8,7 +8,7 @@
 // Events arrive over the existing Supabase Realtime channel on activity_events; the
 // rows themselves are written by database hooks inside the same transaction as the
 // business write, so nothing can show up here that wasn't actually saved (324/325).
-import { listActivity, activityUnreadCount, markActivityRead, markAllActivityRead, subscribeToChanges, getBranches } from './api.js?v=20260922c';
+import { listActivity, activityUnreadCount, markActivityRead, markAllActivityRead, subscribeToChanges, getBranches } from './api.js?v=20260922d';
 
 const FADE_MS = { normal: 10000, important: 18000, warning: 28000, critical: null };
 const FADE_ANIM_MS = 420;

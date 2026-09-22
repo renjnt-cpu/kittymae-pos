@@ -10,9 +10,9 @@ import {
   setLayawayForfeitDate, setLayawayHoldDate, uploadLayawayPaymentProof, getLayawayPaymentProofUrl,
   searchProducts, listLayawayHandlers, subscribeToChanges, editLayawayHold, deleteLayawayHold, forfeitLayawayHold,
   requestLayawayForfeitDate, listLayawayForfeitDateRequests, approveLayawayForfeitDate, rejectLayawayForfeitDate,
-} from './api.js?v=20260922c';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20260922c';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260922c';
+} from './api.js?v=20260922d';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20260922d';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260922d';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -940,9 +940,16 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     const completeBtn = container.querySelector('[data-act="complete"]');
     if (completeBtn) completeBtn.addEventListener('click', async () => {
       const paid = paidSoFar(h);
+      // A hard block, not a skippable warning (Ren, 2026-09-22: "do not complete if
+      // not complete payment amount" -- found a real hold marked Completed with only
+      // a third of its price paid, via the old "Complete anyway?" confirm). The
+      // server enforces this too (complete_layaway), so this is just the fast,
+      // no-round-trip version of the same rule.
       if (h.total_price != null && paid < Number(h.total_price)) {
-        if (!confirm('Not fully paid yet (' + money(paid) + ' of ' + money(h.total_price) + '). Complete anyway?')) return;
-      } else if (!confirm('Mark this layaway as completed and sold?')) return;
+        notify('Not fully paid yet -- ' + money(h.total_price - paid) + ' still owed (' + money(paid) + ' of ' + money(h.total_price) + ' collected). Add the remaining payment before completing.', true);
+        return;
+      }
+      if (!confirm('Mark this layaway as completed and sold?')) return;
       try { await completeLayaway(h.id); notify('Layaway completed.', false); await load(); closeDetailDrawer(); }
       catch (err) { notify(String(err.message || err), true); }
     });
