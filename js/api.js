@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20260923d';
-import { localDateStr } from './uiKit.js?v=20260923d';
+import { supabase } from './supabaseClient.js?v=20260923e';
+import { localDateStr } from './uiKit.js?v=20260923e';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -261,7 +261,7 @@ export async function listSales({ branchId, fromDate, toDate } = {}) {
 // methods. Reuses record_sale() per item under the hood inside create_pos_sale(),
 // which is why a later item failing (e.g. out of stock) rolls back everything already
 // rung up in that same checkout instead of leaving a half-completed sale.
-export async function createPosSale({ branchId, items, customerName, contactNumber, orderNumber, payments, saleDate, notes }) {
+export async function createPosSale({ branchId, items, customerName, contactNumber, orderNumber, payments, saleDate, notes, pickupAddress }) {
   const { data, error } = await supabase.rpc('create_pos_sale', {
     p_branch_id: branchId,
     p_items: items.map((it) => ({ sku: it.sku, qty: it.qty, unit_price: it.unitPrice ?? null })),
@@ -269,6 +269,7 @@ export async function createPosSale({ branchId, items, customerName, contactNumb
     p_order_number: orderNumber || null,
     p_payments: (payments || []).map((p) => ({ method: p.method, amount: p.amount, reference: p.reference || null })),
     p_sale_date: saleDate || null, p_notes: notes || null,
+    p_pickup_address: pickupAddress || null,
   });
   if (error) throw new Error(error.message);
   return data; // the new sale_group_id
@@ -292,6 +293,13 @@ export async function updatePosSaleItem({ movementId, sku, qty, unitPrice, custo
  * Branch Supervisor only. */
 export async function deletePosSale(saleGroupId) {
   const { error } = await supabase.rpc('delete_pos_sale', { p_sale_group_id: saleGroupId });
+  if (error) throw new Error(error.message);
+}
+
+/** Flips a pickup sale's status from Pending Pickup to Picked Up (mark_sale_picked_up's
+ * own gate: Admin/Manager/Branch Supervisor/Branch Team Leader, same as markCodCollected). */
+export async function markSalePickedUp(saleGroupId) {
+  const { error } = await supabase.rpc('mark_sale_picked_up', { p_sale_group_id: saleGroupId });
   if (error) throw new Error(error.message);
 }
 

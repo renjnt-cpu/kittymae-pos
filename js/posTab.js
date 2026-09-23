@@ -11,11 +11,11 @@
 // active-filter strip, the Sales-by-Admin pivot, then the ledger.
 import {
   searchProducts, listActiveEmployees, createPosSale, listSales, listSalePayments,
-  updatePosSaleItem, updatePosSalePayments, markCodCollected, deletePosSale, subscribeToChanges,
-} from './api.js?v=20260923d';
-import { branchColor } from './branchColors.js?v=20260923d';
-import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20260923d';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20260923d';
+  updatePosSaleItem, updatePosSalePayments, markCodCollected, deletePosSale, markSalePickedUp, subscribeToChanges,
+} from './api.js?v=20260923e';
+import { branchColor } from './branchColors.js?v=20260923e';
+import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20260923e';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20260923e';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 12): Sales Transactions sortable
 // across Date & Time/Order/Customer/SKU/Qty/Amount/Payment. The ledger is one row per
@@ -98,6 +98,12 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   // alongside this change so the UI and the server-side gate agree).
   const canEditAmount = ['Admin', 'Branch Supervisor'].includes(employee.role) || ['Auditor', 'Editor', 'Branch Team Leader'].includes(employee.position) ||
     (employee.position || '').includes('Supervisor');
+  // Manila has no walk-in storefront -- a sale there is often paid for online and
+  // collected later, so the New Sale form grows a Pickup Address field there (Ren,
+  // 2026-09-23: "under POS Manila... add details if pick up done. address for pick up
+  // also"). Re-evaluated fresh each time the drawer opens, matching whichever branch
+  // is currently selected on the host page.
+  const isManila = () => branches.find((b) => b.id === getBranchId())?.code === 'MANILA';
   function canWriteHere() {
     return ['Admin', 'Manager'].includes(employee.role) || (isScoped && getBranchId() === employee.branch_id) ||
       POSITION_MANAGERS.includes(employee.position);
@@ -180,6 +186,9 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
               '<div class="field" style="flex:1 1 140px;"><label>Customer Name</label><input type="text" name="customerName"></div>' +
               '<div class="field" style="flex:1 1 140px;"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
               '<div class="field" style="flex:2 1 200px;"><label>Notes</label><input type="text" name="notes"></div>' +
+              // Manila has no walk-in storefront -- a sale there is often collected
+              // later rather than handed over at checkout (Ren, 2026-09-23).
+              (isManila() ? '<div class="field" style="flex:2 1 200px;"><label>Pickup Address</label><input type="text" name="pickupAddress" placeholder="Where the customer/courier will pick this up"></div>' : '') +
             '</div>' +
           '</div>' +
           '<div class="drawer-section">' +
@@ -388,6 +397,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
         customerName: f.customerName.value.trim(), contactNumber: f.contactNumber.value.trim(),
         orderNumber: f.orderId.value.trim(), payments, saleDate: f.saleDate.value || null,
         notes: f.notes.value.trim(),
+        pickupAddress: f.pickupAddress ? f.pickupAddress.value.trim() : '',
       });
       toast(msgId, 'Sale completed — ' + items.length + ' item(s), ' + money(items.reduce((s, it) => s + (it.unitPrice || 0) * it.qty, 0)) + '.', false);
       f.reset();
@@ -684,6 +694,12 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
       '<div class="drawer-kv"><span>Processed By</span><b>' + esc(employeeNameById[first.employee_id] || 'Unknown') + '</b></div>' +
       (notes.length ? '<div class="drawer-kv"><span>Notes</span><b>' + notes.map(esc).join(' · ') + '</b></div>' : '') +
     '</div>' +
+    (first.pickup_address ? '<div class="drawer-section"><h4>Pickup</h4>' +
+      '<div class="drawer-kv"><span>Address</span><b>' + esc(first.pickup_address) + '</b></div>' +
+      '<div class="drawer-kv"><span>Status</span><b>' + (first.pickup_status === 'Picked Up' ? '<span class="badge ok">Picked Up</span>' : '<span class="badge pending">Pending Pickup</span>') + '</b></div>' +
+      (first.pickup_status === 'Pending Pickup' && canEditSale
+        ? '<div style="margin-top:6px;"><button type="button" class="btn small secondary" data-act="mark-picked-up" data-group="' + esc(g.groupId) + '">Mark Picked Up</button></div>' : '') +
+    '</div>' : '') +
     '<div class="drawer-section"><h4>Items</h4>' +
       g.items.map((r) => '<div class="payment-line">' +
         '<div><b>' + esc(r.products?.item_name || r.sku) + '</b> <span class="muted">' + esc(r.sku) + '</span></div>' +
@@ -788,6 +804,12 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
       try { await markCodCollected(Number(btn.dataset.id)); toast(msgId, 'COD payment marked collected.', false); await load(); refreshDetailIfOpen(g.groupId); }
       catch (err) { toast(msgId, String(err.message || err), true); }
     }));
+
+    container.querySelector('[data-act="mark-picked-up"]')?.addEventListener('click', async (ev) => {
+      if (!confirm('Mark this sale as picked up?')) return;
+      try { await markSalePickedUp(ev.target.dataset.group); toast(msgId, 'Sale marked picked up.', false); await load(); refreshDetailIfOpen(g.groupId); }
+      catch (err) { toast(msgId, String(err.message || err), true); }
+    });
 
     container.querySelectorAll('[data-act="edit-item"]').forEach((btn) => btn.addEventListener('click', () => {
       const r = g.items.find((x) => x.id === Number(btn.dataset.id));
