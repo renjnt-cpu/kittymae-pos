@@ -2,8 +2,14 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20260923c';
-import { localDateStr } from './uiKit.js?v=20260923c';
+import { supabase } from './supabaseClient.js?v=20260923d';
+import { localDateStr } from './uiKit.js?v=20260923d';
+
+/** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
+ * fetches recent history instead of the entire table unconditionally -- these had no
+ * limit at all until 2026-09-23, which only gets slower as each table grows. Mirrors
+ * the same-purpose ORDER_ITEM_STATUS_ROW_CAP below, just named for its wider scope. */
+export const LEDGER_ROW_CAP = 1000;
 
 /** Resolves the signed-in employee's id for "created_by"/"paid_by"/etc attribution.
  * Goes through the current_employee() RPC (which joins employee_auth_links) rather
@@ -240,7 +246,8 @@ export async function recordSale({ sku, branchId, qty, orderNumber, unitPrice, c
 export async function listSales({ branchId, fromDate, toDate } = {}) {
   let query = supabase.from('sales_inventory_movements')
     .select('*, products(item_name, product_line), branches(name)')
-    .order('sale_date', { ascending: false });
+    .order('sale_date', { ascending: false })
+    .limit(LEDGER_ROW_CAP);
   if (branchId != null) query = query.eq('branch_id', branchId);
   if (fromDate) query = query.gte('sale_date', fromDate);
   if (toDate) query = query.lte('sale_date', toDate + 'T23:59:59');
@@ -489,7 +496,8 @@ export async function removeBillAttachment(billId, path) {
 export async function listSubastaItems(branchId) {
   let query = supabase.from('subasta_items')
     .select('*, branches(name), subasta_payments(*)')
-    .order('auction_eligible_date', { ascending: true, nullsFirst: false });
+    .order('auction_eligible_date', { ascending: true, nullsFirst: false })
+    .limit(LEDGER_ROW_CAP);
   if (branchId != null) query = query.eq('branch_id', branchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
@@ -558,7 +566,8 @@ export async function deleteSubastaItem(id) {
 export async function listScrapEntries(branchId) {
   let query = supabase.from('scrap_entries')
     .select('*, branches(name), scrap_payments(*)')
-    .order('entry_date', { ascending: false });
+    .order('entry_date', { ascending: false })
+    .limit(LEDGER_ROW_CAP);
   if (branchId != null) query = query.eq('branch_id', branchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
@@ -1041,7 +1050,8 @@ export async function listLayaways(branchId) {
   let query = supabase.from('layaway_holds')
     .select('*, branches(name), layaway_payments(*, employees(full_name)), layaway_forfeit_date_log(id, old_date, new_date, changed_at, employees(full_name)), layaway_hold_date_log(id, old_date, new_date, changed_at, employees(full_name))')
     .order('hold_date', { ascending: false })
-    .order('id', { ascending: true }); // keeps items held together in one submission adjacent
+    .order('id', { ascending: true }) // keeps items held together in one submission adjacent
+    .limit(LEDGER_ROW_CAP);
   if (branchId != null) query = query.eq('branch_id', branchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);

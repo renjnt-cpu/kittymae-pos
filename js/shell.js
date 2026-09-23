@@ -3,8 +3,8 @@
 // this site has only 4 pages, so it doesn't build the full ERP header/nav (Dashboard,
 // Branches, Transfers, Bills, etc. don't exist here) -- js/posNav.js renders this site's
 // own minimal nav instead, right after initShell() resolves.
-import { requireSession, linkEmployee } from './auth.js?v=20260923c';
-import { listMyPermissions } from './api.js?v=20260923c';
+import { requireSession, linkEmployee } from './auth.js?v=20260923d';
+import { listMyPermissions } from './api.js?v=20260923d';
 
 export async function initShell() {
   const session = await requireSession();
