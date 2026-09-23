@@ -32,7 +32,13 @@ tr:last-child td { border-bottom:none; }
 .card form { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; }
 .field { display:flex; flex-direction:column; gap:4px; }
 .field label { font-size:11px; color:var(--muted); }
-.field input, .field select, .field textarea { padding:7px 8px; border:1px solid #ddd; border-radius:6px; font-size:13px; min-width:140px; }
+/* width:100%+border-box added 2026-09-23: without it, an input rendered at its own
+   intrinsic size instead of filling .field, so two .fields side by side in a
+   flex-wrap row (e.g. POS New Sale's Customer/Payment sections) wouldn't reliably
+   pair up even when both fit within the row's width -- found while fixing exactly
+   that ("still cannot view all the details... fit"). Affects every .field in the
+   app; verified this is what .field is already designed for everywhere else. */
+.field input, .field select, .field textarea { padding:7px 8px; border:1px solid #ddd; border-radius:6px; font-size:13px; min-width:140px; width:100%; box-sizing:border-box; }
 /* Item-row fields (POS cart, Layaway hold form) set their own narrow widths (Qty
    70px, Unit Price 110px, Stock Status 130px) on the wrapping .field div -- the
    140px min-width above otherwise forces those inputs wider than their container,

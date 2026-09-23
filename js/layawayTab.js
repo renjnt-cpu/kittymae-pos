@@ -10,9 +10,9 @@ import {
   setLayawayForfeitDate, setLayawayHoldDate, uploadLayawayPaymentProof, getLayawayPaymentProofUrl,
   searchProducts, listLayawayHandlers, subscribeToChanges, editLayawayHold, deleteLayawayHold, forfeitLayawayHold,
   requestLayawayForfeitDate, listLayawayForfeitDateRequests, approveLayawayForfeitDate, rejectLayawayForfeitDate,
-} from './api.js?v=20260923a';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260923a';
+} from './api.js?v=20260923c';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923c';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260923c';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -899,7 +899,11 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
             (canEditAmount ? editHoldFormHtml(h) : '') +
           '</div>'
         : '') +
-      ((h.status === 'Cancelled' || h.status === 'Forfeited') && canFinalDelete
+      // Completed is Admin-only here too, same canFinalDelete gate -- deleting one
+      // reverses a real sale (Ren, 2026-09-23: "give me access only for me to those
+      // completed to delete details", after cleaning up a duplicate-completion by
+      // hand). delete_layaway_hold() itself enforces Admin regardless of this button.
+      ((h.status === 'Cancelled' || h.status === 'Forfeited' || h.status === 'Completed') && canFinalDelete
         ? '<div class="drawer-section"><button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '">Delete</button></div>'
         : '');
   }
@@ -1000,7 +1004,10 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
 
     const deleteBtn = container.querySelector('[data-act="delete-hold"]');
     if (deleteBtn) deleteBtn.addEventListener('click', async () => {
-      if (!confirm('Permanently delete this layaway? This cannot be undone (blocked automatically if it has any payments recorded).')) return;
+      const msg = h.status === 'Completed'
+        ? 'Permanently delete this COMPLETED sale? This reverses it entirely -- removes its payment history and restores the stock it sold. This cannot be undone.'
+        : 'Permanently delete this layaway? This cannot be undone (blocked automatically if it has any payments recorded).';
+      if (!confirm(msg)) return;
       try { await deleteLayawayHold(h.id); notify('Layaway deleted.', false); await load(); closeDetailDrawer(); }
       catch (err) { notify(String(err.message || err), true); }
     });

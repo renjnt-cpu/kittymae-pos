@@ -12,10 +12,10 @@
 import {
   searchProducts, listActiveEmployees, createPosSale, listSales, listSalePayments,
   updatePosSaleItem, updatePosSalePayments, markCodCollected, deletePosSale, subscribeToChanges,
-} from './api.js?v=20260923a';
-import { branchColor } from './branchColors.js?v=20260923a';
-import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20260923a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20260923a';
+} from './api.js?v=20260923c';
+import { branchColor } from './branchColors.js?v=20260923c';
+import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20260923c';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20260923c';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 12): Sales Transactions sortable
 // across Date & Time/Order/Customer/SKU/Qty/Amount/Payment. The ledger is one row per
@@ -55,14 +55,18 @@ function paymentSlotsHtml(prefix, existing) {
     const row = rows[i] || {};
     const label = i === 0 ? 'Payment Method (optional)' : 'Payment Method ' + (i + 1) + ' (optional)';
     html +=
-      '<div class="field"><label>' + label + '</label><select name="' + prefix + 'Method' + i + '">' +
+      '<div class="field" style="flex:1 1 140px;"><label>' + label + '</label><select name="' + prefix + 'Method' + i + '">' +
         '<option value="">— none —</option>' +
         POS_PAYMENT_METHODS.map((m) => '<option' + (row.method === m ? ' selected' : '') + '>' + m + '</option>').join('') +
       '</select></div>' +
-      '<div class="field"><label>Amount (PHP)</label><input type="number" name="' + prefix + 'Amount' + i + '" step="0.01" min="0"' + (row.amount ? ' value="' + row.amount + '"' : '') + '></div>' +
-      '<div class="field"><label>Reference Number</label><input type="text" name="' + prefix + 'Reference' + i + '"' + (row.reference ? ' value="' + row.reference + '"' : '') + '></div>';
+      '<div class="field" style="flex:1 1 100px;"><label>Amount (PHP)</label><input type="number" name="' + prefix + 'Amount' + i + '" step="0.01" min="0"' + (row.amount ? ' value="' + row.amount + '"' : '') + '></div>' +
+      '<div class="field" style="flex:1 1 140px;"><label>Reference Number</label><input type="text" name="' + prefix + 'Reference' + i + '"' + (row.reference ? ' value="' + row.reference + '"' : '') + '></div>';
   }
-  return html;
+  // Landscape wrap (Ren, 2026-09-23: "still cannot view all the details... fit") --
+  // 9 stacked full-width fields (3 slots x Method/Amount/Reference) cost a lot of
+  // vertical scroll; flowing them side by side where they fit cuts that down a lot,
+  // on both New Sale and Edit Payment (both call this same helper).
+  return '<div style="display:flex;flex-wrap:wrap;gap:8px;">' + html + '</div>';
 }
 function readPaymentSlots(f, prefix) {
   const payments = [];
@@ -168,19 +172,25 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
         '<form id="pos-form" style="display:flex;flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:8px;">' +
           '<div class="drawer-section">' +
             '<h4>Customer</h4>' +
-            '<div class="field"><label>Order / Reference No.</label><input type="text" name="orderId"></div>' +
-            '<div class="field"><label>Date</label><input type="date" name="saleDate"></div>' +
-            '<div class="field"><label>Customer Name</label><input type="text" name="customerName"></div>' +
-            '<div class="field"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
-            '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
+            // Flowed side by side where they fit, instead of 5 full-width stacked
+            // rows (Ren, 2026-09-23: "still cannot view all the details... fit").
+            '<div style="display:flex;flex-wrap:wrap;gap:8px;">' +
+              '<div class="field" style="flex:1 1 140px;"><label>Order / Reference No.</label><input type="text" name="orderId"></div>' +
+              '<div class="field" style="flex:1 1 140px;"><label>Date</label><input type="date" name="saleDate"></div>' +
+              '<div class="field" style="flex:1 1 140px;"><label>Customer Name</label><input type="text" name="customerName"></div>' +
+              '<div class="field" style="flex:1 1 140px;"><label>Contact Number</label><input type="text" name="contactNumber"></div>' +
+              '<div class="field" style="flex:2 1 200px;"><label>Notes</label><input type="text" name="notes"></div>' +
+            '</div>' +
           '</div>' +
           '<div class="drawer-section">' +
             '<h4>Payment</h4>' +
             paymentSlotsHtml('pos', []) +
-            '<div class="card" style="background:#f7f5f0;margin:6px 0 0;padding:10px 14px;">' +
-              '<div style="display:flex;justify-content:space-between;font-size:13px;"><span>Subtotal</span><b id="pos-subtotal">₱0.00</b></div>' +
-              '<div style="display:flex;justify-content:space-between;font-size:13px;"><span>Paid</span><b id="pos-paid">₱0.00</b></div>' +
-              '<div style="display:flex;justify-content:space-between;font-size:13px;"><span id="pos-balance-label">Balance Due</span><b id="pos-balance">₱0.00</b></div>' +
+            // Landscape summary (Ren, 2026-09-23: "make the summary also landscape to
+            // fit") -- Subtotal/Paid/Balance side by side, one row instead of three.
+            '<div class="card" style="background:#f7f5f0;margin:6px 0 0;padding:10px 14px;display:flex;gap:10px;flex-wrap:wrap;">' +
+              '<div style="flex:1 1 80px;"><div class="muted" style="font-size:11px;">Subtotal</div><b id="pos-subtotal" style="font-size:14px;">₱0.00</b></div>' +
+              '<div style="flex:1 1 80px;"><div class="muted" style="font-size:11px;">Paid</div><b id="pos-paid" style="font-size:14px;">₱0.00</b></div>' +
+              '<div style="flex:1 1 80px;"><div class="muted" style="font-size:11px;" id="pos-balance-label">Balance Due</div><b id="pos-balance" style="font-size:14px;">₱0.00</b></div>' +
             '</div>' +
           '</div>' +
         '</form>' +
