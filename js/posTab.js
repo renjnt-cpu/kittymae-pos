@@ -12,10 +12,10 @@
 import {
   searchProducts, listActiveEmployees, createPosSale, listSales, listSalePayments,
   updatePosSaleItem, updatePosSalePayments, markCodCollected, deletePosSale, subscribeToChanges,
-} from './api.js?v=20260922e';
-import { branchColor } from './branchColors.js?v=20260922e';
-import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20260922e';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20260922e';
+} from './api.js?v=20260923a';
+import { branchColor } from './branchColors.js?v=20260923a';
+import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20260923a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20260923a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 12): Sales Transactions sortable
 // across Date & Time/Order/Customer/SKU/Qty/Amount/Payment. The ledger is one row per
@@ -253,8 +253,11 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
           '<div class="pos-cart-line-name">' + esc(it.itemName) + '</div>' +
           '<div class="pos-cart-line-sku">' + esc(it.sku) + '</div>' +
         '</div>' +
-        '<input type="number" class="pos-cart-line-qty" min="1" value="' + it.qty + '" title="Qty" aria-label="Qty">' +
-        '<input type="number" class="pos-cart-line-price" step="0.01" min="0" value="' + (it.unitPrice ?? '') + '" placeholder="PHP" title="Unit Price" aria-label="Unit Price">' +
+        // Visible labels, not just title/aria-label -- those only surface as a hover
+        // tooltip, which doesn't exist on a touchscreen (Ren, 2026-09-23: circled
+        // these two boxes on mobile, nothing on screen says which is Qty vs Price).
+        '<div class="pos-cart-line-field"><label>Qty</label><input type="number" class="pos-cart-line-qty" min="1" value="' + it.qty + '" aria-label="Qty"></div>' +
+        '<div class="pos-cart-line-field"><label>Price</label><input type="number" class="pos-cart-line-price" step="0.01" min="0" value="' + (it.unitPrice ?? '') + '" placeholder="PHP" aria-label="Unit Price"></div>' +
         '<button type="button" class="pos-cart-remove" title="Remove" aria-label="Remove">✕</button>' +
       '</div>').join('');
     box.querySelectorAll('.pos-cart-line').forEach((line) => {
