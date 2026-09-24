@@ -9,9 +9,9 @@
 import {
   listScrapEntries, getScrapCashBalances, createScrapEntry, deleteScrapEntry,
   uploadScrapAttachment, getScrapAttachmentUrl, convertScrapToSubasta, subscribeToChanges,
-} from './api.js?v=20260923j';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923j';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20260923j';
+} from './api.js?v=20260923k';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923k';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20260923k';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 18): Scrap sortable by Date/
 // Metal-Karat/Weight/Amount/Type/Customer.

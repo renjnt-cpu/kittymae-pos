@@ -4,8 +4,8 @@
 // kittymae jewels with fireworks and balloon") -- called once from each app's shared
 // shell (shell.js/posNav.js), so every page in both apps shows it without each page
 // needing its own wiring.
-import { getTodaysBirthdays } from './api.js?v=20260923j';
-import { localDateStr } from './uiKit.js?v=20260923j';
+import { getTodaysBirthdays } from './api.js?v=20260923k';
+import { localDateStr } from './uiKit.js?v=20260923k';
 
 const STYLE_ID = 'km-bday-style';
 const FIREWORKS = ['\u{1F386}', '\u{1F387}', '\u{1F386}'];
@@ -47,10 +47,6 @@ function ensureStyle() {
  * around would see it re-appear on every single navigation. Fails silently (never
  * blocks page load) if storage is unavailable or the check itself fails. */
 export async function showBirthdayBanner() {
-  // Disabled (Ren, 2026-09-24: "remove the banner now before other staff can see
-  // it") -- pending further testing before it goes live for real staff use again.
-  return;
-  // eslint-disable-next-line no-unreachable
   const today = localDateStr();
   // The _v2 suffix is deliberate: testing the first (thin-strip) design already set
   // today's plain key in real browsers, which would otherwise silently suppress the
