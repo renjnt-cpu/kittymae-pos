@@ -12,10 +12,10 @@
 import {
   searchProducts, listActiveEmployees, createPosSale, listSales, listSalePayments,
   updatePosSaleItem, updatePosSalePayments, markCodCollected, deletePosSale, markSalePickedUp, subscribeToChanges,
-} from './api.js?v=20260925a';
-import { branchColor } from './branchColors.js?v=20260925a';
-import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20260925a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20260925a';
+} from './api.js?v=20260925b';
+import { branchColor } from './branchColors.js?v=20260925b';
+import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20260925b';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20260925b';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 12): Sales Transactions sortable
 // across Date & Time/Order/Customer/SKU/Qty/Amount/Payment. The ledger is one row per
@@ -494,7 +494,12 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     // (Ren's 2026-09-22 expand/collapse spec, "Summary by Admin/User") -- built from
     // the exact same groupsByAdmin bucket the collapsed row's own totals come from, so
     // the two always reconcile (section "SUMMARY SYNC").
-    box.innerHTML = '<div class="table-scroll"><table><thead><tr><th>Admin</th>' +
+    // table-mini (Ren, 2026-09-25: "make it landscape view in mobile view") -- a
+    // payment-method pivot has to be read ACROSS a row to compare methods, which the
+    // one-field-per-line card collapse defeats; stays a real table you scroll
+    // sideways to read instead, same treatment as this page's own admin-detail
+    // sub-table just below.
+    box.innerHTML = '<div class="table-scroll table-mini"><table><thead><tr><th>Admin</th>' +
       methods.map((m) => '<th>' + esc(m) + '</th>').join('') +
       (hasCodPending ? '<th>COD Pending</th>' : '') +
       '<th>Grand Total</th></tr></thead><tbody>' +
@@ -659,11 +664,17 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     }
     // One formal ledger row per line item (Ren, 2026-09-16: "arrange this POS as
     // formal line those records easily find it"); Date/Order/Customer/Payment repeat
-    // on each row of a multi-item sale so the mobile card view keeps working. Every
-    // action moved into the Detail Drawer. Filtering already picked `groups`; sort
-    // only reorders them -- every line of one sale stays together (section 11).
+    // on each row of a multi-item sale. Every action moved into the Detail Drawer.
+    // Filtering already picked `groups`; sort only reorders them -- every line of one
+    // sale stays together (section 11).
+    // table-mini, not table-2col (Ren, 2026-09-25: "make it landscape view in mobile
+    // view") -- stays a real table you scroll sideways to read instead of stacking
+    // each line into a card. No table-layout:fixed here (table-2col needed it to keep
+    // its 2-column card grid even) -- table-mini needs the OPPOSITE: columns sized to
+    // their own content so the table actually overflows its container and scrolls,
+    // instead of being squeezed to fit and wrapping every cell's text.
     const sortedGroups = applySort(groups, sort, posSortComparators());
-    box.innerHTML = '<div class="table-scroll table-2col"><table style="table-layout:fixed;overflow-wrap:break-word;">' +
+    box.innerHTML = '<div class="table-scroll table-mini"><table>' +
       '<thead><tr><th>Date &amp; Time</th><th>Order</th><th>Customer</th><th>SKU</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Total</th><th>Payment</th><th></th></tr></thead><tbody>' +
       sortedGroups.map((g) => {
         const paidLabel = paymentStatusHtml(g);
