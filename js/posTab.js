@@ -12,10 +12,10 @@
 import {
   searchProducts, listActiveEmployees, createPosSale, listSales, listSalePayments,
   updatePosSaleItem, updatePosSalePayments, markCodCollected, deletePosSale, markSalePickedUp, subscribeToChanges,
-} from './api.js?v=20260923l';
-import { branchColor } from './branchColors.js?v=20260923l';
-import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20260923l';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20260923l';
+} from './api.js?v=20260923m';
+import { branchColor } from './branchColors.js?v=20260923m';
+import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20260923m';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20260923m';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 12): Sales Transactions sortable
 // across Date & Time/Order/Customer/SKU/Qty/Amount/Payment. The ledger is one row per
@@ -134,8 +134,11 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     '<div class="tiles" id="pos-tiles"></div>' +
     // From/To drive both the pivot and the ledger; Search only narrows the ledger
     // (Ren, 2026-09-16: "the date range must be put above so once they filter it
-    // also reflect all the data").
-    '<div class="card">' +
+    // also reflect all the data"). Relocates into the Branch page's shared
+    // #tab-filters-slot right below (Ren, 2026-09-24) -- id/data-filter-tab are what
+    // that relocation and showSubTab()'s show/hide target. POS is the default active
+    // tab, so no initial display:none here (Layaway/Scrap/Subasta each start hidden).
+    '<div class="card" id="pos-filter-card" data-filter-tab="pos">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
         '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="pos-f-search" placeholder="SKU, item, customer, order…"></div>' +
         '<div class="field"><label>From</label><input type="date" id="pos-f-from"></div>' +
@@ -215,6 +218,8 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
       '<div class="drawer-header"><div><h3 id="pos-detail-title">Sale Details</h3><div class="muted" id="pos-detail-sub"></div></div><button type="button" class="drawer-close" id="pos-detail-close" aria-label="Close">✕</button></div>' +
       '<div class="drawer-body" id="pos-detail-body"></div>' +
     '</div>';
+
+  document.getElementById('tab-filters-slot')?.appendChild(document.getElementById('pos-filter-card'));
 
   // ---- product search + cart (P1 responsive redesign, now inside the drawer) ----
   let posCart = [];

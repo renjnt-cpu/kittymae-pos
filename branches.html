@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20260923l">
+<link rel="stylesheet" href="css/styles.css?v=20260923m">
 </head>
 <body>
 <main>
@@ -17,15 +17,15 @@
 // Subasta, Online Orders), each its own self-contained tab module mounted into its
 // own root -- this page only owns the branch selection, the tab bar, the forfeited-
 // layaway warning, and the activity-feed deep links.
-import { initShell, toast, esc } from './js/shell.js?v=20260923l';
-import { getBranches, subscribeToChanges, listLayaways } from './js/api.js?v=20260923l';
-import { renderPosNav } from './js/posNav.js?v=20260923l';
-import { branchButtonStyle } from './js/branchColors.js?v=20260923l';
-import { initPosTab } from './js/posTab.js?v=20260923l';
-import { initOnlineOrdersTab } from './js/onlineOrdersTab.js?v=20260923l';
-import { initLayawayTab } from './js/layawayTab.js?v=20260923l';
-import { initScrapTab } from './js/scrapTab.js?v=20260923l';
-import { initSubastaTab } from './js/subastaTab.js?v=20260923l';
+import { initShell, toast, esc } from './js/shell.js?v=20260923m';
+import { getBranches, subscribeToChanges, listLayaways } from './js/api.js?v=20260923m';
+import { renderPosNav } from './js/posNav.js?v=20260923m';
+import { branchButtonStyle } from './js/branchColors.js?v=20260923m';
+import { initPosTab } from './js/posTab.js?v=20260923m';
+import { initOnlineOrdersTab } from './js/onlineOrdersTab.js?v=20260923m';
+import { initLayawayTab } from './js/layawayTab.js?v=20260923m';
+import { initScrapTab } from './js/scrapTab.js?v=20260923m';
+import { initSubastaTab } from './js/subastaTab.js?v=20260923m';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
@@ -53,9 +53,17 @@ if (employee) {
     // -- parked inside the Global Activity panel's pinned slot once the feed mounts
     // (spec 312/326); hidden until refreshForfeitedNotice() finds something.
     '<div id="pos-forfeited-notice" class="act-pinned-warning" style="display:none;"></div>' +
-    '<div class="card">' +
-      '<h3>Branch</h3>' +
-      '<div id="branch-buttons" style="display:flex;gap:8px;flex-wrap:wrap;"></div>' +
+    // Each tab (POS/Layaway/Scrap/Subasta) relocates its own Search/date-range card
+    // into #tab-filters-slot (same appendChild-relocation pattern already used for
+    // the forfeited notice above, into the Activity feed's pinned slot) -- left of
+    // Branch on desktop, below it on mobile (Ren, 2026-09-24). showSubTab() below
+    // shows/hides whichever relocated card matches the active tab.
+    '<div class="branch-filter-row">' +
+      '<div class="card branch-card">' +
+        '<h3>Branch</h3>' +
+        '<div id="branch-buttons" style="display:flex;gap:8px;flex-wrap:wrap;"></div>' +
+      '</div>' +
+      '<div id="tab-filters-slot" class="branch-filter-slot"></div>' +
     '</div>' +
     '<div id="scrap-sub-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 14px;"></div>' +
 
@@ -125,6 +133,9 @@ if (employee) {
     if (!SUB_TABS.includes(key)) return;
     activeSubTab = key;
     SUB_TABS.forEach((k) => { document.getElementById('tab-panel-' + k).style.display = activeSubTab === k ? '' : 'none'; });
+    document.querySelectorAll('#tab-filters-slot [data-filter-tab]').forEach((el) => {
+      el.style.display = el.dataset.filterTab === activeSubTab ? '' : 'none';
+    });
     renderScrapSubTabs();
   }
 

@@ -11,9 +11,9 @@ import {
   searchProducts, listLayawayHandlers, subscribeToChanges, editLayawayHold, deleteLayawayHold, forfeitLayawayHold,
   requestLayawayForfeitDate, listLayawayForfeitDateRequests, approveLayawayForfeitDate, rejectLayawayForfeitDate,
   requestLayawayItemChange, listLayawayItemChangeRequests, approveLayawayItemChange, rejectLayawayItemChange,
-} from './api.js?v=20260923l';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923l';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260923l';
+} from './api.js?v=20260923m';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923m';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260923m';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -269,7 +269,10 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     // Summary (tiles) -> Search -> active-filter strip -> Records, all from the same
     // search-filtered rows (MASTER UI rules 2/3/6/19).
     '<div class="tiles" id="lw-tiles" style="margin-top:14px;"></div>' +
-    '<div class="card">' +
+    // Relocates into the Branch page's shared #tab-filters-slot (Ren, 2026-09-24) --
+    // starts hidden since Layaway isn't the default active tab; showSubTab() there
+    // toggles it back on when this tab is selected.
+    '<div class="card" id="layaway-filter-card" data-filter-tab="layaway" style="display:none;">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
         '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="lw-f-search" placeholder="SKU, customer, order ID, contact…"></div>' +
         sortControlHtml(LW_SORT_FIELDS, sort, 'lw-sort-field', 'lw-sort-dir') +
@@ -359,6 +362,8 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     '<p class="muted" style="margin-top:-4px;">Unpaid holds are forfeited 2 months after Date Purchased. Rows turn red once an item is close to or past that. Date Purchased is fixed once set (Admin only can correct it); a Forfeit Date change by anyone else needs Admin approval.</p>' +
     '<div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' + sortControlHtml(FW_SORT_FIELDS, fwSort, 'fw-sort-field', 'fw-sort-dir') + '</div></div>' +
     '<div id="fw-table"></div>';
+
+  document.getElementById('tab-filters-slot')?.appendChild(document.getElementById('layaway-filter-card'));
 
   // ---- Item rows: one or more SKU/Qty/Price lines under the same order, each with
   // its own autocomplete instance (same pattern as movement.html/branches.html's POS

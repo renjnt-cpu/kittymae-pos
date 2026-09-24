@@ -8,9 +8,9 @@
 // UI rules: primary action, Summary tiles, Search & Filters, records.
 import {
   listSubastaItems, createSubastaItem, updateSubastaItem, deleteSubastaItem, searchProducts, subscribeToChanges,
-} from './api.js?v=20260923l';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923l';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20260923l';
+} from './api.js?v=20260923m';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923m';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20260923m';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 19): Subasta sortable by Pawn
 // Date/Item/SKU/Weight/Sale Price/Status.
@@ -90,7 +90,10 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
       '<div id="sb-write-note"></div>' +
     '</div></div>' +
     '<div class="tiles" id="sb-tiles"></div>' +
-    '<div class="card">' +
+    // Relocates into the Branch page's shared #tab-filters-slot (Ren, 2026-09-24) --
+    // starts hidden since Subasta isn't the default active tab; showSubTab() there
+    // toggles it back on when this tab is selected.
+    '<div class="card" id="subasta-filter-card" data-filter-tab="subasta" style="display:none;">' +
       '<h3 style="margin-top:0;">Search &amp; Filter</h3>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
         '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="sb-f-search" placeholder="Item, SKU, pawn ref, buyer, grams, date…"></div>' +
@@ -142,6 +145,8 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
       '<div class="drawer-header"><h3 id="sb-detail-title">Subasta Details</h3><button type="button" class="drawer-close" id="sb-detail-close" aria-label="Close">✕</button></div>' +
       '<div class="drawer-body" id="sb-detail-body"></div>' +
     '</div>';
+
+  document.getElementById('tab-filters-slot')?.appendChild(document.getElementById('subasta-filter-card'));
 
   // ---- SKU autocomplete in the form drawer -- connects a pawned item back to a real
   // SKU Catalog product (picking a suggestion also fills Item Description/Weight when

@@ -9,9 +9,9 @@
 import {
   listScrapEntries, getScrapCashBalances, createScrapEntry, deleteScrapEntry,
   uploadScrapAttachment, getScrapAttachmentUrl, convertScrapToSubasta, subscribeToChanges,
-} from './api.js?v=20260923l';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923l';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20260923l';
+} from './api.js?v=20260923m';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923m';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20260923m';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 18): Scrap sortable by Date/
 // Metal-Karat/Weight/Amount/Type/Customer.
@@ -91,7 +91,10 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       '<div id="sc-write-note"></div>' +
     '</div></div>' +
     '<div class="tiles" id="sc-tiles"></div>' +
-    '<div class="card">' +
+    // Relocates into the Branch page's shared #tab-filters-slot (Ren, 2026-09-24) --
+    // starts hidden since Scrap isn't the default active tab; showSubTab() there
+    // toggles it back on when this tab is selected.
+    '<div class="card" id="scrap-filter-card" data-filter-tab="scrap" style="display:none;">' +
       '<h3 style="margin-top:0;">Search &amp; Filter</h3>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
         '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="sc-f-search" placeholder="Metal, grams, customer, payment, source, date…"></div>' +
@@ -150,6 +153,8 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       '<div class="drawer-header"><h3 id="sc-detail-title">Scrap Details</h3><button type="button" class="drawer-close" id="sc-detail-close" aria-label="Close">✕</button></div>' +
       '<div class="drawer-body" id="sc-detail-body"></div>' +
     '</div>';
+
+  document.getElementById('tab-filters-slot')?.appendChild(document.getElementById('scrap-filter-card'));
 
   document.getElementById('sc-metal')?.addEventListener('change', (ev) => {
     document.getElementById('sc-karat').innerHTML = karatOptionsFor(ev.target.value);
