@@ -9,8 +9,8 @@
 import {
   listOrderItemStatuses, listOrderHistoryForItem, getOrderItemStatusCounts, listDeliveredOrders,
   ORDER_ITEM_STATUS_ROW_CAP, setOrderItemStatus, deleteOrderItemStatus, subscribeToChanges,
-} from './api.js?v=20260923f';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber } from './uiKit.js?v=20260923f';
+} from './api.js?v=20260923g';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber } from './uiKit.js?v=20260923g';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 37): replaces this board's old
 // per-column header-click sort, which silently stopped working on mobile once a
