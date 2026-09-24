@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20260923k';
-import { localDateStr } from './uiKit.js?v=20260923k';
+import { supabase } from './supabaseClient.js?v=20260923l';
+import { localDateStr } from './uiKit.js?v=20260923l';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -77,6 +77,25 @@ export async function getBranches() {
   const { data, error } = await supabase.from('branches').select('*').eq('is_active', true).order('display_order');
   if (error) throw new Error(error.message);
   return data;
+}
+
+// ---- Admin Chat (Ren, 2026-09-24: "is it possible to have internal admin chat" ->
+// "Just the two of us for now") -- RLS-gated to is_admin() (system.admin permission,
+// today = ROLE:Admin) directly on the table, no RPC layer needed since there's no side
+// effect beyond the row itself. Capped at 200 most-recent messages, oldest first, same
+// row-limit discipline as LEDGER_ROW_CAP -- this was Ren's own performance concern. ----
+
+export async function listAdminChatMessages() {
+  const { data, error } = await supabase.from('admin_chat_messages')
+    .select('*').order('created_at', { ascending: false }).limit(200);
+  if (error) throw new Error(error.message);
+  return attachEmployeeNames(data.reverse(), { sender: 'sender_id' });
+}
+
+export async function sendAdminChatMessage(message) {
+  const empId = await currentEmployeeId();
+  const { error } = await supabase.from('admin_chat_messages').insert({ sender_id: empId, message: message.trim() });
+  if (error) throw new Error(error.message);
 }
 
 /** branchId omitted/null = every branch the caller's role can see (RLS still applies —

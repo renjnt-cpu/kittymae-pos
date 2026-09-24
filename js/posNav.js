@@ -2,10 +2,11 @@
 // header{}/nav{}/nav a{} rules -- same structure as the main ERP's shell.js
 // (colored header bar, pill-shaped nav links below), just this site's own pastel
 // blue palette and 4-page link set instead of the ERP's full nav.
-import { esc } from './shell.js?v=20260923k';
-import { signOut } from './auth.js?v=20260923k';
-import { initActivityFeed } from './activityFeed.js?v=20260923k';
-import { showBirthdayBanner } from './birthdayBanner.js?v=20260923k';
+import { esc } from './shell.js?v=20260923l';
+import { signOut } from './auth.js?v=20260923l';
+import { initActivityFeed } from './activityFeed.js?v=20260923l';
+import { showBirthdayBanner } from './birthdayBanner.js?v=20260923l';
+import { initAdminChat } from './adminChat.js?v=20260923l';
 
 // Where a clicked activity notification opens its record (spec 321) -- keyed by the
 // event's record_table. Pages this app doesn't have link across to the ERP.
@@ -84,4 +85,5 @@ export function renderPosNav(employee, activeHref) {
   // Fire-and-forget -- never blocks page render, and fails silently on its own
   // (see birthdayBanner.js) if the check or storage isn't available.
   showBirthdayBanner();
+  initAdminChat(employee);
 }
