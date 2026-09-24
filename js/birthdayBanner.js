@@ -4,8 +4,8 @@
 // kittymae jewels with fireworks and balloon") -- called once from each app's shared
 // shell (shell.js/posNav.js), so every page in both apps shows it without each page
 // needing its own wiring.
-import { getTodaysBirthdays } from './api.js?v=20260923h';
-import { localDateStr } from './uiKit.js?v=20260923h';
+import { getTodaysBirthdays } from './api.js?v=20260923i';
+import { localDateStr } from './uiKit.js?v=20260923i';
 
 const STYLE_ID = 'km-bday-style';
 const FIREWORKS = ['\u{1F386}', '\u{1F387}', '\u{1F386}'];
@@ -48,7 +48,11 @@ function ensureStyle() {
  * blocks page load) if storage is unavailable or the check itself fails. */
 export async function showBirthdayBanner() {
   const today = localDateStr();
-  const storageKey = 'km_bday_banner_shown_' + today;
+  // The _v2 suffix is deliberate: testing the first (thin-strip) design already set
+  // today's plain key in real browsers, which would otherwise silently suppress the
+  // redesigned banner with no way to tell from the outside. Bump this suffix again
+  // only if the same situation recurs -- it doesn't need to track every future change.
+  const storageKey = 'km_bday_banner_shown_v2_' + today;
   try {
     if (localStorage.getItem(storageKey)) return;
   } catch (err) { /* private window / blocked storage -- fall through and just check */ }
