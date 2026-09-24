@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Record Movement — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20260923g">
+<link rel="stylesheet" href="css/styles.css?v=20260923h">
 </head>
 <body>
 <main>
@@ -61,16 +61,16 @@
 </main>
 
 <script type="module">
-import { initShell, toast, esc } from './js/shell.js?v=20260923g';
+import { initShell, toast, esc } from './js/shell.js?v=20260923h';
 import {
   getBranches, recordMovement, recordSale, listSales, searchProducts,
   listOrderItemStatuses, listOrderHistoryForItem, getOrderItemStatusCounts,
   ORDER_ITEM_STATUS_ROW_CAP, setOrderItemStatus, deleteOrderItemStatus,
   subscribeToChanges,
-} from './js/api.js?v=20260923g';
-import { renderPosNav } from './js/posNav.js?v=20260923g';
-import { branchBadge, branchOptionStyle } from './js/branchColors.js?v=20260923g';
-import { sortControlHtml, wireSortControl, applySort, byText, byNumber, localDateStr } from './js/uiKit.js?v=20260923g';
+} from './js/api.js?v=20260923h';
+import { renderPosNav } from './js/posNav.js?v=20260923h';
+import { branchBadge, branchOptionStyle } from './js/branchColors.js?v=20260923h';
+import { sortControlHtml, wireSortControl, applySort, byText, byNumber, localDateStr } from './js/uiKit.js?v=20260923h';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 17: Record Movement) -- replaces
 // this board's old per-column header-click sort, invisible once the table collapses to

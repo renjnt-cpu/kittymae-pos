@@ -2,7 +2,7 @@
 // Google account IS the identity, matched by email against a roster (now `employees`
 // instead of the Employees sheet) — just persisted via `link_my_employee_record()`
 // (01_branches_employees.sql) instead of re-derived on every single call.
-import { supabase } from './supabaseClient.js?v=20260923g';
+import { supabase } from './supabaseClient.js?v=20260923h';
 
 export async function signInWithGoogle() {
   const redirectTo = new URL('index.html', window.location.href).toString();
