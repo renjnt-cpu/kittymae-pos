@@ -8,9 +8,9 @@
 // UI rules: primary action, Summary tiles, Search & Filters, records.
 import {
   listSubastaItems, createSubastaItem, updateSubastaItem, deleteSubastaItem, searchProducts, subscribeToChanges,
-} from './api.js?v=20260923m';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923m';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20260923m';
+} from './api.js?v=20260923n';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923n';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20260923n';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 19): Subasta sortable by Pawn
 // Date/Item/SKU/Weight/Sale Price/Status.

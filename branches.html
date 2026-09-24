@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20260923m">
+<link rel="stylesheet" href="css/styles.css?v=20260923n">
 </head>
 <body>
 <main>
@@ -17,15 +17,15 @@
 // Subasta, Online Orders), each its own self-contained tab module mounted into its
 // own root -- this page only owns the branch selection, the tab bar, the forfeited-
 // layaway warning, and the activity-feed deep links.
-import { initShell, toast, esc } from './js/shell.js?v=20260923m';
-import { getBranches, subscribeToChanges, listLayaways } from './js/api.js?v=20260923m';
-import { renderPosNav } from './js/posNav.js?v=20260923m';
-import { branchButtonStyle } from './js/branchColors.js?v=20260923m';
-import { initPosTab } from './js/posTab.js?v=20260923m';
-import { initOnlineOrdersTab } from './js/onlineOrdersTab.js?v=20260923m';
-import { initLayawayTab } from './js/layawayTab.js?v=20260923m';
-import { initScrapTab } from './js/scrapTab.js?v=20260923m';
-import { initSubastaTab } from './js/subastaTab.js?v=20260923m';
+import { initShell, toast, esc } from './js/shell.js?v=20260923n';
+import { getBranches, subscribeToChanges, listLayaways } from './js/api.js?v=20260923n';
+import { renderPosNav } from './js/posNav.js?v=20260923n';
+import { branchButtonStyle } from './js/branchColors.js?v=20260923n';
+import { initPosTab } from './js/posTab.js?v=20260923n';
+import { initOnlineOrdersTab } from './js/onlineOrdersTab.js?v=20260923n';
+import { initLayawayTab } from './js/layawayTab.js?v=20260923n';
+import { initScrapTab } from './js/scrapTab.js?v=20260923n';
+import { initSubastaTab } from './js/subastaTab.js?v=20260923n';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 

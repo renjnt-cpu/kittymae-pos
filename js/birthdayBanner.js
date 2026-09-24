@@ -4,8 +4,8 @@
 // kittymae jewels with fireworks and balloon") -- called once from each app's shared
 // shell (shell.js/posNav.js), so every page in both apps shows it without each page
 // needing its own wiring.
-import { getTodaysBirthdays } from './api.js?v=20260923m';
-import { localDateStr } from './uiKit.js?v=20260923m';
+import { getTodaysBirthdays } from './api.js?v=20260923n';
+import { localDateStr } from './uiKit.js?v=20260923n';
 
 const STYLE_ID = 'km-bday-style';
 const FIREWORKS = ['\u{1F386}', '\u{1F387}', '\u{1F386}'];

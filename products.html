@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SKU Catalog — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20260923m">
+<link rel="stylesheet" href="css/styles.css?v=20260923n">
 </head>
 <body>
 <main>
@@ -13,10 +13,10 @@
 </main>
 
 <script type="module">
-import { initShell, esc } from './js/shell.js?v=20260923m';
-import { listProducts, getBranches, listAllInventoryQty, subscribeToChanges } from './js/api.js?v=20260923m';
-import { renderPosNav } from './js/posNav.js?v=20260923m';
-import { branchColor } from './js/branchColors.js?v=20260923m';
+import { initShell, esc } from './js/shell.js?v=20260923n';
+import { listProducts, getBranches, listAllInventoryQty, subscribeToChanges } from './js/api.js?v=20260923n';
+import { renderPosNav } from './js/posNav.js?v=20260923n';
+import { branchColor } from './js/branchColors.js?v=20260923n';
 
 // Max rows actually built as <table> DOM rows in one go -- see the comment at its use
 // in render() below for why (Ren, 2026-09-17: "lagging" as the catalog grew past 7,400
@@ -168,16 +168,22 @@ if (employee) {
     const countNotice = '<p class="muted" style="margin:0 0 8px;">' + matchedCount.toLocaleString('en-PH') + ' SKU(s)' +
       (truncated ? ' — showing the first ' + CATALOG_RENDER_CAP + '; search or click a branch column to narrow further' : '') + '</p>';
 
+    // Sorting by one specific branch decutters the table down to just that branch's
+    // column instead of all of them (Ren, 2026-09-24: "when sort by branch only branch
+    // will show") -- generic sorts (SKU, Item Name) still show every branch, as always.
+    const sortedBranchId = !genericCmp && sortKey !== 'none' ? Number(sortKey) : null;
+    const displayBranches = sortedBranchId != null ? branches.filter((b) => b.id === sortedBranchId) : branches;
+
     function rowHtml(p) {
       const qtyForSku = qtyBySku[p.sku] || {};
       return '<tr data-row-id="' + esc(p.sku) + '">' +
           '<td data-label="SKU"><b>' + esc(p.sku) + '</b></td>' +
           '<td data-label="Product Name">' + esc(p.item_name) + '</td>' +
-          branches.map((b) => '<td data-label="' + esc(b.name) + '" style="text-align:center;">' + (qtyForSku[b.id] ?? '—') + '</td>').join('') +
+          displayBranches.map((b) => '<td data-label="' + esc(b.name) + '" style="text-align:center;">' + (qtyForSku[b.id] ?? '—') + '</td>').join('') +
         '</tr>';
     }
 
-    const branchThs = branches.map((b) => {
+    const branchThs = displayBranches.map((b) => {
       const c = branchColor(b.id, branches);
       const active = filterBranchId === b.id;
       return '<th data-branch-filter="' + b.id + '" title="Click to show only SKUs stocked at ' + esc(b.name) + '" style="cursor:pointer;background:' + c.bg + ';color:' + c.text + ';' +
@@ -185,6 +191,7 @@ if (employee) {
     }).join('');
 
     list.innerHTML = (filterBranchId != null ? '<p class="muted" style="margin:0 0 8px;">Showing only SKUs stocked at <b>' + esc((branches.find((b) => b.id === filterBranchId) || {}).name) + '</b> — click the column again to clear.</p>' : '') +
+      (sortedBranchId != null ? '<p class="muted" style="margin:0 0 8px;">Sorted by pcs at <b>' + esc((branches.find((b) => b.id === sortedBranchId) || {}).name) + '</b> — only that branch\'s column is shown; pick a different Sort By to see every branch again.</p>' : '') +
       countNotice + '<div class="table-scroll table-mini"><table><thead><tr style="white-space:nowrap;">' +
       '<th>SKU</th><th>Product Name</th>' + branchThs +
       '</tr></thead><tbody>' + renderRows.map(rowHtml).join('') + '</tbody></table></div>';

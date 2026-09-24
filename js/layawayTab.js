@@ -11,9 +11,9 @@ import {
   searchProducts, listLayawayHandlers, subscribeToChanges, editLayawayHold, deleteLayawayHold, forfeitLayawayHold,
   requestLayawayForfeitDate, listLayawayForfeitDateRequests, approveLayawayForfeitDate, rejectLayawayForfeitDate,
   requestLayawayItemChange, listLayawayItemChangeRequests, approveLayawayItemChange, rejectLayawayItemChange,
-} from './api.js?v=20260923m';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923m';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260923m';
+} from './api.js?v=20260923n';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923n';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260923n';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -345,7 +345,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     '<h3 style="margin-top:20px;">Payments Received <span class="muted" style="font-weight:normal;">— by payment date</span></h3>' +
     '<div class="card">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-        '<div class="field" style="min-width:180px;"><label>Search</label><input type="text" id="mm-pay-f-search" placeholder="SKU, customer, amount, receipt #…"></div>' +
+        '<div class="field" style="min-width:180px;"><label>Search</label><input type="text" id="mm-pay-f-search" placeholder="Order ID, SKU, customer, amount, receipt #…"></div>' +
         '<div class="field"><label>From</label><input type="date" id="mm-pay-f-from"></div>' +
         '<div class="field"><label>To</label><input type="date" id="mm-pay-f-to"></div>' +
         '<div class="field"><label>Method</label><select id="mm-pay-f-method"><option value="all">All</option>' + PAYMENT_METHODS.map((m) => '<option>' + m + '</option>').join('') + '</select></div>' +
@@ -1313,7 +1313,8 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     let filtered = payments;
     if (fSearch) filtered = filtered.filter((p) =>
       p.hold.sku.toLowerCase().includes(fSearch) || p.hold.customer_name.toLowerCase().includes(fSearch) ||
-      String(p.amount).includes(fSearch) || (p.reference_number || '').toLowerCase().includes(fSearch));
+      String(p.amount).includes(fSearch) || (p.reference_number || '').toLowerCase().includes(fSearch) ||
+      (p.hold.order_id || '').toLowerCase().includes(fSearch));
     if (fMethod !== 'all') filtered = filtered.filter((p) => p.payment_method === fMethod);
     if (fStatus !== 'all') filtered = filtered.filter((p) => p.paymentStatus === fStatus);
     if (recordedByEl.value !== 'all') filtered = filtered.filter((p) => p.recordedBy === recordedByEl.value);
@@ -1330,10 +1331,11 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     const sortedPayments = applySort(filtered, mmPaySort, MM_PAY_SORT_COMPARATORS);
     if (!sortedPayments.length) { box.innerHTML = '<p class="muted">No payments match these filters.</p>'; return; }
     box.innerHTML = '<div class="table-scroll"><table>' +
-      '<thead><tr><th>Date</th><th>Branch</th><th>SKU</th><th>Customer</th><th>Amount</th><th>Method</th><th>Status</th><th>Recorded By</th></tr></thead><tbody>' +
+      '<thead><tr><th>Date</th><th>Branch</th><th>Order ID</th><th>SKU</th><th>Customer</th><th>Amount</th><th>Method</th><th>Status</th><th>Recorded By</th></tr></thead><tbody>' +
       sortedPayments.map((p) => '<tr>' +
         '<td data-label="Date">' + fmtDate(p.paid_at) + '</td>' +
         '<td data-label="Branch">' + esc(p.hold.branches ? p.hold.branches.name : '—') + '</td>' +
+        '<td data-label="Order ID">' + esc(p.hold.order_id || '—') + '</td>' +
         '<td data-label="SKU">' + esc(p.hold.sku) + '</td>' +
         '<td data-label="Customer">' + esc(p.hold.customer_name) + '</td>' +
         '<td data-label="Amount">' + money(p.amount) + '</td>' +
