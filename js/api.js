@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20260923e';
-import { localDateStr } from './uiKit.js?v=20260923e';
+import { supabase } from './supabaseClient.js?v=20260923f';
+import { localDateStr } from './uiKit.js?v=20260923f';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -1203,6 +1203,37 @@ export async function approveLayawayForfeitDate(requestId) {
 
 export async function rejectLayawayForfeitDate(requestId, reason) {
   const { error } = await supabase.rpc('reject_layaway_forfeit_date', { p_request_id: requestId, p_reason: reason || null });
+  if (error) throw new Error(error.message);
+}
+
+// ---- Item Change approval (Ren, 2026-09-24: "add edit details for change item
+// supervisor and branch team leader can also edit but for approval of supervisor") --
+// same shape as Forfeit Date approval above, except Branch Team Leader keeps direct
+// edit_layaway_hold() access for everything BUT the item itself, and the decider
+// population is any Supervisor position/role (or Admin/Manager), not Admin-only.
+
+export async function requestLayawayItemChange(holdId, newSku, reason) {
+  const { data, error } = await supabase.rpc('request_layaway_item_change', { p_hold_id: holdId, p_new_sku: newSku, p_reason: reason || null });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** RLS scopes this to every request for a Supervisor position/role (or Admin/Manager),
+ * or just the caller's own for anyone else (checking their own submissions' status). */
+export async function listLayawayItemChangeRequests() {
+  const { data, error } = await supabase.from('layaway_item_change_requests')
+    .select('*, layaway_holds(sku, customer_name, branch_id)').order('requested_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return attachEmployeeNames(data, { requester: 'requested_by', reviewer: 'reviewed_by' });
+}
+
+export async function approveLayawayItemChange(requestId) {
+  const { error } = await supabase.rpc('approve_layaway_item_change', { p_request_id: requestId });
+  if (error) throw new Error(error.message);
+}
+
+export async function rejectLayawayItemChange(requestId, reason) {
+  const { error } = await supabase.rpc('reject_layaway_item_change', { p_request_id: requestId, p_reason: reason || null });
   if (error) throw new Error(error.message);
 }
 

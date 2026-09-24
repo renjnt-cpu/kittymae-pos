@@ -10,9 +10,10 @@ import {
   setLayawayForfeitDate, setLayawayHoldDate, uploadLayawayPaymentProof, getLayawayPaymentProofUrl,
   searchProducts, listLayawayHandlers, subscribeToChanges, editLayawayHold, deleteLayawayHold, forfeitLayawayHold,
   requestLayawayForfeitDate, listLayawayForfeitDateRequests, approveLayawayForfeitDate, rejectLayawayForfeitDate,
-} from './api.js?v=20260923e';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923e';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260923e';
+  requestLayawayItemChange, listLayawayItemChangeRequests, approveLayawayItemChange, rejectLayawayItemChange,
+} from './api.js?v=20260923f';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20260923f';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260923f';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -152,7 +153,17 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   // than canManage above -- only the Auditor position or anyone holding a
   // Supervisor-named position/role. Mirrors is_amount_editor() in the database
   // exactly, including the layaway_payments delete RLS policy.
-  const canEditAmount = employee.position === 'Auditor' || employee.role === 'Branch Supervisor' || (employee.position || '').includes('Supervisor');
+  // 'Admin' and 'Branch Team Leader' added 2026-09-24 -- both were missing here even
+  // though the server (is_amount_editor()/transaction.edit_amount) already granted
+  // them, so Admin couldn't see this Edit button at all and Branch Team Leader was
+  // fully blocked from it (Ren: "supervisor and branch team leader can also edit").
+  const canEditAmount = employee.role === 'Admin' || employee.position === 'Auditor' || employee.role === 'Branch Supervisor' ||
+    employee.position === 'Branch Team Leader' || (employee.position || '').includes('Supervisor');
+  // Changing a hold's ITEM specifically is narrower still (Ren, 2026-09-24: "but for
+  // approval of supervisor") -- Branch Team Leader keeps canEditAmount above for
+  // everything else, but an item change needs a Supervisor (or Admin/Manager) to
+  // approve it first. Mirrors can_approve_layaway_item_change() exactly.
+  const canApproveItemChange = ['Admin', 'Manager', 'Branch Supervisor'].includes(employee.role) || (employee.position || '').includes('Supervisor');
   // Cancelling (the "final delete" of a layaway) is narrower still -- Admin only
   // (Ren, 2026-09-16: "i will be the one to final delete not supervisor or manager
   // now"), reversing the same-day-earlier change that let Manager/Branch Supervisor
@@ -298,6 +309,15 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       ? '<details class="card exp" id="lw-pending-forfeit-folder" style="margin-top:10px;" open>' +
           '<summary><span class="exp-arrow" aria-hidden="true">▸</span>Pending Forfeit Date Requests <span class="exp-count" id="lw-pending-forfeit-count"></span></summary>' +
           '<div class="exp-body" id="lw-pending-forfeit-list"><div class="muted">Loading…</div></div>' +
+        '</details>'
+      : '') +
+    // Supervisor-tier review queue (Ren, 2026-09-24: "but for approval of supervisor")
+    // -- same convention as Pending Forfeit Date Requests above, open by default since
+    // a pending item change is something to act on, not just browse.
+    (canApproveItemChange
+      ? '<details class="card exp" id="lw-pending-itemchange-folder" style="margin-top:10px;" open>' +
+          '<summary><span class="exp-arrow" aria-hidden="true">▸</span>Pending Item Change Requests <span class="exp-count" id="lw-pending-itemchange-count"></span></summary>' +
+          '<div class="exp-body" id="lw-pending-itemchange-list"><div class="muted">Loading…</div></div>' +
         '</details>'
       : '') +
 
@@ -621,6 +641,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   let allHolds = [];
   let groupMembers = {};
   let pendingForfeitRequests = []; // every Pending row this employee can see (RLS: all for Admin/Manager, own for anyone else)
+  let pendingItemChangeRequests = []; // every Pending row this employee can see (RLS: all for a Supervisor/Admin/Manager, own for anyone else)
 
   document.getElementById('lw-f-search').addEventListener('input', render);
   document.getElementById('lw-f-clear').addEventListener('click', () => {
@@ -666,6 +687,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       renderMonthly();
       await loadPendingForfeitRequests(); // must resolve before renderForfeitureWatch reads pendingForfeitRequests
       renderForfeitureWatch();
+      await loadPendingItemChangeRequests();
     } catch (err) {
       list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
     }
@@ -683,6 +705,19 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       pendingForfeitRequests = [];
     }
     if (canFinalDelete) renderPendingForfeitRequests();
+  }
+
+  /** Same reasoning as loadPendingForfeitRequests() above -- filtered down to this
+   * branch's holds rather than every request RLS would otherwise hand back. */
+  async function loadPendingItemChangeRequests() {
+    try {
+      const holdIds = new Set(allHolds.map((h) => h.id));
+      pendingItemChangeRequests = (await listLayawayItemChangeRequests())
+        .filter((r) => r.status === 'Pending' && holdIds.has(r.hold_id));
+    } catch (err) {
+      pendingItemChangeRequests = [];
+    }
+    if (canApproveItemChange) renderPendingItemChangeRequests();
   }
 
   function renderPendingForfeitRequests() {
@@ -723,6 +758,51 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         notify('Forfeit date request rejected.', false);
         await loadPendingForfeitRequests();
         renderForfeitureWatch();
+      } catch (err) {
+        notify(String(err.message || err), true);
+      }
+    }));
+  }
+
+  function renderPendingItemChangeRequests() {
+    const countEl = document.getElementById('lw-pending-itemchange-count');
+    const box = document.getElementById('lw-pending-itemchange-list');
+    if (!countEl || !box) return; // not rendered at all for someone who can't approve
+    countEl.textContent = '(' + pendingItemChangeRequests.length + ')';
+    if (!pendingItemChangeRequests.length) { box.innerHTML = '<p class="muted">No pending item change requests.</p>'; return; }
+
+    box.innerHTML = pendingItemChangeRequests.map((r) => {
+      const h = r.layaway_holds || {};
+      return '<div class="card" style="margin-bottom:8px;background:#fffaf0;">' +
+        '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">' +
+          '<div><b>' + esc(h.customer_name || '—') + '</b> <span class="muted" style="font-size:11px;">requested by ' + (r.requester ? esc(r.requester.full_name) : '—') + '</span></div>' +
+          '<div class="muted" style="font-size:11px;">' + fmtDateTime(r.requested_at) + '</div>' +
+        '</div>' +
+        '<div style="font-size:12px;margin-top:6px;">Item: <span class="muted" style="text-decoration:line-through;">' + esc(r.previous_sku) + '</span> → <strong>' + esc(r.proposed_sku) + '</strong></div>' +
+        (r.reason ? '<div class="muted" style="font-size:11px;margin-top:2px;">Reason: ' + esc(r.reason) + '</div>' : '') +
+        '<div style="margin-top:8px;display:flex;gap:6px;">' +
+          '<button class="btn small" data-act="approve-item-change" data-id="' + r.id + '">Approve</button>' +
+          '<button class="btn small secondary" data-act="reject-item-change" data-id="' + r.id + '">Reject</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    box.querySelectorAll('[data-act="approve-item-change"]').forEach((btn) => btn.addEventListener('click', async () => {
+      if (!confirm('Approve this item change? The old item\'s reservation will be released and the new one reserved.')) return;
+      try {
+        await approveLayawayItemChange(Number(btn.dataset.id));
+        notify('Item change approved.', false);
+        await load();
+      } catch (err) {
+        notify(String(err.message || err), true);
+      }
+    }));
+    box.querySelectorAll('[data-act="reject-item-change"]').forEach((btn) => btn.addEventListener('click', async () => {
+      const reason = prompt('Reason for rejecting (optional)?') || null;
+      try {
+        await rejectLayawayItemChange(Number(btn.dataset.id), reason);
+        notify('Item change request rejected.', false);
+        await loadPendingItemChangeRequests();
       } catch (err) {
         notify(String(err.message || err), true);
       }
@@ -1044,6 +1124,22 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       const notes = form.querySelector('[name=notes]').value.trim();
       const reason = form.querySelector('[name=reason]').value.trim();
       if (!sku || !qty || qty <= 0 || !customerName) { notify('SKU, a positive Qty, and Customer Name are required.', true); return; }
+      // Branch Team Leader keeps this same form for everything else, but changing the
+      // item itself needs Supervisor approval first (Ren, 2026-09-24) -- unless they
+      // separately qualify as a direct approver (e.g. a Branch Team Leader whose role
+      // is already Branch Supervisor), matching edit_layaway_hold()'s own gate exactly.
+      if (sku !== h.sku && employee.position === 'Branch Team Leader' && !canApproveItemChange) {
+        if (!reason) { notify('A reason is required when requesting an item change.', true); return; }
+        try {
+          await requestLayawayItemChange(h.id, sku, reason);
+          notify('Item change submitted for Supervisor approval.', false);
+          await load();
+          refreshDetailIfOpen(h.id);
+        } catch (err) {
+          notify(String(err.message || err), true);
+        }
+        return;
+      }
       const amountChanged = Number(h.unit_price) !== Number(unitPrice) || Number(h.qty) !== qty;
       // Ren's spec section 126: reason required whenever the amount/qty actually
       // changes -- checked here too (not just server-side) so the user isn't
