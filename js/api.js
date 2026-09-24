@@ -2,13 +2,12 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20260923o';
-import { localDateStr } from './uiKit.js?v=20260923o';
+import { supabase } from './supabaseClient.js?v=20260923p';
+import { localDateStr } from './uiKit.js?v=20260923p';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
- * limit at all until 2026-09-23, which only gets slower as each table grows. Mirrors
- * the same-purpose ORDER_ITEM_STATUS_ROW_CAP below, just named for its wider scope. */
+ * limit at all until 2026-09-23, which only gets slower as each table grows. */
 export const LEDGER_ROW_CAP = 1000;
 
 /** Resolves the signed-in employee's id for "created_by"/"paid_by"/etc attribution.
@@ -112,11 +111,18 @@ export async function getInventory(branchId) {
   return data;
 }
 
+/** Strips characters that are structurally significant to PostgREST's .or() filter
+ * syntax (comma separates conditions, parentheses group them) out of free-text
+ * search input before it's embedded in one -- otherwise a search term containing
+ * either could reshape the filter instead of just being searched for. Also escapes
+ * SQL LIKE wildcards so a literal % or _ in a search term isn't treated as one. */
+function sanitizeForOrFilter(s) {
+  return s.replace(/[,()]/g, ' ').replace(/[%_\\]/g, '\\$&').trim();
+}
+
 // Also used by pos.html's SKU lookup (not just movement.html's autocomplete),
 // hence the fuller column list below -- extra fields a caller doesn't need are
-// harmless to select. sanitizeForOrFilter() guards the same PostgREST .or()
-// injection risk documented in listOrderItemStatuses() further down this file.
-// branchId is optional and additive -- existing callers (layawayTab.js, transfers.html,
+// harmless to select. branchId is optional and additive -- existing callers (layawayTab.js, transfers.html,
 // movement.html) that pass just a query see no change at all. The POS product grid
 // passes it to get a per-branch qty_available back on each result, flattened out of
 // the embedded inventory row so callers don't need to know it's a to-many relation.
@@ -137,8 +143,9 @@ export async function searchProducts(query, branchId) {
   return data.map((p) => ({ ...p, qty_available: p.inventory && p.inventory[0] ? p.inventory[0].qty_available : 0 }));
 }
 
-// Same lesson as ORDER_ITEM_STATUS_ROW_CAP below: with 7,392 SKUs (nearly all
-// Active by default), select('*') with no limit was silently truncated at
+// Same lesson learned elsewhere in this file wherever a table can grow past a few
+// thousand rows: with 7,392 SKUs (nearly all Active by default), select('*') with no
+// limit was silently truncated at
 // Supabase's default 1000-row cap -- products.html would only ever show
 // alphabetically-first ~1000 SKUs, with no error or notice that ~6,000+ were
 // missing. Fetches every page below instead so the catalog is never cut off.
@@ -156,7 +163,7 @@ const skuCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base'
 /** Full SKU Catalog listing for products.html — everyone with a session can read
  * every row (products_read_all), so no branch/role filtering here. search/status
  * scope the query server-side instead of fetching everything and filtering
- * client-side, same reasoning as listOrderItemStatuses(). Pages through in batches of
+ * client-side. Pages through in batches of
  * PRODUCTS_PAGE_SIZE (PostgREST's own hard per-request cap) rather than trying to
  * raise a single .limit() past it, so a bare "browse everything" call actually returns
  * everything instead of just the first page. */
@@ -1277,138 +1284,10 @@ export async function deleteLayawayPayment(paymentId) {
   if (error) throw new Error(error.message);
 }
 
-// ---- Order & Item Status (Record Movement) -- a monitoring board mirroring
-// Pancake's own Orders view, item-focused rather than customer-focused. Rows come
-// from the pancake-webhook Edge Function (live) and the one-time pancake-backfill
-// pull of Pancake's order history (78_order_item_status_raw_payload.sql). Company-
-// wide read/status-update, Admin/Manager can delete (75_order_item_status_tracker.sql).
-
-// Terminal states -- the order is fully done, nothing left to pull/pack/ship -- are
-// excluded from the working board by default. Excluded at the query level (not just
-// client-side) because after the historical backfill this table holds 40,000+ rows;
-// most of them are exactly these terminal ones, and fetching all of them on every
-// page load doesn't scale. Use listOrderHistoryForItem() to see an item's full
-// history including these.
-const TERMINAL_STATUSES = ['delivered', 'canceled', 'returned', 'shipped'];
-
-// raw_payload is a multi-KB JSONB blob per row kept only for confirming Pancake's
-// status_name/field mappings from real data (see 78_order_item_status_raw_payload.sql)
-// -- never needed by the UI, so it's deliberately left out of this column list rather
-// than using select('*'), which would otherwise pull it for every one of 40,000+ rows
-// on every page load.
-const ORDER_ITEM_STATUS_COLUMNS = 'id, order_reference, sku, item_name, qty, branch_id, customer_name, status, notes, created_by, created_at, updated_at, branches(name)';
-
-// A single status like "new" alone has tens of thousands of active orders after the
-// historical Pancake backfill -- fetching everything active (even with terminal
-// statuses excluded) still silently hit Supabase's default 1000-row cap, which is
-// exactly how Awaiting Stock's real 90 orders were showing as ~27: most of them
-// just fell outside whatever the most-recent 1000 rows happened to be. Capped here
-// explicitly, and paired with a UI message when a query is scoped to fewer rows
-// than actually match (search further to narrow it down), same lesson the original
-// Sheets-based system already learned about this business's real data volume.
-export const ORDER_ITEM_STATUS_ROW_CAP = 500;
-
-/** Strips characters that are structurally significant to PostgREST's .or() filter
- * syntax (comma separates conditions, parentheses group them) out of free-text
- * search input before it's embedded in one -- otherwise a search term containing
- * either could reshape the filter instead of just being searched for. Also escapes
- * SQL LIKE wildcards so a literal % or _ in a search term isn't treated as one. */
-function sanitizeForOrFilter(s) {
-  return s.replace(/[,()]/g, ' ').replace(/[%_\\]/g, '\\$&').trim();
-}
-
-/** statusKeys: null for "All", or the array of raw status_name values the current
- * tab maps to (PANCAKE_STATUS_TABS entries are all single-key now, but this still
- * takes an array for any tab that ever needs more than one). search: free text,
- * matched against item/SKU/order/customer/notes -- same fields the old client-side
- * filter checked, just done server-side now so a tab load only pulls what that tab
- * actually needs instead of the whole active dataset. branchId: null for the
- * company-wide board (movement.html), or one branch's id for the Branches page's
- * Online Orders tab (92_order_item_status_branch_scope.sql). */
-export async function listOrderItemStatuses({ statusKeys = null, search = '', branchId = null, fromDate = null, toDate = null } = {}) {
-  let query = supabase.from('order_item_status')
-    .select(ORDER_ITEM_STATUS_COLUMNS)
-    .not('status', 'in', '(' + TERMINAL_STATUSES.join(',') + ')');
-  if (statusKeys) query = query.in('status', statusKeys);
-  if (branchId != null) query = query.eq('branch_id', branchId);
-  if (fromDate) query = query.gte('created_at', fromDate);
-  if (toDate) query = query.lte('created_at', toDate + 'T23:59:59.999');
-  const term = sanitizeForOrFilter(search || '');
-  if (term) {
-    const pat = '%' + term + '%';
-    query = query.or(
-      'item_name.ilike.' + pat + ',sku.ilike.' + pat + ',order_reference.ilike.' + pat +
-      ',customer_name.ilike.' + pat + ',notes.ilike.' + pat
-    );
-  }
-  const { data, error } = await query.order('created_at', { ascending: false }).limit(ORDER_ITEM_STATUS_ROW_CAP);
-  if (error) throw new Error(error.message);
-  return attachEmployeeNames(data, { creator: 'created_by' });
-}
-
-/** Per-status counts for the tab badges -- a lightweight aggregate (see
- * 80_order_item_status_counts_fn.sql, extended to take an optional branch filter in
- * 92_order_item_status_branch_scope.sql) instead of counting a client-side array,
- * since that array is now capped/scoped to one tab at a time and would give wrong
- * counts for every OTHER tab. */
-export async function getOrderItemStatusCounts(branchId = null) {
-  const { data, error } = await supabase.rpc('order_item_status_counts', { p_branch_id: branchId });
-  if (error) throw new Error(error.message);
-  const counts = { all: 0 };
-  (data || []).forEach((row) => { counts[row.status] = Number(row.cnt); counts.all += Number(row.cnt); });
-  return counts;
-}
-
-/** Full history for one item across EVERY status, including the terminal ones the
- * default board query above excludes -- a targeted on-demand query rather than
- * something filtered from the already-loaded board data, since that data no longer
- * contains delivered/canceled/etc. rows at all. Matches by SKU when it's a real one
- * (not the webhook's synthetic per-order-line "pancake-item-<id>" SKU), else by
- * item_name -- same fallback historyKey() uses in movement.html, kept in sync by hand. */
-export async function listOrderHistoryForItem({ sku, itemName }) {
-  let query = supabase.from('order_item_status').select(ORDER_ITEM_STATUS_COLUMNS);
-  query = (sku && !sku.toLowerCase().startsWith('pancake-item-'))
-    ? query.ilike('sku', sku)
-    : query.ilike('item_name', itemName);
-  const { data, error } = await query.order('created_at', { ascending: false });
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-/** Just the status, for the quick inline dropdown on each row -- doesn't require
- * opening the full edit form for the common case of moving an item to its next stage. */
-export async function setOrderItemStatus(id, status) {
-  const { error } = await supabase.from('order_item_status')
-    .update({ status, updated_at: new Date().toISOString() }).eq('id', id);
-  if (error) throw new Error(error.message);
-}
-
-export async function deleteOrderItemStatus(id) {
-  const { error } = await supabase.from('order_item_status').delete().eq('id', id);
-  if (error) throw new Error(error.message);
-}
-
-/** Delivered Online Orders for one branch, bounded to a start date -- there are
- * 40,000+ historical order_item_status rows after the Pancake backfill, and most of
- * them are long since delivered, so this is deliberately scoped to fromDate (Ren
- * asked for "September 2026 onwards") rather than a general-purpose Delivered tab on
- * listOrderItemStatuses(), which always excludes every terminal status including
- * this one. Sorted/filtered on updated_at (when the row last changed status) since
- * there's no dedicated delivered_at column -- the closest proxy for "when it was
- * marked Delivered". */
-export async function listDeliveredOrders({ branchId, fromDate, toDate = null }) {
-  let query = supabase.from('order_item_status')
-    .select(ORDER_ITEM_STATUS_COLUMNS)
-    .eq('status', 'delivered')
-    .gte('updated_at', fromDate)
-    .order('updated_at', { ascending: false })
-    .limit(ORDER_ITEM_STATUS_ROW_CAP);
-  if (branchId != null) query = query.eq('branch_id', branchId);
-  if (toDate) query = query.lte('updated_at', toDate + 'T23:59:59.999');
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return attachEmployeeNames(data, { creator: 'created_by' });
-}
+// Order & Item Status (the Pancake-synced online-orders board) moved to the ERP app
+// only -- online-orders.html there, under the Sales nav group (Ren, 2026-09-24:
+// "remove online order in all branch in the POS move online order in the ERP only").
+// This app no longer queries order_item_status at all.
 
 /** HR-Position-based Permission System -- data-driven replacement for hardcoded
  * role/position checks. list_my_permissions() returns every key the signed-in

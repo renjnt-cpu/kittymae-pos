@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Record Movement — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20260923o">
+<link rel="stylesheet" href="css/styles.css?v=20260923p">
 </head>
 <body>
 <main>
@@ -47,100 +47,21 @@
     <p class="muted" style="margin-top:8px;">Sale / Customer Return add nothing extra to reporting beyond the ledger; Stock In / Customer Return add to inventory; Sale / Stock Out / Damage / Missing / Supplier Return remove from it. Adjustment/Correction can go either way and require Admin or Manager.</p>
   </div>
   <div class="tiles" id="mv-tiles"></div>
-
-  <div class="card">
-    <h3>Order &amp; Item Status</h3>
-    <p class="muted" style="margin-top:-4px;">Monitoring only — mirrors Pancake's own Orders stages, focused on the item being pulled/shipped rather than the customer conversation (Pancake already handles that). Not synced live yet; status can be corrected by hand below.</p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-      <div class="field" style="max-width:380px;"><label>Search</label><input type="text" id="ois-search" placeholder="Item, SKU, order #, customer, or notes…"></div>
-      <span id="ois-sort-slot"></span>
-    </div>
-    <div id="ois-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>
-    <div id="ois-list" style="margin-top:10px;"><div class="muted">Loading…</div></div>
-  </div>
 </main>
 
 <script type="module">
-import { initShell, toast, esc } from './js/shell.js?v=20260923o';
+import { initShell, toast, esc } from './js/shell.js?v=20260923p';
 import {
   getBranches, recordMovement, recordSale, listSales, searchProducts,
-  listOrderItemStatuses, listOrderHistoryForItem, getOrderItemStatusCounts,
-  ORDER_ITEM_STATUS_ROW_CAP, setOrderItemStatus, deleteOrderItemStatus,
   subscribeToChanges,
-} from './js/api.js?v=20260923o';
-import { renderPosNav } from './js/posNav.js?v=20260923o';
-import { branchBadge, branchOptionStyle } from './js/branchColors.js?v=20260923o';
-import { sortControlHtml, wireSortControl, applySort, byText, byNumber, localDateStr } from './js/uiKit.js?v=20260923o';
-
-// Global Filter + Sort rules (Ren, 2026-09-21, section 17: Record Movement) -- replaces
-// this board's old per-column header-click sort, invisible once the table collapses to
-// header-less cards on mobile, with the one shared Sort control used everywhere else.
-const OIS_SORT_FIELDS = [
-  { key: 'default', label: 'Default (most recent)' }, { key: 'item_name', label: 'Item' }, { key: 'qty', label: 'Qty' },
-  { key: 'branch', label: 'Branch' }, { key: 'status', label: 'Status' }, { key: 'order_reference', label: 'Order / Customer' }, { key: 'notes', label: 'Notes / By' },
-];
-const OIS_SORT_COMPARATORS = {
-  item_name: byText('item_name'), qty: byNumber('qty'), status: byText('status'),
-  order_reference: byText('order_reference'), notes: byText('notes'),
-  branch: (a, b) => String(a.branches?.name || '').localeCompare(String(b.branches?.name || '')),
-};
+} from './js/api.js?v=20260923p';
+import { renderPosNav } from './js/posNav.js?v=20260923p';
+import { branchBadge, branchOptionStyle } from './js/branchColors.js?v=20260923p';
+import { localDateStr } from './js/uiKit.js?v=20260923p';
 
 const REMOVES = new Set(['Stock Out', 'Damage', 'Missing', 'Supplier Return', 'Sale']);
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
-const fmtDate = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
-// Pacific Mall (2) and APM Mall (4) -- view only for everyone but Admin here too,
-// same rule as the Branches page's Online Orders tab (both show this same table);
-// 93_order_item_status_branch_admin_only.sql enforces it server-side via RLS, this
-// just keeps the row from showing a control that would fail for a non-Admin viewer.
-const ADMIN_ONLY_EDIT_BRANCHES = [2, 4];
-
-// Pancake's own dashboard groups orders under a fixed set of tabs in this order
-// (screenshotted 2026-09-11). These mappings are CONFIRMED against Pancake's own
-// Orders API (numeric status code -> status_name, cross-checked against each tab's
-// live doc_count): new=0, submitted=1, shipped=2, delivered=3, returned=5,
-// canceled=6, packing=8, pending=9, waitting=11 (this is "Awaiting Stock" -- doc_count
-// 88 matched the UI's 87/89 exactly, despite the raw slug looking unrelated),
-// wait_print=12, received_money=16, wait_submit=17, ordered=20. "Confirmed" is the
-// one label here without a confirmed slug (too low-volume to have shown up in
-// sampling) -- left as a best guess pending a real one via raw_payload.
-const PANCAKE_STATUS_TABS = [
-  { label: 'New', keys: ['new'] },
-  { label: 'Pending Confirmation', keys: ['pending'] },
-  { label: 'Awaiting Stock', keys: ['waitting'] },
-  { label: 'Ordered', keys: ['ordered'] },
-  { label: 'Confirmed', keys: ['confirmed'] },
-  { label: 'Awaiting Print', keys: ['wait_print'] },
-  { label: 'Printed', keys: ['printed'] },
-  { label: 'Packing', keys: ['packing'] },
-];
-const PANCAKE_MAPPED_KEYS = new Set(PANCAKE_STATUS_TABS.flatMap((t) => t.keys));
-
-// The per-row status dropdown still lists raw values only (never the canonical
-// labels above) -- picking one writes that literal text into the status column, and
-// writing a pretty label there would create a status Pancake itself never sends,
-// diverging further from the real order_item_status_pancake_real_shape source data.
-function prettyStatus(raw) {
-  return String(raw || '').split('_').map((w) => w ? w[0].toUpperCase() + w.slice(1) : w).join(' ') || 'Unknown';
-}
-// No fixed color map either, for the same reason -- a keyword heuristic over the raw
-// value covers whatever Pancake sends without needing to enumerate every status.
-function statusBadgeClass(raw) {
-  const s = String(raw || '').toLowerCase();
-  if (s.includes('cancel') || s.includes('return') || s.includes('fail')) return 'low';
-  if (s.includes('ship') || s.includes('deliver') || s.includes('complet') || s.includes('done')) return 'ok';
-  if (s.includes('wait') || s.includes('pending') || s.includes('new') || s.includes('submit')) return 'pending';
-  return 'transit';
-}
-// Groups an item's order history by real SKU when there is one, but falls back to
-// item_name for the webhook's synthetic "pancake-item-<id>" SKUs (assigned per order
-// line when Pancake's own variation has no display_id set) -- grouping by those would
-// only ever match the row against itself, since each order line gets its own id.
-function historyKey(r) {
-  const sku = String(r.sku || '').toLowerCase();
-  if (sku && !sku.startsWith('pancake-item-')) return sku;
-  return String(r.item_name || '').trim().toLowerCase();
-}
 // Mirrors assert_can_act_on_branch() in 67_layaway.sql / the inline check in
 // record_sale() (66_sales_recording.sql) -- so the branch field locks to "own branch
 // only" for the exact same set of people the backend would otherwise reject.
@@ -290,240 +211,6 @@ if (employee) {
       btn.disabled = false;
     }
   });
-
-  // Order & Item Status board -- monitoring only, no manual Add: real rows come from
-  // the pancake-webhook Edge Function (live) and the one-time pancake-backfill pull
-  // of Pancake's order history. Queries are scoped server-side per tab/search now,
-  // NOT "fetch everything active, filter client-side" -- a single status like New
-  // alone has tens of thousands of orders after the historical backfill, so fetching
-  // everything silently hit Supabase's default 1000-row cap and hid most of whatever
-  // fell outside the most-recent 1000 rows (exactly how Awaiting Stock's real 90
-  // orders were showing as ~27 here).
-  let orderItems = [];             // whatever the CURRENT tab + search returned (capped -- see api.js)
-  let statusCounts = { all: 0 };   // per-status counts across the whole active dataset, for tab badges
-  let oisStatusFilter = 'all';
-  let oisSearch = '';
-  const oisSort = { field: 'default', dir: 'desc' };
-  document.getElementById('ois-sort-slot').outerHTML = sortControlHtml(OIS_SORT_FIELDS, oisSort, 'ois-sort-field', 'ois-sort-dir');
-  wireSortControl('ois-sort-field', 'ois-sort-dir', oisSort, renderOrderItems);
-  let oisSearchTimer = null;
-
-  function tabKeysFor(filterId) {
-    if (filterId === 'all') return null;
-    const mapped = PANCAKE_STATUS_TABS.find((t) => t.label === filterId);
-    return mapped ? mapped.keys : [filterId];
-  }
-
-  async function loadOrderItems() {
-    try {
-      const [items, counts] = await Promise.all([
-        listOrderItemStatuses({ statusKeys: tabKeysFor(oisStatusFilter), search: oisSearch }),
-        getOrderItemStatusCounts(),
-      ]);
-      orderItems = items;
-      statusCounts = counts;
-      renderOrderItems();
-    } catch (err) {
-      document.getElementById('ois-list').innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
-    }
-  }
-  await loadOrderItems();
-  // Debounced: the 15-minute pancake-resync run alone upserts 300+ rows per pass,
-  // and Realtime fires postgres_changes once per row -- without this, a single
-  // resync burst would trigger hundreds of reloads (full network round-trips) on
-  // any open tab within a few seconds, which is real, noticeable lag, not fetch
-  // size. Collapsing a burst into one reload shortly after it settles fixes that.
-  let realtimeReloadTimer = null;
-  subscribeToChanges('order_item_status', () => {
-    clearTimeout(realtimeReloadTimer);
-    realtimeReloadTimer = setTimeout(loadOrderItems, 800);
-  });
-
-  // Search now queries the server (it has to -- the client no longer holds the full
-  // active dataset), so it's debounced to one request per pause in typing rather
-  // than one per keystroke. Lives outside renderOrderItems() so the listener is
-  // attached once and typing doesn't lose focus each time a webhook push re-renders
-  // the list underneath it.
-  document.getElementById('ois-search').addEventListener('input', (ev) => {
-    oisSearch = ev.target.value.trim();
-    clearTimeout(oisSearchTimer);
-    oisSearchTimer = setTimeout(loadOrderItems, 300);
-  });
-
-  function renderOrderItems() {
-    // The full set of raw statuses that actually exist right now, from the
-    // server-side aggregate -- NOT derived from orderItems, which is scoped to just
-    // the current tab and would make every OTHER tab's badge (and the per-row
-    // status-correction dropdown) wrong.
-    const distinctStatuses = Object.keys(statusCounts).filter((s) => s !== 'all').sort();
-    // Anything not covered by a PANCAKE_STATUS_TABS mapping gets its own tab too, so
-    // a status we haven't mapped yet (or mis-mapped) still surfaces instead of
-    // silently vanishing into whichever fixed tab it happened to land under.
-    const leftoverStatuses = distinctStatuses.filter((s) => !PANCAKE_MAPPED_KEYS.has(s));
-
-    const tabs = document.getElementById('ois-tabs');
-    const countFor = (keys) => keys === null ? statusCounts.all :
-      keys.reduce((sum, k) => sum + (statusCounts[k] || 0), 0);
-    const tabBtn = (id, label, keys) =>
-      '<button type="button" class="btn small' + (oisStatusFilter === id ? '' : ' secondary') + '" data-ois-tab="' + esc(id) + '">' +
-        esc(label) + ' <span class="muted" style="font-weight:normal;">' + countFor(keys) + '</span></button>';
-    tabs.innerHTML = tabBtn('all', 'All', null) +
-      PANCAKE_STATUS_TABS.map((t) => tabBtn(t.label, t.label, t.keys)).join('') +
-      leftoverStatuses.map((s) => tabBtn(s, prettyStatus(s), [s])).join('');
-    tabs.querySelectorAll('[data-ois-tab]').forEach((btn) => btn.addEventListener('click', () => {
-      oisStatusFilter = btn.dataset.oisTab;
-      loadOrderItems();
-    }));
-
-    let rows = orderItems; // already scoped to the current tab + search at the query level
-    const list = document.getElementById('ois-list');
-    if (!rows.length) { list.innerHTML = '<p class="muted">No items match this search/filter.</p>'; return; }
-
-    // Filtering (tab + search) already picked `rows`; sort only reorders them for
-    // display (section 11) -- via the shared Sort control above, not a per-column
-    // header click (invisible once this table collapses to cards on mobile).
-    rows = applySort(rows, oisSort, OIS_SORT_COMPARATORS);
-
-    const statusOptionsFor = (current) => distinctStatuses.map((s) => '<option value="' + esc(s) + '"' + (s === current ? ' selected' : '') + '>' + esc(prettyStatus(s)) + '</option>').join('');
-    // Subtotal reflects exactly what's on screen (status tab + search combined) --
-    // most useful when the search narrows down to one item name/SKU, to see at a
-    // glance how many pieces of it are in flight across all its matching orders.
-    // The query itself is capped (ORDER_ITEM_STATUS_ROW_CAP, see api.js) -- hitting
-    // that cap exactly is the signal there may be more not shown, since a status
-    // like New can run into the thousands; search narrows it down to see the rest.
-    const truncated = rows.length >= ORDER_ITEM_STATUS_ROW_CAP;
-    const subtotalQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
-    const subtotalLine = '<p class="muted" style="margin:0 0 6px;">' + rows.length + (truncated ? '+' : '') + ' item' + (rows.length === 1 && !truncated ? '' : 's') +
-      (oisSearch ? ' matching "' + esc(oisSearch) + '"' : '') + ' · Qty subtotal: <strong>' + subtotalQty + (truncated ? '+' : '') + '</strong>' +
-      (truncated ? ' <span style="color:#b45309;">— showing the ' + ORDER_ITEM_STATUS_ROW_CAP + ' most recent; search to narrow further</span>' : '') +
-      '</p>';
-
-    // Ranked by order COUNT, not qty -- "most orders" means how many separate order
-    // lines an item shows up in. Recomputed from `rows`, so switching status tabs or
-    // typing a search re-ranks it to match whatever's currently on screen, same as
-    // the subtotal above. Grouped by historyKey() for the same synthetic-SKU reason
-    // as the click-through history.
-    const topCounts = new Map();
-    rows.forEach((r) => {
-      const key = historyKey(r);
-      const entry = topCounts.get(key) || {
-        item_name: r.item_name,
-        sku: (r.sku && !r.sku.toLowerCase().startsWith('pancake-item-')) ? r.sku : null,
-        orders: 0, qty: 0,
-      };
-      entry.orders += 1;
-      entry.qty += Number(r.qty || 0);
-      topCounts.set(key, entry);
-    });
-    const top5 = [...topCounts.values()].sort((a, b) => b.orders - a.orders).slice(0, 5);
-    const filtered = oisStatusFilter !== 'all' || oisSearch;
-    const top5Line = top5.length ? (
-      '<div style="background:#f6f6f6;border-radius:8px;padding:10px 14px;margin-bottom:10px;">' +
-        '<div style="font-weight:600;font-size:12px;margin-bottom:6px;">Top ' + top5.length + ' Products — Most Orders' +
-          (filtered ? ' <span class="muted" style="font-weight:normal;">(current filter)</span>' : '') +
-          (truncated ? ' <span class="muted" style="font-weight:normal;">(from the ' + ORDER_ITEM_STATUS_ROW_CAP + ' most recent)</span>' : '') + '</div>' +
-        '<ol style="margin:0;padding-left:18px;font-size:12px;">' +
-          top5.map((t) => '<li>' + esc(t.item_name) + (t.sku ? ' <span class="muted">(' + esc(t.sku) + ')</span>' : '') +
-            ' — <strong>' + t.orders + '</strong> order' + (t.orders === 1 ? '' : 's') + ' <span class="muted">· Qty ' + t.qty + '</span></li>').join('') +
-        '</ol>' +
-      '</div>'
-    ) : '';
-
-    list.innerHTML = top5Line + subtotalLine + '<div class="table-scroll table-mini"><table><thead><tr>' +
-        '<th>Item</th><th>Qty</th><th>Branch</th><th>Status</th><th>Order / Customer</th><th>Notes / By</th><th></th>' +
-      '</tr></thead><tbody>' +
-      rows.map((r) => {
-        const editable = isAdmin || !ADMIN_ONLY_EDIT_BRANCHES.includes(r.branch_id);
-        return '<tr>' +
-          '<td data-label="Item">' +
-            '<button type="button" class="exp-row-btn" data-history-toggle="' + r.id + '" data-history-sku="' + esc(r.sku || '') + '" data-history-name="' + esc(r.item_name) + '" aria-expanded="false">' +
-              '<span class="exp-arrow" aria-hidden="true">▸</span>' +
-              '<strong style="text-decoration:underline;text-decoration-style:dotted;">' + esc(r.item_name) + '</strong>' +
-            '</button>' +
-            (r.sku ? '<div class="muted" style="font-size:11px;">' + esc(r.sku) + '</div>' : '') +
-          '</td>' +
-          '<td data-label="Qty">' + r.qty + '</td>' +
-          '<td data-label="Branch">' + (r.branches ? branchBadge(esc, r.branches.name, r.branch_id, branches) : '—') + '</td>' +
-          '<td data-label="Status">' +
-            (editable
-              ? '<select data-status-for="' + r.id + '" class="badge ' + statusBadgeClass(r.status) + '" style="border:none;font:inherit;">' + statusOptionsFor(r.status) + '</select>'
-              : '<span class="badge ' + statusBadgeClass(r.status) + '" title="View only for this branch — only Admin can change status here.">' + esc(prettyStatus(r.status)) + '</span>') +
-          '</td>' +
-          '<td data-label="Order / Customer" style="font-size:11px;">' + esc(r.order_reference || '—') + (r.customer_name ? '<div class="muted">' + esc(r.customer_name) + '</div>' : '') + '</td>' +
-          '<td data-label="Notes / By" style="font-size:11px;">' + esc(r.notes || '') +
-            (r.creator ? '<div class="muted" style="font-size:10px;">Added by ' + esc(r.creator.full_name) + '</div>' : '') +
-          '</td>' +
-          '<td>' + (editable ? '<button class="btn small secondary" type="button" data-delete-id="' + r.id + '">Delete</button>' : '') + '</td>' +
-        '</tr>' +
-        '<tr class="history-row" data-history-for="' + r.id + '" style="display:none;"><td colspan="7"></td></tr>';
-      }).join('') +
-      '</tbody></table></div>';
-
-    list.querySelectorAll('[data-status-for]').forEach((sel) => sel.addEventListener('change', async () => {
-      const id = sel.dataset.statusFor;
-      sel.disabled = true;
-      try {
-        await setOrderItemStatus(id, sel.value);
-        toast('mv-msg', 'Status updated.', false);
-        await loadOrderItems();
-      } catch (err) {
-        toast('mv-msg', String(err.message || err), true);
-        sel.disabled = false;
-      }
-    }));
-    list.querySelectorAll('[data-delete-id]').forEach((btn) => btn.addEventListener('click', async () => {
-      if (!confirm('Delete this item?')) return;
-      try {
-        await deleteOrderItemStatus(btn.dataset.deleteId);
-        toast('mv-msg', 'Deleted.', false);
-        await loadOrderItems();
-      } catch (err) {
-        toast('mv-msg', String(err.message || err), true);
-      }
-    }));
-    list.querySelectorAll('[data-history-toggle]').forEach((btn) => btn.addEventListener('click', () => {
-      toggleHistory(btn.dataset.historyToggle, btn.dataset.historySku, btn.dataset.historyName);
-    }));
-  }
-
-  /** Full history for one item across every order it's shown up in, including
-   * terminal statuses (delivered/canceled/returned/shipped) the board's own default
-   * query excludes -- a fresh, targeted query rather than filtering orderItems,
-   * since that array no longer holds those rows at all after the historical Pancake
-   * backfill made "fetch everything, filter client-side" too expensive to keep doing. */
-  async function toggleHistory(id, sku, itemName) {
-    const row = document.querySelector('tr[data-history-for="' + id + '"]');
-    const isOpen = row.style.display !== 'none';
-    document.querySelectorAll('.history-row').forEach((r) => { r.style.display = 'none'; r.querySelector('td').innerHTML = ''; });
-    document.querySelectorAll('[data-history-toggle]').forEach((btn) => btn.setAttribute('aria-expanded', 'false'));
-    if (isOpen) return;
-    document.querySelector('[data-history-toggle="' + id + '"]')?.setAttribute('aria-expanded', 'true');
-    row.style.display = '';
-    row.querySelector('td').innerHTML = '<div class="muted" style="padding:8px 4px;">Loading history…</div>';
-    let matches;
-    try {
-      matches = await listOrderHistoryForItem({ sku, itemName });
-    } catch (err) {
-      row.querySelector('td').innerHTML = '<div class="msg error" style="margin:8px 4px;">' + esc(err.message || err) + '</div>';
-      return;
-    }
-    row.querySelector('td').innerHTML =
-      '<div style="padding:8px 4px;">' +
-        '<div class="muted" style="font-size:11px;margin-bottom:6px;">' + matches.length + ' order' + (matches.length === 1 ? '' : 's') + ' for this item, across every status</div>' +
-        '<div class="table-scroll"><table><thead><tr><th>Order / Customer</th><th>Branch</th><th>Status</th><th>Qty</th><th>Notes</th><th>Date</th></tr></thead><tbody>' +
-        matches.map((m) =>
-          '<tr>' +
-            '<td data-label="Order / Customer">' + esc(m.order_reference || '—') + (m.customer_name ? '<div class="muted" style="font-size:11px;">' + esc(m.customer_name) + '</div>' : '') + '</td>' +
-            '<td data-label="Branch">' + (m.branches ? branchBadge(esc, m.branches.name, m.branch_id, branches) : '—') + '</td>' +
-            '<td data-label="Status"><span class="badge ' + statusBadgeClass(m.status) + '">' + esc(prettyStatus(m.status)) + '</span></td>' +
-            '<td data-label="Qty">' + m.qty + '</td>' +
-            '<td data-label="Notes" style="font-size:11px;">' + esc(m.notes || '—') + '</td>' +
-            '<td data-label="Date" style="font-size:11px;white-space:nowrap;">' + fmtDate(m.created_at) + '</td>' +
-          '</tr>'
-        ).join('') +
-        '</tbody></table></div>' +
-      '</div>';
-  }
 }
 </script>
 </body>
