@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20260923p">
+<link rel="stylesheet" href="css/styles.css?v=20260925a">
 </head>
 <body>
 <main>
@@ -19,14 +19,14 @@
 // and the activity-feed deep links. Online Orders used to live here too -- moved to
 // its own ERP-only page (Ren, 2026-09-24: "remove online order in all branch in the
 // POS move online order in the ERP only make it in one module... under sales").
-import { initShell, toast, esc } from './js/shell.js?v=20260923p';
-import { getBranches, subscribeToChanges, listLayaways } from './js/api.js?v=20260923p';
-import { renderPosNav } from './js/posNav.js?v=20260923p';
-import { branchButtonStyle } from './js/branchColors.js?v=20260923p';
-import { initPosTab } from './js/posTab.js?v=20260923p';
-import { initLayawayTab } from './js/layawayTab.js?v=20260923p';
-import { initScrapTab } from './js/scrapTab.js?v=20260923p';
-import { initSubastaTab } from './js/subastaTab.js?v=20260923p';
+import { initShell, toast, esc } from './js/shell.js?v=20260925a';
+import { getBranches, subscribeToChanges, listLayaways } from './js/api.js?v=20260925a';
+import { renderPosNav } from './js/posNav.js?v=20260925a';
+import { branchButtonStyle } from './js/branchColors.js?v=20260925a';
+import { initPosTab } from './js/posTab.js?v=20260925a';
+import { initLayawayTab } from './js/layawayTab.js?v=20260925a';
+import { initScrapTab } from './js/scrapTab.js?v=20260925a';
+import { initSubastaTab } from './js/subastaTab.js?v=20260925a';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 

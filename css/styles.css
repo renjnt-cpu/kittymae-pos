@@ -85,17 +85,16 @@ button.btn.small { padding:4px 10px; font-size:12px; }
   .layout-3col-right { flex:0 0 280px; }
 }
 /* Branches page: each tab's Search/date-range card relocates into
-   .branch-filter-slot (see branches.html) -- left of the Branch card on desktop,
-   below it on mobile (Ren, 2026-09-24). Stacked by default (mobile matches this
-   with no extra rule); the order flip on desktop is the only thing that needs one. */
+   .branch-filter-slot (see branches.html) -- Branch card on the left, filter on the
+   right on desktop (Ren, 2026-09-25: "switch both put branches on the left side"),
+   filter below Branch on mobile. DOM order already puts Branch first, so both
+   breakpoints just follow it -- no order flip needed either way. */
 .branch-filter-row { display:flex; flex-direction:column; gap:16px; margin-bottom:16px; }
 .branch-filter-row .branch-card { flex:0 0 auto; margin:0; }
 .branch-filter-slot { flex:1 1 auto; min-width:0; }
 .branch-filter-slot:empty { display:none; }
 @media (min-width:960px) {
   .branch-filter-row { flex-direction:row; align-items:flex-start; }
-  .branch-filter-row .branch-card { order:2; }
-  .branch-filter-slot { order:1; }
 }
 
 .completed-item { border-bottom:1px solid #f0f0f0; padding:8px 0; }
