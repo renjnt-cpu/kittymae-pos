@@ -42,8 +42,13 @@ tr:last-child td { border-bottom:none; }
 /* Item-row fields (POS cart, Layaway hold form) set their own narrow widths (Qty
    70px, Unit Price 110px, Stock Status 130px) on the wrapping .field div -- the
    140px min-width above otherwise forces those inputs wider than their container,
-   pushing them over the next field/button and making the row visually overlap. */
-.lw-item-row .field input, .lw-item-row .field select { min-width:0; width:100%; }
+   pushing them over the next field/button and making the row visually overlap.
+   .lw-edit-form (the Edit Hold form, same Qty/Price widths) needs the identical
+   reset -- missing it here left its inputs stuck at 140px, overflowing their
+   70px/110px boxes and forcing a phone-width horizontal scrollbar inside the
+   drawer (measured at 375px: row scrollWidth 391 vs clientWidth 321). */
+.lw-item-row .field input, .lw-item-row .field select,
+.lw-edit-form .field input, .lw-edit-form .field select { min-width:0; width:100%; }
 button.btn { background:var(--rose); color:var(--ink); border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:13px; }
 button.btn.secondary { background:#eee; color:var(--ink); }
 button.btn.small { padding:4px 10px; font-size:12px; }
