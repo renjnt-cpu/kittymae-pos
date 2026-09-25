@@ -11,9 +11,9 @@ import {
   searchProducts, listLayawayHandlers, subscribeToChanges, editLayawayHold, deleteLayawayHold, forfeitLayawayHold,
   requestLayawayForfeitDate, listLayawayForfeitDateRequests, approveLayawayForfeitDate, rejectLayawayForfeitDate,
   requestLayawayItemChange, listLayawayItemChangeRequests, approveLayawayItemChange, rejectLayawayItemChange,
-} from './api.js?v=20260925b';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20260925b';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260925b';
+} from './api.js?v=20260925i';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20260925i';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260925i';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -159,6 +159,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   // fully blocked from it (Ren: "supervisor and branch team leader can also edit").
   const canEditAmount = employee.role === 'Admin' || employee.position === 'Auditor' || employee.role === 'Branch Supervisor' ||
     employee.position === 'Branch Team Leader' || (employee.position || '').includes('Supervisor');
+  // A Completed hold's SKU/Qty/Price are locked (its stock has already left
+  // "reserved" and become an actual sale) -- but Admin/Auditor can still fix the
+  // surrounding DETAILS (customer name, contact, Order ID, notes), narrower than
+  // canEditAmount above (Ren, 2026-09-25: "give access auditor/glenn to edit
+  // completed details"). Mirrors edit_layaway_hold()'s own Completed-status gate.
+  const canEditCompletedDetails = employee.role === 'Admin' || employee.position === 'Auditor';
   // Changing a hold's ITEM specifically is narrower still (Ren, 2026-09-24: "but for
   // approval of supervisor") -- Branch Team Leader keeps canEditAmount above for
   // everything else, but an item change needs a Supervisor (or Admin/Manager) to
@@ -389,16 +395,26 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   // open by the row's "Edit" button. Reuses the exact same .lw-item-sku/-suggest/-name
   // class names as itemRowHtml() so attachSkuAutocomplete() works on it unmodified.
   function editHoldFormHtml(h) {
+    // Completed: SKU/Qty/Price are locked (that stock already left "reserved" and
+    // became an actual sale -- changing them here can't be reflected back into it),
+    // so only Admin/Auditor even reach this form at all (canEditCompletedDetails,
+    // gating the Completed-only Edit Details section that calls this), and even they
+    // can only correct the surrounding details, not these three (Ren, 2026-09-25:
+    // "give access auditor/glenn to edit completed details"). Disabled
+    // rather than removed so the field still shows its real value; edit_layaway_hold()
+    // enforces the same lock server-side regardless.
+    const locked = h.status === 'Completed';
     return '<div class="lw-edit-form" data-hold-id="' + h.id + '" style="display:none;border:1px solid #e5e5e5;border-radius:8px;padding:8px;margin-top:6px;background:#fafafa;">' +
+      (locked ? '<p class="muted" style="margin:0 0 6px;">Completed — SKU, Qty, and Unit Price are locked. Only the details below can be corrected.</p>' : '') +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
         '<div class="field" style="flex:2;min-width:150px;position:relative;">' +
           '<label>SKU *</label>' +
-          '<input type="text" class="lw-item-sku" name="sku" autocomplete="off" value="' + esc(h.sku) + '">' +
+          '<input type="text" class="lw-item-sku" name="sku" autocomplete="off" value="' + esc(h.sku) + '"' + (locked ? ' disabled' : '') + '>' +
           '<div class="lw-item-sku-name muted" style="font-size:11px;"></div>' +
           '<div class="lw-item-sku-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 10px rgba(0,0,0,0.12);max-height:220px;overflow-y:auto;"></div>' +
         '</div>' +
-        '<div class="field" style="width:70px;"><label>Qty</label><input type="number" name="qty" min="1" value="' + h.qty + '"></div>' +
-        '<div class="field" style="width:110px;"><label>Unit Price</label><input type="number" class="lw-item-price" name="unitPrice" step="0.01" min="0" value="' + (h.unit_price ?? '') + '"></div>' +
+        '<div class="field" style="width:70px;"><label>Qty</label><input type="number" name="qty" min="1" value="' + h.qty + '"' + (locked ? ' disabled' : '') + '></div>' +
+        '<div class="field" style="width:110px;"><label>Unit Price</label><input type="number" class="lw-item-price" name="unitPrice" step="0.01" min="0" value="' + (h.unit_price ?? '') + '"' + (locked ? ' disabled' : '') + '></div>' +
       '</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:6px;">' +
         '<div class="field" style="flex:1;min-width:120px;"><label>Customer Name *</label><input type="text" name="customerName" value="' + esc(h.customer_name) + '"></div>' +
@@ -407,8 +423,10 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       '</div>' +
       '<div class="field" style="margin-top:6px;"><label>Notes</label><input type="text" name="notes" value="' + esc(h.notes || '') + '"></div>' +
       // Reason required when Amount or Qty actually changes (Ren's spec section
-      // 126) -- enforced again server-side by edit_layaway_hold() regardless.
-      '<div class="field" style="margin-top:6px;"><label>Reason (required if amount/qty changes)</label><input type="text" name="reason"></div>' +
+      // 126) -- enforced again server-side by edit_layaway_hold() regardless. Moot on
+      // a Completed hold (those fields are disabled so they can never actually
+      // change), but harmless to still show.
+      (locked ? '' : '<div class="field" style="margin-top:6px;"><label>Reason (required if amount/qty changes)</label><input type="text" name="reason"></div>') +
       '<div style="display:flex;gap:4px;margin-top:6px;">' +
         '<button type="button" class="btn small" data-act="save-edit-hold" data-id="' + h.id + '">Save</button>' +
         '<button type="button" class="btn small secondary" data-act="close-edit-hold" data-id="' + h.id + '">Cancel</button>' +
@@ -984,6 +1002,17 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
             (canEditAmount ? editHoldFormHtml(h) : '') +
           '</div>'
         : '') +
+      // Completed's own Edit (details-only: Customer/Contact/Order ID/Notes, SKU/Qty/
+      // Price stay locked -- see canEditCompletedDetails/editHoldFormHtml's own
+      // comments) -- separate section from On Hold's "Actions" above since there's no
+      // payment form/Complete/Cancel/Forfeit here, just the one narrower correction
+      // (Ren, 2026-09-25: "give access auditor/glenn to edit completed details").
+      (h.status === 'Completed' && canEditCompletedDetails
+        ? '<div class="drawer-section"><h4>Edit Details</h4>' +
+            '<button class="btn small secondary" data-act="edit-hold" data-id="' + h.id + '">Edit</button>' +
+            editHoldFormHtml(h) +
+          '</div>'
+        : '') +
       // Completed is Admin-only here too, same canFinalDelete gate -- deleting one
       // reverses a real sale (Ren, 2026-09-23: "give me access only for me to those
       // completed to delete details", after cleaning up a duplicate-completion by
@@ -1127,7 +1156,10 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       const contactNumber = form.querySelector('[name=contactNumber]').value.trim();
       const orderId = form.querySelector('[name=orderId]').value.trim();
       const notes = form.querySelector('[name=notes]').value.trim();
-      const reason = form.querySelector('[name=reason]').value.trim();
+      // Not present at all on a Completed hold's form (SKU/Qty/Price are disabled
+      // there, so a reason can never actually be needed) -- optional chaining avoids
+      // crashing on the missing field instead of just never requiring one.
+      const reason = form.querySelector('[name=reason]')?.value.trim() || '';
       if (!sku || !qty || qty <= 0 || !customerName) { notify('SKU, a positive Qty, and Customer Name are required.', true); return; }
       // Branch Team Leader keeps this same form for everything else, but changing the
       // item itself needs Supervisor approval first (Ren, 2026-09-24) -- unless they
