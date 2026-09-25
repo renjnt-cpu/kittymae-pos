@@ -6,14 +6,15 @@
 // tab is already scoped to whichever branch is selected on the Branches page
 // (getBranchId()), so every row it ever shows is that one branch by construction.
 import {
-  listLayaways, createLayawayHold, addLayawayPayment, completeLayaway, cancelLayaway, deleteLayawayPayment,
+  listLayaways, createLayawayHold, addLayawayPayment, completeLayaway, cancelLayaway,
   setLayawayForfeitDate, setLayawayHoldDate, uploadLayawayPaymentProof, getLayawayPaymentProofUrl,
   searchProducts, listLayawayHandlers, subscribeToChanges, editLayawayHold, deleteLayawayHold, forfeitLayawayHold,
   requestLayawayForfeitDate, listLayawayForfeitDateRequests, approveLayawayForfeitDate, rejectLayawayForfeitDate,
   requestLayawayItemChange, listLayawayItemChangeRequests, approveLayawayItemChange, rejectLayawayItemChange,
-} from './api.js?v=20260925n';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20260925n';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260925n';
+  requestLayawayPaymentDeletion, listLayawayPaymentDeletionRequests, approveLayawayPaymentDeletion, rejectLayawayPaymentDeletion,
+} from './api.js?v=20260925p';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20260925p';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260925p';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -327,6 +328,14 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       ? '<details class="card exp" id="lw-pending-itemchange-folder" style="margin-top:10px;" open>' +
           '<summary><span class="exp-arrow" aria-hidden="true">▸</span>Pending Item Change Requests <span class="exp-count" id="lw-pending-itemchange-count"></span></summary>' +
           '<div class="exp-body" id="lw-pending-itemchange-list"><div class="muted">Loading…</div></div>' +
+        '</details>'
+      : '') +
+    // Ren, 2026-09-26: "delete details with reason should be approved with supervisor"
+    // -- same review-queue convention as Item Change above, same approver population.
+    (canApproveItemChange
+      ? '<details class="card exp" id="lw-pending-paymentdel-folder" style="margin-top:10px;" open>' +
+          '<summary><span class="exp-arrow" aria-hidden="true">▸</span>Pending Payment Deletion Requests <span class="exp-count" id="lw-pending-paymentdel-count"></span></summary>' +
+          '<div class="exp-body" id="lw-pending-paymentdel-list"><div class="muted">Loading…</div></div>' +
         '</details>'
       : '') +
 
@@ -665,6 +674,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   let groupMembers = {};
   let pendingForfeitRequests = []; // every Pending row this employee can see (RLS: all for Admin/Manager, own for anyone else)
   let pendingItemChangeRequests = []; // every Pending row this employee can see (RLS: all for a Supervisor/Admin/Manager, own for anyone else)
+  let pendingPaymentDeletionRequests = []; // every Pending row this employee can see (RLS: all for a Supervisor/Admin/Manager, own for anyone else)
 
   document.getElementById('lw-f-search').addEventListener('input', render);
   document.getElementById('lw-f-clear').addEventListener('click', () => {
@@ -711,6 +721,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       await loadPendingForfeitRequests(); // must resolve before renderForfeitureWatch reads pendingForfeitRequests
       renderForfeitureWatch();
       await loadPendingItemChangeRequests();
+      await loadPendingPaymentDeletionRequests();
     } catch (err) {
       list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
     }
@@ -826,6 +837,66 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
         await rejectLayawayItemChange(Number(btn.dataset.id), reason);
         notify('Item change request rejected.', false);
         await loadPendingItemChangeRequests();
+      } catch (err) {
+        notify(String(err.message || err), true);
+      }
+    }));
+  }
+
+  /** Same reasoning as loadPendingItemChangeRequests() above -- filtered down to this
+   * branch's holds. The payment itself may already be gone (deleted on approval), so
+   * everything shown here comes from the request row's own snapshot fields, not a join
+   * to layaway_payments. */
+  async function loadPendingPaymentDeletionRequests() {
+    try {
+      const holdIds = new Set(allHolds.map((h) => h.id));
+      pendingPaymentDeletionRequests = (await listLayawayPaymentDeletionRequests())
+        .filter((r) => r.status === 'Pending' && holdIds.has(r.hold_id));
+    } catch (err) {
+      pendingPaymentDeletionRequests = [];
+    }
+    if (canApproveItemChange) renderPendingPaymentDeletionRequests();
+  }
+
+  function renderPendingPaymentDeletionRequests() {
+    const countEl = document.getElementById('lw-pending-paymentdel-count');
+    const box = document.getElementById('lw-pending-paymentdel-list');
+    if (!countEl || !box) return; // not rendered at all for someone who can't approve
+    countEl.textContent = '(' + pendingPaymentDeletionRequests.length + ')';
+    if (!pendingPaymentDeletionRequests.length) { box.innerHTML = '<p class="muted">No pending payment deletion requests.</p>'; return; }
+
+    box.innerHTML = pendingPaymentDeletionRequests.map((r) => {
+      const h = r.layaway_holds || {};
+      return '<div class="card" style="margin-bottom:8px;background:#fffaf0;">' +
+        '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">' +
+          '<div><b>' + esc(h.customer_name || '—') + '</b> <span class="muted" style="font-size:11px;">requested by ' + (r.requester ? esc(r.requester.full_name) : '—') + '</span></div>' +
+          '<div class="muted" style="font-size:11px;">' + fmtDateTime(r.requested_at) + '</div>' +
+        '</div>' +
+        '<div style="font-size:12px;margin-top:6px;">Payment: <strong>' + money(r.payment_amount) + '</strong> via ' + esc(r.payment_method) + (r.payment_reference ? ' (Ref: ' + esc(r.payment_reference) + ')' : '') + '</div>' +
+        '<div class="muted" style="font-size:11px;margin-top:2px;">Reason: ' + esc(r.reason) + '</div>' +
+        '<div style="margin-top:8px;display:flex;gap:6px;">' +
+          '<button class="btn small" data-act="approve-payment-del" data-id="' + r.id + '">Approve</button>' +
+          '<button class="btn small secondary" data-act="reject-payment-del" data-id="' + r.id + '">Reject</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    box.querySelectorAll('[data-act="approve-payment-del"]').forEach((btn) => btn.addEventListener('click', async () => {
+      if (!confirm('Approve this payment deletion? This permanently removes the payment record.')) return;
+      try {
+        await approveLayawayPaymentDeletion(Number(btn.dataset.id));
+        notify('Payment deletion approved.', false);
+        await load();
+      } catch (err) {
+        notify(String(err.message || err), true);
+      }
+    }));
+    box.querySelectorAll('[data-act="reject-payment-del"]').forEach((btn) => btn.addEventListener('click', async () => {
+      const reason = prompt('Reason for rejecting (optional)?') || null;
+      try {
+        await rejectLayawayPaymentDeletion(Number(btn.dataset.id), reason);
+        notify('Payment deletion request rejected.', false);
+        await loadPendingPaymentDeletionRequests();
       } catch (err) {
         notify(String(err.message || err), true);
       }
@@ -1127,9 +1198,14 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     });
 
     container.querySelectorAll('[data-act="del-payment"]').forEach((btn) => btn.addEventListener('click', async () => {
-      if (!confirm('Delete this payment entry?')) return;
-      try { await deleteLayawayPayment(Number(btn.dataset.id)); notify('Payment removed.', false); await load(); refreshDetailIfOpen(h.id); }
-      catch (err) { notify(String(err.message || err), true); }
+      const reason = (prompt('Reason for deleting this payment? (required -- a Supervisor must approve before it is actually removed)') || '').trim();
+      if (!reason) return;
+      try {
+        await requestLayawayPaymentDeletion(Number(btn.dataset.id), reason);
+        notify('Deletion requested — pending Supervisor approval.', false);
+        await load();
+        refreshDetailIfOpen(h.id);
+      } catch (err) { notify(String(err.message || err), true); }
     }));
 
     const editBtn = container.querySelector('[data-act="edit-hold"]');

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Record Movement — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20260925n">
+<link rel="stylesheet" href="css/styles.css?v=20260925p">
 </head>
 <body>
 <main>
@@ -50,14 +50,14 @@
 </main>
 
 <script type="module">
-import { initShell, toast, esc } from './js/shell.js?v=20260925n';
+import { initShell, toast, esc } from './js/shell.js?v=20260925p';
 import {
   getBranches, recordMovement, recordSale, listSales, searchProducts,
   subscribeToChanges,
-} from './js/api.js?v=20260925n';
-import { renderPosNav } from './js/posNav.js?v=20260925n';
-import { branchBadge, branchOptionStyle } from './js/branchColors.js?v=20260925n';
-import { localDateStr } from './js/uiKit.js?v=20260925n';
+} from './js/api.js?v=20260925p';
+import { renderPosNav } from './js/posNav.js?v=20260925p';
+import { branchBadge, branchOptionStyle } from './js/branchColors.js?v=20260925p';
+import { localDateStr } from './js/uiKit.js?v=20260925p';
 
 const REMOVES = new Set(['Stock Out', 'Damage', 'Missing', 'Supplier Return', 'Sale']);
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });

@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20260925n';
-import { localDateStr } from './uiKit.js?v=20260925n';
+import { supabase } from './supabaseClient.js?v=20260925p';
+import { localDateStr } from './uiKit.js?v=20260925p';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -1273,14 +1273,44 @@ export async function rejectLayawayItemChange(requestId, reason) {
   if (error) throw new Error(error.message);
 }
 
-/** Managerial-only correction, matching scrap_payments_managerial_delete's pattern --
- * fixing a mistaken payment entry, not part of the normal add-payment flow. */
-export async function deleteLayawayPayment(paymentId) {
-  const { data: payment } = await supabase.from('layaway_payments').select('attachment_path').eq('id', paymentId).single();
-  if (payment && payment.attachment_path) {
-    await supabase.storage.from('layaway-attachments').remove([payment.attachment_path]);
+// Deleting a layaway payment used to be instant, no reason, no approval, for anyone
+// with transaction.edit_amount (Ren, 2026-09-26: "delete details with reason should
+// be approved with supervisor") -- same request/approve/reject shape as Item Change
+// above, reusing can_approve_layaway_item_change() as the same approver population
+// ("supervisor position too", per Ren's own confirmation).
+export async function requestLayawayPaymentDeletion(paymentId, reason) {
+  const { data, error } = await supabase.rpc('request_layaway_payment_deletion', { p_payment_id: paymentId, p_reason: reason || null });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** RLS scopes this to every request for a Supervisor position/role (or Admin/Manager),
+ * or just the caller's own for anyone else (checking their own submissions' status).
+ * A snapshot of the payment's own details lives on the request row itself (not a
+ * join), since the payment row is gone once a request is Approved. */
+export async function listLayawayPaymentDeletionRequests() {
+  const { data, error } = await supabase.from('layaway_payment_deletion_requests')
+    .select('*, layaway_holds(sku, customer_name, branch_id)').order('requested_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return attachEmployeeNames(data, { requester: 'requested_by', reviewer: 'reviewed_by' });
+}
+
+/** Actually deletes the payment (and its proof-of-payment file, if any) server-side
+ * once approved -- the caller still needs to separately clean up Storage, same as
+ * the old deleteLayawayPayment() used to, since a SQL function can't reach the
+ * Storage API; the request row's own payment_attachment_path snapshot is what makes
+ * that possible after the payment row itself is gone. */
+export async function approveLayawayPaymentDeletion(requestId) {
+  const { data: request } = await supabase.from('layaway_payment_deletion_requests').select('payment_attachment_path').eq('id', requestId).single();
+  const { error } = await supabase.rpc('approve_layaway_payment_deletion', { p_request_id: requestId });
+  if (error) throw new Error(error.message);
+  if (request && request.payment_attachment_path) {
+    await supabase.storage.from('layaway-attachments').remove([request.payment_attachment_path]);
   }
-  const { error } = await supabase.from('layaway_payments').delete().eq('id', paymentId);
+}
+
+export async function rejectLayawayPaymentDeletion(requestId, reason) {
+  const { error } = await supabase.rpc('reject_layaway_payment_deletion', { p_request_id: requestId, p_reason: reason || null });
   if (error) throw new Error(error.message);
 }
 
