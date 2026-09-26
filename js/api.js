@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20260925p';
-import { localDateStr } from './uiKit.js?v=20260925p';
+import { supabase } from './supabaseClient.js?v=20260925q';
+import { localDateStr } from './uiKit.js?v=20260925q';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -1184,12 +1184,43 @@ export async function editLayawayHold({ holdId, sku, qty, customerName, contactN
   if (error) throw new Error(error.message);
 }
 
-/** Permanently erases a layaway hold (for data-entry mistakes/duplicates) -- distinct
- * from cancelLayaway, which keeps the row and its payment history. Admin only
- * (delete_layaway_hold enforces this server-side too), and blocked entirely if the
- * hold has any payments recorded or is already Completed -- cancel instead there. */
-export async function deleteLayawayHold(holdId) {
-  const { error } = await supabase.rpc('delete_layaway_hold', { p_hold_id: holdId });
+// Permanently erasing a layaway hold (for data-entry mistakes/duplicates, or to undo
+// an already-Completed sale entirely) used to be instant for Admin. Ren, 2026-09-26:
+// "give approval also to supervisor approval to remove but i am the final approver"
+// -- now a two-stage request: Supervisor-tier reviews first, then Admin alone gives
+// final approval (which is what actually performs the deletion). Distinct from
+// cancelLayaway, which keeps the row and its payment history.
+export async function requestLayawayHoldDeletion(holdId, reason) {
+  const { data, error } = await supabase.rpc('request_layaway_hold_deletion', { p_hold_id: holdId, p_reason: reason || null });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** RLS scopes this to every request for a Supervisor position/role (or Admin/Manager),
+ * or just the caller's own for anyone else. A snapshot of the hold's own details lives
+ * on the request row itself, since the hold is gone once a request is fully Approved. */
+export async function listLayawayHoldDeletionRequests() {
+  const { data, error } = await supabase.from('layaway_hold_deletion_requests').select('*').order('requested_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return attachEmployeeNames(data, {
+    requester: 'requested_by', supervisorApprover: 'supervisor_approved_by',
+    finalApprover: 'final_approved_by', rejecter: 'rejected_by',
+  });
+}
+
+export async function approveLayawayHoldDeletionStage1(requestId) {
+  const { error } = await supabase.rpc('approve_layaway_hold_deletion_stage1', { p_request_id: requestId });
+  if (error) throw new Error(error.message);
+}
+
+/** The actual delete only happens here, once both stages have signed off. */
+export async function approveLayawayHoldDeletionFinal(requestId) {
+  const { error } = await supabase.rpc('approve_layaway_hold_deletion_final', { p_request_id: requestId });
+  if (error) throw new Error(error.message);
+}
+
+export async function rejectLayawayHoldDeletion(requestId, reason) {
+  const { error } = await supabase.rpc('reject_layaway_hold_deletion', { p_request_id: requestId, p_reason: reason || null });
   if (error) throw new Error(error.message);
 }
 

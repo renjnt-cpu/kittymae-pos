@@ -8,13 +8,14 @@
 import {
   listLayaways, createLayawayHold, addLayawayPayment, completeLayaway, cancelLayaway,
   setLayawayForfeitDate, setLayawayHoldDate, uploadLayawayPaymentProof, getLayawayPaymentProofUrl,
-  searchProducts, listLayawayHandlers, subscribeToChanges, editLayawayHold, deleteLayawayHold, forfeitLayawayHold,
+  searchProducts, listLayawayHandlers, subscribeToChanges, editLayawayHold, forfeitLayawayHold,
   requestLayawayForfeitDate, listLayawayForfeitDateRequests, approveLayawayForfeitDate, rejectLayawayForfeitDate,
   requestLayawayItemChange, listLayawayItemChangeRequests, approveLayawayItemChange, rejectLayawayItemChange,
   requestLayawayPaymentDeletion, listLayawayPaymentDeletionRequests, approveLayawayPaymentDeletion, rejectLayawayPaymentDeletion,
-} from './api.js?v=20260925p';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20260925p';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260925p';
+  requestLayawayHoldDeletion, listLayawayHoldDeletionRequests, approveLayawayHoldDeletionStage1, approveLayawayHoldDeletionFinal, rejectLayawayHoldDeletion,
+} from './api.js?v=20260925q';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20260925q';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260925q';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -336,6 +337,16 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       ? '<details class="card exp" id="lw-pending-paymentdel-folder" style="margin-top:10px;" open>' +
           '<summary><span class="exp-arrow" aria-hidden="true">▸</span>Pending Payment Deletion Requests <span class="exp-count" id="lw-pending-paymentdel-count"></span></summary>' +
           '<div class="exp-body" id="lw-pending-paymentdel-list"><div class="muted">Loading…</div></div>' +
+        '</details>'
+      : '') +
+    // Ren, 2026-09-26: "give approval also to supervisor approval to remove but i am
+    // the final approver" -- two-stage review queue, visible to any Supervisor-tier
+    // viewer (they can act on Pending rows) but Final Approve/the final-stage Reject
+    // only render for canFinalDelete (Admin) -- see renderPendingHoldDeletionRequests().
+    (canApproveItemChange
+      ? '<details class="card exp" id="lw-pending-holddel-folder" style="margin-top:10px;" open>' +
+          '<summary><span class="exp-arrow" aria-hidden="true">▸</span>Pending Layaway Deletion Requests <span class="exp-count" id="lw-pending-holddel-count"></span></summary>' +
+          '<div class="exp-body" id="lw-pending-holddel-list"><div class="muted">Loading…</div></div>' +
         '</details>'
       : '') +
 
@@ -675,6 +686,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   let pendingForfeitRequests = []; // every Pending row this employee can see (RLS: all for Admin/Manager, own for anyone else)
   let pendingItemChangeRequests = []; // every Pending row this employee can see (RLS: all for a Supervisor/Admin/Manager, own for anyone else)
   let pendingPaymentDeletionRequests = []; // every Pending row this employee can see (RLS: all for a Supervisor/Admin/Manager, own for anyone else)
+  let pendingHoldDeletionRequests = []; // every Pending/Supervisor Approved row this employee can see (RLS: all for a Supervisor/Admin/Manager, own for anyone else)
 
   document.getElementById('lw-f-search').addEventListener('input', render);
   document.getElementById('lw-f-clear').addEventListener('click', () => {
@@ -722,6 +734,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       renderForfeitureWatch();
       await loadPendingItemChangeRequests();
       await loadPendingPaymentDeletionRequests();
+      await loadPendingHoldDeletionRequests();
     } catch (err) {
       list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
     }
@@ -903,6 +916,93 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     }));
   }
 
+  /** Same reasoning as loadPendingPaymentDeletionRequests() above -- filtered down to
+   * this branch's holds, from the request's own snapshot fields (the hold is gone once
+   * a request is fully Approved). Covers BOTH stages (Pending and Supervisor Approved)
+   * so the same folder shows the whole queue at every point in its lifecycle. */
+  async function loadPendingHoldDeletionRequests() {
+    try {
+      const holdIds = new Set(allHolds.map((h) => h.id));
+      pendingHoldDeletionRequests = (await listLayawayHoldDeletionRequests())
+        .filter((r) => (r.status === 'Pending' || r.status === 'Supervisor Approved') && holdIds.has(r.hold_id));
+    } catch (err) {
+      pendingHoldDeletionRequests = [];
+    }
+    if (canApproveItemChange) renderPendingHoldDeletionRequests();
+  }
+
+  function renderPendingHoldDeletionRequests() {
+    const countEl = document.getElementById('lw-pending-holddel-count');
+    const box = document.getElementById('lw-pending-holddel-list');
+    if (!countEl || !box) return; // not rendered at all for someone who can't approve
+    countEl.textContent = '(' + pendingHoldDeletionRequests.length + ')';
+    if (!pendingHoldDeletionRequests.length) { box.innerHTML = '<p class="muted">No pending layaway deletion requests.</p>'; return; }
+
+    box.innerHTML = pendingHoldDeletionRequests.map((r) => {
+      const awaitingFinal = r.status === 'Supervisor Approved';
+      return '<div class="card" style="margin-bottom:8px;background:#fffaf0;">' +
+        '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">' +
+          '<div><b>' + esc(r.hold_customer_name) + '</b> — ' + esc(r.hold_sku) + ' <span class="muted" style="font-size:11px;">requested by ' + (r.requester ? esc(r.requester.full_name) : '—') + '</span></div>' +
+          '<div class="muted" style="font-size:11px;">' + fmtDateTime(r.requested_at) + '</div>' +
+        '</div>' +
+        '<div style="font-size:12px;margin-top:6px;">' +
+          (r.hold_status === 'Completed'
+            ? '<span class="badge" style="background:#ffe0e0;color:#a00;">Undoes a COMPLETED sale</span> '
+            : '') +
+          'Order: ' + esc(r.hold_order_id || '—') + ' · Total: ' + money(r.hold_total_price) +
+        '</div>' +
+        '<div class="muted" style="font-size:11px;margin-top:2px;">Reason: ' + esc(r.reason) + '</div>' +
+        (awaitingFinal
+          ? '<div class="muted" style="font-size:11px;margin-top:2px;">Supervisor-approved by ' + (r.supervisorApprover ? esc(r.supervisorApprover.full_name) : '—') + ' · awaiting final Admin approval</div>'
+          : '') +
+        '<div style="margin-top:8px;display:flex;gap:6px;">' +
+          (!awaitingFinal
+            ? '<button class="btn small" data-act="approve-hold-del-stage1" data-id="' + r.id + '">Approve</button> '
+            : (canFinalDelete ? '<button class="btn small" data-act="approve-hold-del-final" data-id="' + r.id + '">Final Approve</button> ' : '')) +
+          (!awaitingFinal || canFinalDelete
+            ? '<button class="btn small secondary" data-act="reject-hold-del" data-id="' + r.id + '">Reject</button>'
+            : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    box.querySelectorAll('[data-act="approve-hold-del-stage1"]').forEach((btn) => btn.addEventListener('click', async () => {
+      if (!confirm('Approve this for final review? An Admin still needs to give final approval before anything is deleted.')) return;
+      try {
+        await approveLayawayHoldDeletionStage1(Number(btn.dataset.id));
+        notify('Approved -- awaiting final Admin approval.', false);
+        await load();
+      } catch (err) {
+        notify(String(err.message || err), true);
+      }
+    }));
+    box.querySelectorAll('[data-act="approve-hold-del-final"]').forEach((btn) => btn.addEventListener('click', async () => {
+      const row = pendingHoldDeletionRequests.find((r) => r.id === Number(btn.dataset.id));
+      const msg = row && row.hold_status === 'Completed'
+        ? 'Final approve? This permanently deletes this COMPLETED sale -- removes its payment history and restores the stock it sold. This cannot be undone.'
+        : 'Final approve? This permanently deletes the layaway. This cannot be undone.';
+      if (!confirm(msg)) return;
+      try {
+        await approveLayawayHoldDeletionFinal(Number(btn.dataset.id));
+        notify('Layaway deleted.', false);
+        await load();
+        closeDetailDrawer();
+      } catch (err) {
+        notify(String(err.message || err), true);
+      }
+    }));
+    box.querySelectorAll('[data-act="reject-hold-del"]').forEach((btn) => btn.addEventListener('click', async () => {
+      const reason = prompt('Reason for rejecting (optional)?') || null;
+      try {
+        await rejectLayawayHoldDeletion(Number(btn.dataset.id), reason);
+        notify('Deletion request rejected.', false);
+        await loadPendingHoldDeletionRequests();
+      } catch (err) {
+        notify(String(err.message || err), true);
+      }
+    }));
+  }
+
   function paidSoFar(h) { return (h.layaway_payments || []).reduce((s, p) => s + Number(p.amount), 0); }
 
   // Ren's spec section 1: an explicit "Payment Status" per payment line. There's no
@@ -1064,11 +1164,13 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
               // Cancel, matching forfeit_layaway_hold()'s own server-side gate.
               (canFinalDelete ? '<button class="btn small secondary" data-act="forfeit" data-id="' + h.id + '">Forfeit</button>' : '') +
               // Delete is distinct from Cancel -- permanently erases the row (blocked
-              // server-side if it has any payments, or is Completed), for pure
-              // data-entry mistakes rather than a real customer cancellation (Ren,
-              // 2026-09-16: "make a folder ... for cancelled, delete, completed, on
-              // hold").
-              (canFinalDelete ? '<button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '">Delete</button>' : '') +
+              // server-side if it has any payments), for pure data-entry mistakes
+              // rather than a real customer cancellation (Ren, 2026-09-16: "make a
+              // folder ... for cancelled, delete, completed, on hold"). Now a
+              // Supervisor-tier-initiated request rather than an instant Admin action
+              // (Ren, 2026-09-26: "give approval also to supervisor... but i am the
+              // final approver") -- see the Pending Layaway Deletion Requests folder.
+              (canApproveItemChange ? '<button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '">Delete</button>' : '') +
             '</div>' +
             (canEditAmount ? editHoldFormHtml(h) : '') +
           '</div>'
@@ -1084,11 +1186,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
             editHoldFormHtml(h) +
           '</div>'
         : '') +
-      // Completed is Admin-only here too, same canFinalDelete gate -- deleting one
-      // reverses a real sale (Ren, 2026-09-23: "give me access only for me to those
-      // completed to delete details", after cleaning up a duplicate-completion by
-      // hand). delete_layaway_hold() itself enforces Admin regardless of this button.
-      ((h.status === 'Cancelled' || h.status === 'Forfeited' || h.status === 'Completed') && canFinalDelete
+      // Deleting a Completed hold reverses a real sale (Ren, 2026-09-23: "give me
+      // access only for me to those completed to delete details", after cleaning up a
+      // duplicate-completion by hand) -- same Supervisor-tier-requests/Admin-finally-
+      // approves flow as the On Hold case above now covers this too (Ren, 2026-09-26:
+      // "both cases"), so the button is a request here as well, not an instant delete.
+      ((h.status === 'Cancelled' || h.status === 'Forfeited' || h.status === 'Completed') && canApproveItemChange
         ? '<div class="drawer-section"><button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '">Delete</button></div>'
         : '');
   }
@@ -1189,12 +1292,14 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
 
     const deleteBtn = container.querySelector('[data-act="delete-hold"]');
     if (deleteBtn) deleteBtn.addEventListener('click', async () => {
-      const msg = h.status === 'Completed'
-        ? 'Permanently delete this COMPLETED sale? This reverses it entirely -- removes its payment history and restores the stock it sold. This cannot be undone.'
-        : 'Permanently delete this layaway? This cannot be undone (blocked automatically if it has any payments recorded).';
-      if (!confirm(msg)) return;
-      try { await deleteLayawayHold(h.id); notify('Layaway deleted.', false); await load(); closeDetailDrawer(); }
-      catch (err) { notify(String(err.message || err), true); }
+      const reason = (prompt('Reason for deleting this layaway? (required -- needs Supervisor review, then final Admin approval, before anything is actually deleted)') || '').trim();
+      if (!reason) return;
+      try {
+        await requestLayawayHoldDeletion(h.id, reason);
+        notify('Deletion requested — pending Supervisor review, then final Admin approval.', false);
+        await load();
+        refreshDetailIfOpen(h.id);
+      } catch (err) { notify(String(err.message || err), true); }
     });
 
     container.querySelectorAll('[data-act="del-payment"]').forEach((btn) => btn.addEventListener('click', async () => {
