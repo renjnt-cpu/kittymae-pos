@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20260925q">
+<link rel="stylesheet" href="css/styles.css?v=20260926a">
 </head>
 <body>
 <main>
@@ -19,14 +19,14 @@
 // and the activity-feed deep links. Online Orders used to live here too -- moved to
 // its own ERP-only page (Ren, 2026-09-24: "remove online order in all branch in the
 // POS move online order in the ERP only make it in one module... under sales").
-import { initShell, toast, esc } from './js/shell.js?v=20260925q';
-import { getBranches, subscribeToChanges, listLayaways } from './js/api.js?v=20260925q';
-import { renderPosNav } from './js/posNav.js?v=20260925q';
-import { branchButtonStyle } from './js/branchColors.js?v=20260925q';
-import { initPosTab } from './js/posTab.js?v=20260925q';
-import { initLayawayTab } from './js/layawayTab.js?v=20260925q';
-import { initScrapTab } from './js/scrapTab.js?v=20260925q';
-import { initSubastaTab } from './js/subastaTab.js?v=20260925q';
+import { initShell, toast, esc } from './js/shell.js?v=20260926a';
+import { getBranches, subscribeToChanges, listLayaways } from './js/api.js?v=20260926a';
+import { renderPosNav } from './js/posNav.js?v=20260926a';
+import { branchButtonStyle } from './js/branchColors.js?v=20260926a';
+import { initPosTab } from './js/posTab.js?v=20260926a';
+import { initLayawayTab } from './js/layawayTab.js?v=20260926a';
+import { initScrapTab } from './js/scrapTab.js?v=20260926a';
+import { initSubastaTab } from './js/subastaTab.js?v=20260926a';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
@@ -47,6 +47,10 @@ if (employee) {
   let scrapCount = 0, scrap = null;
   let subastaCount = 0, subasta = null;
   let activeSubTab = 'pos';
+  // Declared up here (not beside renderScrapSubTabs/showSubTab below) so it exists
+  // before the sub-tab pills render and become clickable -- an early click would
+  // otherwise hit showSubTab() while this is still in its temporal dead zone.
+  const SUB_TABS = ['pos', 'layaway', 'scrap', 'subasta'];
 
   root.innerHTML =
     // Forfeited-layaway warning for the selected branch (Ren, 2026-09-21, section 2)
@@ -100,7 +104,6 @@ if (employee) {
   // ---- tab bar: POS first (the main day-to-day action), then Layaway, Scrap,
   // Subasta. All four stay mounted so switching never loses a filter or an open
   // drawer; each pill's count follows that module's own active filters. ----
-  const SUB_TABS = ['pos', 'layaway', 'scrap', 'subasta'];
   function renderScrapSubTabs() {
     const pill = (key, label, dot, count) => {
       const active = activeSubTab === key;
