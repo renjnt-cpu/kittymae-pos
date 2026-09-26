@@ -47,15 +47,18 @@ if (employee) {
   // Add + view is limited to Manager, Branch Supervisor, and Personal Assistant (plus
   // Admin, who has everything) -- Sales Admin Associate, Admin Assistant, and rank-and-file
   // employees no longer get in here at all (70_branch_capital_restricted_access.sql).
-  // Only Admin approves or deletes now -- Manager's and Branch Supervisor's approve
-  // rights were revoked in that same migration, so nobody but Ren can auto-approve
-  // their own entry either; everyone else's adds sit as Pending Approval.
+  // Approving/deleting was Admin-only for a while after that same migration (to stop
+  // Manager/Branch Supervisor auto-approving their own entry) -- Ren, 2026-09-26,
+  // reopened approving (not deleting) to Supervisor-tier, but never your own entry, so
+  // the self-approval loophole that got it locked down stays closed. Mirrors
+  // is_supervisor_or_above() exactly, including the branch_capital_update RLS gate.
   const canAccess = isAdmin || ['Manager', 'Branch Supervisor'].includes(employee.role) || employee.position === 'Personal Assistant';
   const isManagerial = isAdmin;
   const canFullView = canAccess;
   const canViewBalance = canAccess;
   const canDelete = isAdmin;
-  const canApproveRow = () => isAdmin;
+  const isSupervisorTier = ['Manager', 'Branch Supervisor'].includes(employee.role) || (employee.position || '').includes('Supervisor');
+  const canApproveRow = (r) => isAdmin || (isSupervisorTier && r.created_by !== employee.id);
   if (!canAccess) {
     root.innerHTML = '<div class="center-screen"><div><h2>No access</h2><p class="muted">Branch Capital is limited to Manager, Branch Supervisor, and Personal Assistant.</p></div></div>';
   } else {
@@ -70,7 +73,7 @@ if (employee) {
     '<div class="card">' +
       '<h3>Add Capital Entry</h3>' +
       '<p class="muted" style="margin-top:-4px;">Money put into a branch — working capital, float, or other funding.' +
-        (isManagerial ? '' : ' Ren must approve it before it counts.') +
+        (isManagerial ? '' : ' A Supervisor (other than you) or Ren must approve it before it counts.') +
       '</p>' +
       '<form id="cap-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
         '<div class="field"><label>Branch *</label><select name="branchId" required>' + branchOptions() + '</select></div>' +
