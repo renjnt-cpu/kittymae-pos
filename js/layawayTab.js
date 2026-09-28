@@ -13,9 +13,10 @@ import {
   requestLayawayItemChange, listLayawayItemChangeRequests, approveLayawayItemChange, rejectLayawayItemChange,
   requestLayawayPaymentDeletion, listLayawayPaymentDeletionRequests, approveLayawayPaymentDeletion, rejectLayawayPaymentDeletion,
   requestLayawayHoldDeletion, listLayawayHoldDeletionRequests, approveLayawayHoldDeletionStage1, approveLayawayHoldDeletionFinal, rejectLayawayHoldDeletion,
-} from './api.js?v=20260926a';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20260926a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260926a';
+  markLayawayStockAvailable,
+} from './api.js?v=20260928a';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20260928a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260928a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -1155,6 +1156,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
               : '') +
             '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;">' +
               (canAct ? '<button class="btn small secondary" data-act="complete" data-id="' + h.id + '">Complete</button>' : '') +
+              // Only meaningful for a Lacking hold -- nothing to reserve once it's
+              // already In Stock. Supervisor-tier (Ren, 2026-09-28: "give edit for
+              // supervisor if the item can change to available item from lacking"),
+              // same tier as the other Layaway approval actions.
+              (canApproveItemChange && h.stock_status === 'Lacking'
+                ? '<button class="btn small secondary" data-act="mark-available" data-id="' + h.id + '">Mark In Stock</button>' : '') +
               (canEditAmount ? '<button class="btn small secondary" data-act="edit-hold" data-id="' + h.id + '">Edit</button>' : '') +
               (canFinalDelete ? '<button class="btn small secondary" data-act="cancel" data-id="' + h.id + '">Cancel</button>' : '') +
               // Forfeited is a separate final disposition from Cancelled -- the
@@ -1251,6 +1258,17 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       if (!confirm('Cancel this layaway? The item goes back to Available stock.')) return;
       try { await cancelLayaway(h.id); notify('Layaway cancelled.', false); await load(); closeDetailDrawer(); }
       catch (err) { notify(String(err.message || err), true); }
+    });
+
+    const markAvailableBtn = container.querySelector('[data-act="mark-available"]');
+    if (markAvailableBtn) markAvailableBtn.addEventListener('click', async () => {
+      if (!confirm('Mark this item as In Stock? This reserves a real unit right now so it can\'t be sold to someone else before this layaway is completed.')) return;
+      try {
+        await markLayawayStockAvailable(h.id);
+        notify('Item marked In Stock and reserved.', false);
+        await load();
+        refreshDetailIfOpen(h.id);
+      } catch (err) { notify(String(err.message || err), true); }
     });
 
     const forfeitBtn = container.querySelector('[data-act="forfeit"]');

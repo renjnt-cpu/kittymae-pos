@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20260926a';
-import { localDateStr } from './uiKit.js?v=20260926a';
+import { supabase } from './supabaseClient.js?v=20260928a';
+import { localDateStr } from './uiKit.js?v=20260928a';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -1168,6 +1168,14 @@ export async function cancelLayaway(holdId, reason) {
  * stock (releases the reservation) and the same Admin-only gate server-side. */
 export async function forfeitLayawayHold(holdId, reason) {
   const { error } = await supabase.rpc('forfeit_layaway_hold', { p_hold_id: holdId, p_reason: reason || null });
+  if (error) throw new Error(error.message);
+}
+
+/** Flips a "Lacking" hold to "In Stock" once the item actually arrives, reserving a real
+ * unit right then (same mechanics createLayawayHold uses for a fresh In-Stock hold) --
+ * fails with the usual "Insufficient stock" error if it still hasn't really arrived. */
+export async function markLayawayStockAvailable(holdId) {
+  const { error } = await supabase.rpc('mark_layaway_stock_available', { p_hold_id: holdId });
   if (error) throw new Error(error.message);
 }
 
