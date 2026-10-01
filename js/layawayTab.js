@@ -14,9 +14,9 @@ import {
   requestLayawayPaymentDeletion, listLayawayPaymentDeletionRequests, approveLayawayPaymentDeletion, rejectLayawayPaymentDeletion,
   requestLayawayHoldDeletion, listLayawayHoldDeletionRequests, approveLayawayHoldDeletionStage1, approveLayawayHoldDeletionFinal, rejectLayawayHoldDeletion,
   markLayawayStockAvailable,
-} from './api.js?v=20260928a';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20260928a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20260928a';
+} from './api.js?v=20261002a';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261002a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20261002a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -1159,8 +1159,10 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
               // Only meaningful for a Lacking hold -- nothing to reserve once it's
               // already In Stock. Supervisor-tier (Ren, 2026-09-28: "give edit for
               // supervisor if the item can change to available item from lacking"),
-              // same tier as the other Layaway approval actions.
-              (canApproveItemChange && h.stock_status === 'Lacking'
+              // plus Auditor (Ren, 2026-09-30: "add this the same access to auditor and
+              // supervisor") -- mirrors canEditAmount's own Admin/Auditor/Supervisor-tier
+              // pairing. Matches mark_layaway_stock_available()'s server-side gate exactly.
+              ((canApproveItemChange || employee.position === 'Auditor') && h.stock_status === 'Lacking'
                 ? '<button class="btn small secondary" data-act="mark-available" data-id="' + h.id + '">Mark In Stock</button>' : '') +
               (canEditAmount ? '<button class="btn small secondary" data-act="edit-hold" data-id="' + h.id + '">Edit</button>' : '') +
               (canFinalDelete ? '<button class="btn small secondary" data-act="cancel" data-id="' + h.id + '">Cancel</button>' : '') +
