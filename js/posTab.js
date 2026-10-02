@@ -140,7 +140,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     // tab, so no initial display:none here (Layaway/Scrap/Subasta each start hidden).
     '<div class="card" id="pos-filter-card" data-filter-tab="pos">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-        '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="pos-f-search" placeholder="SKU, item, customer, order…"></div>' +
+        '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="pos-f-search" placeholder="SKU, item, customer, order, admin…"></div>' +
         '<div class="field"><label>From</label><input type="date" id="pos-f-from"></div>' +
         '<div class="field"><label>To</label><input type="date" id="pos-f-to"></div>' +
         // Catches a line a staff member rang up without ever entering a Unit Price
@@ -635,9 +635,13 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     if (fTo) rows = rows.filter((r) => r.sale_date <= fTo + 'T23:59:59');
     renderByAdminPayment(rows); // date-filtered only -- not narrowed by the free-text search/zero-amount filter
     let groups = groupPosSales(rows);
+    // Ren, 2026-10-02: "add admin in the filter search to easily identify there
+    // customer and there sales" -- lets typing a staff name find every sale they
+    // processed (and who they sold to), same as searching by SKU/customer/order.
     if (fSearch) groups = groups.filter((g) => g.items.some((r) =>
       r.sku.toLowerCase().includes(fSearch) || (r.products?.item_name || '').toLowerCase().includes(fSearch) ||
-      (r.customer_name || '').toLowerCase().includes(fSearch) || (r.order_number || '').toLowerCase().includes(fSearch)));
+      (r.customer_name || '').toLowerCase().includes(fSearch) || (r.order_number || '').toLowerCase().includes(fSearch) ||
+      (employeeNameById[r.employee_id] || '').toLowerCase().includes(fSearch)));
     // Surfaces the whole sale a ₱0 line belongs to (not just that one row) -- a
     // multi-item sale with one missing price is still one thing to go fix.
     if (fZero) groups = groups.filter((g) => g.items.some((r) => Number(r.unit_price || 0) * r.qty === 0));
