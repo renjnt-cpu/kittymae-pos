@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SKU Catalog — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261002a">
+<link rel="stylesheet" href="css/styles.css?v=20261004a">
 </head>
 <body>
 <main>
@@ -13,10 +13,17 @@
 </main>
 
 <script type="module">
-import { initShell, esc } from './js/shell.js?v=20261002a';
-import { listProducts, getBranches, listAllInventoryQty, subscribeToChanges } from './js/api.js?v=20261002a';
-import { renderPosNav } from './js/posNav.js?v=20261002a';
-import { branchColor } from './js/branchColors.js?v=20261002a';
+import { initShell, esc } from './js/shell.js?v=20261004a';
+import { listProducts, getBranches, listAllInventoryQty, subscribeToChanges } from './js/api.js?v=20261004a';
+import { renderPosNav } from './js/posNav.js?v=20261004a';
+import { branchColor } from './js/branchColors.js?v=20261004a';
+import { supabase } from './js/supabaseClient.js?v=20261004a';
+import { openSkuMovement } from './js/skuMovement.js?v=20261004a';
+
+// "History" on a SKU row: the read-only movement history (transfers, sales, adjustments ... with stock before / after).
+// Transfer IDs link to the main ERP's Transfers page, which is where transfers are managed.
+const ERP = 'https://renjnt-cpu.github.io/kittymae-inventory-system/';
+const showHistory = (sku) => openSkuMovement(supabase, sku, { transferUrl: ERP + 'transfers.html?open=' });
 
 // Max rows actually built as <table> DOM rows in one go -- see the comment at its use
 // in render() below for why (Ren, 2026-09-17: "lagging" as the catalog grew past 7,400
@@ -208,6 +215,7 @@ if (employee) {
           '<td data-label="SKU"><b>' + esc(p.sku) + '</b></td>' +
           '<td data-label="Product Name">' + esc(p.item_name) + '</td>' +
           displayBranches.map((b) => '<td data-label="' + esc(b.name) + '" style="text-align:center;">' + qtyCell(qtyForSku[b.id]) + '</td>').join('') +
+          '<td data-label="" style="white-space:nowrap;"><button type="button" class="btn small secondary" data-act="history" data-sku="' + esc(p.sku) + '">History</button></td>' +
         '</tr>';
     }
 
@@ -222,8 +230,10 @@ if (employee) {
       (inGrams ? '<p class="muted" style="margin:0 0 8px;">Showing <b>grams</b> = pcs × each SKU\'s Est. Gram. ' + (noWeightStocked ? '<b>' + noWeightStocked.toLocaleString('en-PH') + '</b> SKU(s) in this list have stock but no Est. Gram, so they show — and count as 0 g.' : 'Every SKU in this list has an Est. Gram.') + '</p>' : '') +
       (sortedBranchId != null ? '<p class="muted" style="margin:0 0 8px;">Sorted by ' + (inGrams ? 'grams' : 'pcs') + ' at <b>' + esc((branches.find((b) => b.id === sortedBranchId) || {}).name) + '</b> — only that branch\'s column is shown; pick a different Sort By to see every branch again.</p>' : '') +
       countNotice + '<div class="table-scroll table-mini"><table><thead><tr style="white-space:nowrap;">' +
-      '<th>SKU</th><th>Product Name</th>' + branchThs +
+      '<th>SKU</th><th>Product Name</th>' + branchThs + '<th></th>' +
       '</tr></thead><tbody>' + renderRows.map(rowHtml).join('') + '</tbody></table></div>';
+
+    list.querySelectorAll('[data-act="history"]').forEach((btn) => btn.addEventListener('click', () => showHistory(btn.dataset.sku)));
 
     list.querySelectorAll('[data-branch-filter]').forEach((th) => th.addEventListener('click', () => {
       const id = Number(th.dataset.branchFilter);

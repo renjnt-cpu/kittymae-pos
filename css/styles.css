@@ -399,3 +399,28 @@ details.exp.exp-cat > .exp-body { padding:10px 12px; }
    needs the same caret bolted on. */
 .exp-row-btn { background:none; border:none; padding:4px 0; font:inherit; color:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:6px; min-height:32px; }
 [aria-expanded="true"] > .exp-arrow { transform:rotate(90deg); }
+
+/* ---- SKU movement history drawer (Ren, 2026-10-04) -- js/skuMovement.js, shared by the SKU Catalog, Item Monitoring and Look Up a SKU.
+   Read-only: transfers, sales, stock in, adjustments ... with the stock before and after. ---- */
+@media (min-width:761px) { .drawer.sm-drawer { width:800px; } }
+.sm-sum { display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px; margin-bottom:14px; }
+.sm-cell { background:var(--rose-bg); border:1px solid var(--rose-lt); border-radius:10px; padding:9px 11px; display:flex; flex-direction:column; gap:2px; font-size:12px; min-width:0; }
+.sm-cell b { font-size:18px; font-variant-numeric:tabular-nums; }
+.sm-cell b.sm-small { font-size:13px; }
+.sm-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.sm-chip { font-size:12px; background:#f4f4ef; border-radius:999px; padding:3px 11px; white-space:nowrap; }
+.sm-chip b { font-variant-numeric:tabular-nums; }
+.sm-chip-zero { color:var(--muted); background:#f8f8f5; }
+.sm-note { font-size:12px; margin:6px 0 0; }
+.sm-count { text-transform:none; letter-spacing:0; font-weight:400; margin-left:6px; }
+.sm-filters { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-bottom:10px; }
+.sm-filters .field { margin:0; }
+.sm-table { width:100%; border-collapse:collapse; font-size:13px; }
+.sm-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.03em; color:var(--muted); padding:6px 8px; border-bottom:1px solid #e6e6e6; white-space:nowrap; }
+.sm-table td { padding:7px 8px; border-bottom:1px solid #f3f3f3; vertical-align:top; }
+.sm-table a { color:inherit; }
+.sm-tag { display:inline-block; font-size:11.5px; padding:2px 9px; border-radius:999px; background:#eeeeee; color:#444; white-space:nowrap; }
+.sm-tag-out { background:#efe9fa; color:#5b3fa0; }
+.sm-tag-in { background:#eaf6ec; color:#2e7d32; }
+.sm-pos { color:#2e7d32; font-weight:700; }
+.sm-neg { color:#c62828; font-weight:700; }

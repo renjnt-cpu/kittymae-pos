@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261002a">
+<link rel="stylesheet" href="css/styles.css?v=20261004a">
 </head>
 <body>
 <main>
@@ -22,10 +22,17 @@
 </main>
 
 <script type="module">
-import { initShell, esc, toast } from './js/shell.js?v=20261002a';
-import { getBranches, getInventory, subscribeToChanges } from './js/api.js?v=20261002a';
-import { renderPosNav } from './js/posNav.js?v=20261002a';
-import { branchButtonStyle } from './js/branchColors.js?v=20261002a';
+import { initShell, esc, toast } from './js/shell.js?v=20261004a';
+import { getBranches, getInventory, subscribeToChanges } from './js/api.js?v=20261004a';
+import { renderPosNav } from './js/posNav.js?v=20261004a';
+import { branchButtonStyle } from './js/branchColors.js?v=20261004a';
+import { supabase } from './js/supabaseClient.js?v=20261004a';
+import { openSkuMovement } from './js/skuMovement.js?v=20261004a';
+
+// "History" on a stock row: the read-only movement history of that SKU (transfers, sales, adjustments ... with stock before / after).
+// Transfer IDs link to the main ERP's Transfers page, which is where transfers are managed.
+const ERP = 'https://renjnt-cpu.github.io/kittymae-inventory-system/';
+const showHistory = (sku, branchId) => openSkuMovement(supabase, sku, { branchId: branchId || null, transferUrl: ERP + 'transfers.html?open=' });
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 
@@ -86,7 +93,7 @@ if (employee) {
     const box = document.getElementById('stock-table');
     if (!filtered.length) { box.innerHTML = '<p class="muted">No matching stock.</p>'; return; }
     box.innerHTML = '<div class="table-scroll"><table><thead><tr><th>SKU</th><th>Item Name</th><th>Available</th><th>Reserved</th><th>Grams on Hand</th><th>Status</th>' +
-      '<th>Sup. Price</th><th>Pancake Price</th><th>Gold Rate (Sup./Current)</th><th>Purchased Amount</th><th>Est. Sales</th><th>Est. Profit</th></tr></thead><tbody>' +
+      '<th>Sup. Price</th><th>Pancake Price</th><th>Gold Rate (Sup./Current)</th><th>Purchased Amount</th><th>Est. Sales</th><th>Est. Profit</th><th></th></tr></thead><tbody>' +
       filtered.map((r) => {
         const low = r.products && r.qty_available <= r.products.reorder_level;
         const status = r.qty_available === 0
@@ -102,8 +109,10 @@ if (employee) {
           '<td data-label="Purchased Amount">' + money(purchasedAmount) + '</td>' +
           '<td data-label="Est. Sales">' + money(estSales) + '</td>' +
           '<td data-label="Est. Profit">' + money(profit) + '</td>' +
+          '<td data-label=""><button type="button" class="btn small secondary" data-act="history" data-sku="' + esc(r.sku) + '" data-branch="' + (r.branch_id ?? selectedBranch ?? '') + '">History</button></td>' +
         '</tr>';
       }).join('') + '</tbody></table></div>';
+    box.querySelectorAll('[data-act="history"]').forEach((btn) => btn.addEventListener('click', () => showHistory(btn.dataset.sku, Number(btn.dataset.branch) || null)));
   }
 }
 </script>

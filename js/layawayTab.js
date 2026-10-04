@@ -14,9 +14,9 @@ import {
   requestLayawayPaymentDeletion, listLayawayPaymentDeletionRequests, approveLayawayPaymentDeletion, rejectLayawayPaymentDeletion,
   requestLayawayHoldDeletion, listLayawayHoldDeletionRequests, approveLayawayHoldDeletionStage1, approveLayawayHoldDeletionFinal, rejectLayawayHoldDeletion,
   markLayawayStockAvailable,
-} from './api.js?v=20261002a';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261002a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20261002a';
+} from './api.js?v=20261004a';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261004a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20261004a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
