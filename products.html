@@ -39,6 +39,9 @@ if (employee) {
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
         '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="f-search" placeholder="SKU or product name…"></div>' +
         '<div class="field"><label>Status</label><select id="f-status"><option value="all">All</option><option value="Active" selected>Active</option><option value="Discontinued">Discontinued</option></select></div>' +
+        // Grams filter (Ren, 2026-10-04: "SKU catalog in per grams ... those items per grams only") -- same filter as the ERP's SKU Catalog:
+        // only SKUs that have an Est. Gram weight, or only the ones priced Per Gram. Kept here even though weight itself is not a column on this page.
+        '<div class="field"><label>Grams</label><select id="f-grams"><option value="all">All</option><option value="weighed">With gram weight only</option><option value="pergram">Per Gram pricing only</option></select></div>' +
         // One Sort control (Ren's 2026-09-21 Filter + Sort spec, section 36) -- generic
         // fields plus this catalog's own "pcs at this branch" sort share one dropdown.
         '<div class="field"><label>Sort By</label><select id="f-sort-branch">' +
@@ -77,11 +80,13 @@ if (employee) {
     searchTimer = setTimeout(load, 300);
   });
   document.getElementById('f-status').addEventListener('change', load);
+  document.getElementById('f-grams').addEventListener('change', render);
   document.getElementById('f-sort-branch').addEventListener('change', render);
   document.getElementById('f-sort-dir').addEventListener('change', render);
   document.getElementById('f-clear').addEventListener('click', () => {
     document.getElementById('f-search').value = '';
     document.getElementById('f-status').value = 'all';
+    document.getElementById('f-grams').value = 'all';
     document.getElementById('f-sort-branch').value = 'sku';
     document.getElementById('f-sort-dir').value = 'desc';
     filterBranchId = null;
@@ -112,6 +117,11 @@ if (employee) {
 
   function render() {
     let rows = allProducts; // already scoped to the current search + status at the query level
+
+    // Grams filter: only SKUs with an Est. Gram weight, or only the Per Gram-priced ones. Applied before the tiles so the totals match the table.
+    const gramsFilter = document.getElementById('f-grams').value;
+    if (gramsFilter === 'weighed') rows = rows.filter((p) => Number(p.gross_weight_g) > 0);
+    else if (gramsFilter === 'pergram') rows = rows.filter((p) => p.pricing_mode === 'Per Gram');
 
     // Click a branch column header to filter down to just the SKUs actually stocked
     // there (pcs > 0) -- click it again to clear. Applied before the tiles below so
