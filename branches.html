@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261007a">
+<link rel="stylesheet" href="css/styles.css?v=20261007h">
 </head>
 <body>
 <main>
@@ -21,16 +21,17 @@
 // to live here too -- moved to its own ERP-only page (Ren, 2026-09-24: "remove online order
 // in all branch in the POS move online order in the ERP only make it in one module...
 // under sales").
-import { initShell, toast, esc } from './js/shell.js?v=20261007a';
-import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007a';
-import { renderPosNav } from './js/posNav.js?v=20261007a';
-import { branchButtonStyle } from './js/branchColors.js?v=20261007a';
-import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007a';
-import { initBranchOps, getInitialRange } from './js/branchOps.js?v=20261007a';
-import { initPosTab } from './js/posTab.js?v=20261007a';
-import { initLayawayTab } from './js/layawayTab.js?v=20261007a';
-import { initScrapTab } from './js/scrapTab.js?v=20261007a';
-import { initSubastaTab } from './js/subastaTab.js?v=20261007a';
+import { initShell, toast, esc } from './js/shell.js?v=20261007h';
+import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007h';
+import { renderPosNav } from './js/posNav.js?v=20261007h';
+import { branchButtonStyle } from './js/branchColors.js?v=20261007h';
+import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007h';
+import { initBranchOps, getInitialRange } from './js/branchOps.js?v=20261007h';
+import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007h';
+import { initPosTab } from './js/posTab.js?v=20261007h';
+import { initLayawayTab } from './js/layawayTab.js?v=20261007h';
+import { initScrapTab } from './js/scrapTab.js?v=20261007h';
+import { initSubastaTab } from './js/subastaTab.js?v=20261007h';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
@@ -124,7 +125,7 @@ async function mountBranches(visibleBranches, branches) {
     getRange: () => range, requestRange: (preset) => { if (ops) ops.setPreset(preset); },
   };
   pos = await initPosTab({ root: document.getElementById('pos-root'), ...common, branches, onCountUpdate: (count) => { posCount = count; renderScrapSubTabs(); } });
-  layaway = await initLayawayTab({ root: document.getElementById('layaway-root'), ...common, onCountUpdate: (count) => { layawayCount = count; renderScrapSubTabs(); } });
+  layaway = await initLayawayTab({ root: document.getElementById('layaway-root'), ...common, branches, onCountUpdate: (count) => { layawayCount = count; renderScrapSubTabs(); } });
   scrap = await initScrapTab({ root: document.getElementById('scrap-root'), ...common, onCountUpdate: (count) => { scrapCount = count; renderScrapSubTabs(); } });
   subasta = await initSubastaTab({ root: document.getElementById('subasta-root'), ...common, branches, onCountUpdate: (count) => { subastaCount = count; renderScrapSubTabs(); } });
   await refreshForfeitedNotice();
@@ -141,6 +142,10 @@ async function mountBranches(visibleBranches, branches) {
       getBranchId: () => selectedBranch, selectBranch, showTab: openTab,
       onRangeChange: (r) => { range = r; applyRangeToTabs(r); },
       onData: renderScrapSubTabs,
+      // Admin only (set_branch_ops_setting() checks it again server-side): deadline rule, reminder schedule, branch visibility.
+      onOpenSettings: employee.role === 'Admin'
+        ? () => openOpsSettings({ esc, onSaved: async () => { await Promise.all([layaway?.reload(), scrap?.reload(), subasta?.reload(), ops ? ops.refresh() : null]); renderBranchButtons(); } })
+        : undefined,
     });
   } catch (err) {
     console.error('Branch Operations Summary failed to start', err);

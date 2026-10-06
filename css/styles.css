@@ -490,3 +490,72 @@ details.exp.exp-cat > .exp-body { padding:10px 12px; }
 @media (max-width:760px) {
   .table-mini .ops-table td, .table-mini .ops-table th { white-space:nowrap !important; }
 }
+
+/* ---- Layaway upgrade (Ren, 2026-10-07): derived status chips, paid-% bar, days-left text,
+   row tints, approval cards, reminder queue, history trail, in-page dialogs. ---- */
+.badge.st-green { background:#eaf6ec; color:#2e7d32; }
+.badge.st-blue { background:#e3edfd; color:#1a56b0; }
+.badge.st-yellow { background:#fff4e0; color:#a15c00; }
+.badge.st-red { background:#fdecea; color:#c62828; }
+.badge.st-gray { background:#eeeeee; color:#666; }
+.tile.tile-bad { background:#fdecea; } .tile.tile-bad .num { color:var(--warn); }
+.tile.tile-warn { background:#fff4e0; } .tile.tile-warn .num { color:#a15c00; }
+
+.lw-bar { display:inline-block; width:64px; height:6px; border-radius:3px; background:#e8e8e8; vertical-align:middle; overflow:hidden; }
+.lw-bar > span { display:block; height:100%; background:#2e7d32; }
+.lw-pct { font-size:10px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.lw-prog { margin-top:3px; }
+.lw-days { font-size:11px; font-weight:600; color:var(--muted); }
+.lw-days.warn { color:#a15c00; }
+.lw-days.bad { color:var(--warn); }
+tr.lw-row-yellow td { background:#fffaf0; }
+tr.lw-row-red td { background:#fdf3f2; }
+.lw-cust-link { background:none; border:none; padding:0; font:inherit; font-weight:600; color:#1a56b0; cursor:pointer; text-align:left; text-decoration:underline; text-decoration-color:#b9cdf0; }
+.lw-cust-link:hover { text-decoration-color:#1a56b0; }
+.lw-watch th, .lw-watch td { vertical-align:top; }
+.lw-note-box { background:#fff4e0; border-radius:8px; padding:8px 10px; font-size:12px; }
+
+details.lw-approval.has-pending, details.lw-remind.has-pending { border:1px solid #f0d29b; background:#fffaf0; }
+.lw-pending-flag { color:#a15c00; font-weight:700; }
+.lw-approval-card { background:#fff; margin-bottom:8px; border:1px solid #f0e2c4; }
+.lw-approval-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; }
+.lw-approval-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:6px 12px; font-size:12px; }
+.lw-approval-grid > div { display:flex; flex-direction:column; min-width:0; }
+.lw-approval-grid b { font-weight:600; overflow-wrap:anywhere; }
+.lw-approval-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+
+.lw-history { display:flex; flex-direction:column; gap:6px; }
+.lw-hist-row { display:grid; grid-template-columns:118px 1fr; gap:8px; font-size:12px; padding-bottom:6px; border-bottom:1px solid #f3f3f3; }
+.lw-hist-row:last-child { border-bottom:none; }
+.lw-hist-when { font-size:11px; }
+
+.btn.danger, button.btn.danger { background:#c62828; color:#fff; }
+.dlg-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:90; display:flex; align-items:center; justify-content:center; padding:16px; }
+.dlg { background:#fff; border-radius:12px; width:min(460px, 100%); max-height:90vh; overflow-y:auto; padding:18px; box-shadow:0 10px 40px rgba(0,0,0,0.3); }
+.dlg h3 { margin:0 0 6px; font-size:16px; color:var(--ink); }
+.dlg-msg { font-size:13px; color:#444; margin-bottom:10px; line-height:1.45; }
+.dlg-form { display:flex; flex-direction:column; align-items:stretch; flex-wrap:nowrap; gap:10px; }
+.dlg .field textarea, .dlg .field select, .dlg .field input { min-width:0; }
+.dlg textarea { resize:vertical; font-family:inherit; }
+.dlg-err { background:#fdecea; color:var(--warn); border-radius:6px; padding:6px 10px; font-size:12px; }
+.dlg-err[hidden] { display:none; }
+.dlg-actions { display:flex; gap:8px; flex-wrap:wrap; }
+@media (max-width:760px) {
+  .dlg-backdrop { align-items:flex-end; padding:0; }
+  .dlg { width:100%; border-radius:16px 16px 0 0; }
+  .lw-hist-row { grid-template-columns:1fr; gap:2px; }
+}
+
+/* Card view of a data table (<=760px, and <=1023px for .table-2col): the <table> is display:block,
+   so its <colgroup> and <tbody> were wrapped in an anonymous table that sized the stacked rows to
+   a column's percentage -- cards came out about half the screen wide with a blank strip beside
+   them (found 2026-10-07 on the live Layaway list at 375px). Drop the colgroup and let the rows
+   block-stack at the full width. */
+@media (max-width:760px) {
+  .table-scroll:not(.table-mini) colgroup { display:none; }
+  .table-scroll:not(.table-mini) tbody, .table-scroll:not(.table-mini) tfoot { display:block; }
+}
+@media (max-width:1023px) and (min-width:761px) {
+  .table-scroll.table-2col colgroup { display:none; }
+  .table-scroll.table-2col tbody, .table-scroll.table-2col tfoot { display:block; }
+}

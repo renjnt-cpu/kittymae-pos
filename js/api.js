@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20261007a';
-import { localDateStr } from './uiKit.js?v=20261007a';
+import { supabase } from './supabaseClient.js?v=20261007h';
+import { localDateStr } from './uiKit.js?v=20261007h';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -1139,30 +1139,152 @@ export async function setAccessChecklistItem(employeeId, itemKey, checked, level
 // direct table writes are closed by default-deny RLS, same as inventory/sales.
 
 export async function listLayaways(branchId) {
+  // Who-did-it names are attached through get_employee_names() below instead of embedding
+  // `employees(full_name)`: the employees table is only readable by Admin/Manager/self, so an
+  // embed came back empty ("Recorded By" blank) for everyone else.
   let query = supabase.from('layaway_holds')
-    .select('*, branches(name), layaway_payments(*, employees(full_name)), layaway_forfeit_date_log(id, old_date, new_date, changed_at, employees(full_name)), layaway_hold_date_log(id, old_date, new_date, changed_at, employees(full_name))')
+    .select('*, branches(name), layaway_payments(*), layaway_forfeit_date_log(id, old_date, new_date, changed_at, changed_by), layaway_hold_date_log(id, old_date, new_date, changed_at, changed_by), layaway_reminders(id, stage, channel, note, contacted_by, contacted_at)')
     .order('hold_date', { ascending: false })
     .order('id', { ascending: true }) // keeps items held together in one submission adjacent
     .limit(LEDGER_ROW_CAP);
   if (branchId != null) query = query.eq('branch_id', branchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return attachEmployeeNames(data, {
+  const rows = await attachEmployeeNames(data, {
     creator: 'created_by', handler: 'handled_by',
     completer: 'completed_by', canceller: 'cancelled_by', forfeiter: 'forfeited_by',
   });
+  const ids = new Set();
+  rows.forEach((h) => {
+    (h.layaway_payments || []).forEach((p) => { if (p.employee_id) ids.add(p.employee_id); });
+    (h.layaway_forfeit_date_log || []).forEach((l) => { if (l.changed_by) ids.add(l.changed_by); });
+    (h.layaway_hold_date_log || []).forEach((l) => { if (l.changed_by) ids.add(l.changed_by); });
+    (h.layaway_reminders || []).forEach((r) => { if (r.contacted_by) ids.add(r.contacted_by); });
+  });
+  if (ids.size) {
+    const { data: names, error: nameErr } = await supabase.rpc('get_employee_names', { ids: Array.from(ids) });
+    if (nameErr) throw new Error(nameErr.message);
+    const byId = {};
+    (names || []).forEach((e) => { byId[e.id] = e.full_name; });
+    const nameOf = (id) => (id && byId[id] ? { full_name: byId[id] } : null);
+    rows.forEach((h) => {
+      (h.layaway_payments || []).forEach((p) => { p.employees = nameOf(p.employee_id); });
+      (h.layaway_forfeit_date_log || []).forEach((l) => { l.employees = nameOf(l.changed_by); });
+      (h.layaway_hold_date_log || []).forEach((l) => { l.employees = nameOf(l.changed_by); });
+      (h.layaway_reminders || []).forEach((r) => { r.contacter = nameOf(r.contacted_by); });
+    });
+  }
+  return rows;
+}
+
+// ---- Layaway upgrade (migrations 167/168): reminders, forfeiture requests, customer history,
+// alternative contact, change history and error-correction logging. ----
+
+/** Orders in the reminder window (due ones first) -- the rule lives in layaway_reminder_queue(). */
+export async function getLayawayReminderQueue(branchIds) {
+  const { data, error } = await supabase.rpc('layaway_reminder_queue', branchIds ? { p_branch_ids: branchIds } : {});
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+/** Logs "I contacted this customer" (nothing is sent automatically). stage = the queue row's stage. */
+export async function markLayawayContacted(holdId, stage, channel, note) {
+  const { data, error } = await supabase.rpc('mark_layaway_contacted', {
+    p_hold_id: holdId, p_stage: stage, p_channel: channel || 'Manual', p_note: note || null,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function listLayawayForfeitRequests() {
+  const { data, error } = await supabase.from('layaway_forfeit_requests').select('*').order('requested_at', { ascending: false }).limit(LEDGER_ROW_CAP);
+  if (error) throw new Error(error.message);
+  return attachEmployeeNames(data, {
+    requester: 'requested_by', supervisorApprover: 'supervisor_approved_by', finalApprover: 'final_approved_by', rejecter: 'rejected_by',
+  });
+}
+export async function requestLayawayForfeit(holdId, reason) {
+  const { data, error } = await supabase.rpc('request_layaway_forfeit', { p_hold_id: holdId, p_reason: reason });
+  if (error) throw new Error(error.message);
+  return data;
+}
+export async function approveLayawayForfeitStage1(requestId) {
+  const { error } = await supabase.rpc('approve_layaway_forfeit_stage1', { p_request_id: requestId });
+  if (error) throw new Error(error.message);
+}
+export async function approveLayawayForfeitFinal(requestId) {
+  const { error } = await supabase.rpc('approve_layaway_forfeit_final', { p_request_id: requestId });
+  if (error) throw new Error(error.message);
+}
+export async function rejectLayawayForfeit(requestId, reason) {
+  const { error } = await supabase.rpc('reject_layaway_forfeit', { p_request_id: requestId, p_reason: reason || null });
+  if (error) throw new Error(error.message);
+}
+export async function cancelLayawayForfeitRequest(requestId) {
+  const { error } = await supabase.rpc('cancel_layaway_forfeit_request', { p_request_id: requestId });
+  if (error) throw new Error(error.message);
+}
+
+export async function setLayawayAltContact(holdId, alt) {
+  const { error } = await supabase.rpc('set_layaway_alt_contact', { p_hold_id: holdId, p_alt: alt || null });
+  if (error) throw new Error(error.message);
+}
+
+/** Current and past layaways for one customer (matched by name or phone), payment history
+ * included -- limited to the branches the caller may see. */
+export async function getLayawayCustomerHistory(name, contact) {
+  const { data, error } = await supabase.rpc('layaway_customer_history', { p_name: name || '', p_contact: contact || null });
+  if (error) throw new Error(error.message);
+  return data || { orders: [] };
+}
+
+/** The "history" of one hold: edits, approvals, contacts ... (layaway_change_log), oldest first. */
+/** Item names for a list of SKUs (layaway holds only keep the SKU, with no link to products to embed). */
+export async function getProductNames(skus) {
+  const out = {};
+  const unique = [...new Set((skus || []).filter(Boolean))];
+  for (let i = 0; i < unique.length; i += 80) {
+    const { data, error } = await supabase.from('products').select('sku, item_name').in('sku', unique.slice(i, i + 80));
+    if (error) throw new Error(error.message);
+    (data || []).forEach((p) => { out[p.sku] = p.item_name; });
+  }
+  return out;
+}
+
+export async function listLayawayChangeLog(holdIds) {
+  const ids = Array.isArray(holdIds) ? holdIds : [holdIds];
+  const { data, error } = await supabase.from('layaway_change_log').select('*').in('hold_id', ids).order('changed_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  return attachEmployeeNames(data, { who: 'changed_by' });
+}
+
+/** Records WHY a record had to be corrected and who made the original mistake (feeds the
+ * owner's Access & Performance Control Center). Called right after the correction itself. */
+export async function logBranchErrorCorrection({ module, recordTable, recordId, errorType, reason, oldValue, newValue }) {
+  const { error } = await supabase.rpc('log_branch_error_correction', {
+    p_module: module, p_record_table: recordTable, p_record_id: String(recordId), p_error_type: errorType,
+    p_reason: reason, p_old: oldValue == null ? null : String(oldValue), p_new: newValue == null ? null : String(newValue),
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Admin only: change a Branch Operations setting (value is any JSON the setting accepts). */
+export async function setBranchOpsSetting(key, value) {
+  const { error } = await supabase.rpc('set_branch_ops_setting', { p_key: key, p_value: value });
+  if (error) throw new Error(error.message);
 }
 
 /** stockStatus: 'In Stock' (default, reserves an existing piece immediately) or
  * 'Lacking' (the item isn't physically on hand yet -- skips the reservation/stock
  * check entirely; the real deduction happens later, in completeLayaway(), once the
  * item has actually arrived -- see 98_layaway_stock_status.sql). */
-export async function createLayawayHold({ sku, branchId, qty, customerName, contactNumber, unitPrice, notes, orderId, handledBy, groupId, stockStatus, forfeitDate, holdDate }) {
+export async function createLayawayHold({ sku, branchId, qty, customerName, contactNumber, altContactNumber, unitPrice, notes, orderId, handledBy, groupId, stockStatus, forfeitDate, holdDate }) {
   const { data, error } = await supabase.rpc('create_layaway_hold', {
     p_sku: sku, p_branch_id: branchId, p_qty: qty, p_customer_name: customerName,
     p_contact_number: contactNumber || null, p_unit_price: unitPrice || null, p_notes: notes || null,
     p_order_id: orderId || null, p_handled_by: handledBy || null, p_group_id: groupId || null,
     p_stock_status: stockStatus || 'In Stock', p_forfeit_date: forfeitDate || null, p_hold_date: holdDate || null,
+    p_alt_contact_number: altContactNumber || null,
   });
   if (error) throw new Error(error.message);
   return data;
@@ -1174,10 +1296,11 @@ export async function createLayawayHold({ sku, branchId, qty, customerName, cont
 // own today's-date default regardless of what staff picked. Found 2026-09-21 while
 // touching this file for an unrelated change; kittymae-inventory-v2's copy already had
 // this correctly.
-export async function addLayawayPayment(holdId, amount, paymentMethod, referenceNumber, attachmentPath, paidAt) {
+export async function addLayawayPayment(holdId, amount, paymentMethod, referenceNumber, attachmentPath, paidAt, notes) {
   const { data, error } = await supabase.rpc('add_layaway_payment', {
     p_hold_id: holdId, p_amount: amount, p_payment_method: paymentMethod, p_reference_number: referenceNumber || null,
     p_attachment_path: attachmentPath || null, p_paid_at: paidAt || localDateStr(),
+    p_notes: notes || null,
   });
   if (error) throw new Error(error.message);
   return data;
@@ -1304,8 +1427,8 @@ export async function setLayawayHoldDate(holdId, holdDate) {
 // level; anyone else submits a change here instead, which only takes effect once
 // Admin approves it. ----
 
-export async function requestLayawayForfeitDate(holdId, newDate) {
-  const { data, error } = await supabase.rpc('request_layaway_forfeit_date', { p_hold_id: holdId, p_new_date: newDate });
+export async function requestLayawayForfeitDate(holdId, newDate, reason) {
+  const { data, error } = await supabase.rpc('request_layaway_forfeit_date', { p_hold_id: holdId, p_new_date: newDate, p_reason: reason || null });
   if (error) throw new Error(error.message);
   return data;
 }

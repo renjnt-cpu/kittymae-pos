@@ -5,8 +5,8 @@
 // keep their own search/filters; this module owns only the date range (pushed to them
 // through onRangeChange) and the at-a-glance picture. Layaway deadlines/overdue and pending
 // approvals deliberately ignore the date range -- they describe what needs action today.
-import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007a';
-import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261007a';
+import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007h';
+import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261007h';
 
 const STORE_KEY = 'km-branch-ops-v1';
 
@@ -42,7 +42,9 @@ export const ATTENTION_KINDS = {
   pending_layaway_deletion: { rank: 2, tone: 'warn', tab: 'layaway', view: 'approvals', text: (n) => plural(n, 'layaway deletion request') + ' awaiting approval' },
   pending_payment_deletion: { rank: 3, tone: 'warn', tab: 'layaway', view: 'approvals', text: (n) => plural(n, 'payment deletion request') + ' awaiting approval' },
   pending_item_change:      { rank: 4, tone: 'warn', tab: 'layaway', view: 'approvals', text: (n) => plural(n, 'item change request') + ' awaiting approval' },
+  pending_forfeit_request:  { rank: 2, tone: 'warn', tab: 'layaway', view: 'approvals', text: (n, a) => plural(n, 'forfeiture request') + ' awaiting approval' + (a ? ' — ' + money(a) + ' owed' : '') },
   pending_forfeit_date:     { rank: 5, tone: 'warn', tab: 'layaway', view: 'approvals', text: (n) => plural(n, 'forfeit date request') + ' awaiting approval' },
+  reminders_due:            { rank: 5, tone: 'warn', tab: 'layaway', view: 'reminders', text: (n, a) => plural(n, 'customer') + ' due for a payment reminder' + (a ? ' — ' + money(a) + ' owed' : '') },
   layaway_nearing:          { rank: 6, tone: 'warn', tab: 'layaway', view: 'nearing',   text: (n, a) => plural(n, 'layaway item') + ' nearing the deadline' + (a ? ' — ' + money(a) + ' still owed' : '') },
   cod_pending:              { rank: 7, tone: 'warn', tab: 'pos',     view: 'cod',       text: (n, a) => plural(n, 'COD sale') + ' waiting to be collected' + (a ? ' — ' + money(a) : '') },
   zero_amount_sale:         { rank: 8, tone: 'warn', tab: 'pos',     view: 'zero',      text: (n) => plural(n, 'sale') + ' with a ₱0 line item to fix' },
@@ -78,7 +80,7 @@ export function getInitialRange() {
  *  onRangeChange({preset, from, to, label}) -- called once at start and on every change,
  *  onData() -- called after new attention data arrives (tab pills re-render their badges).
  * Returns { refresh, setBranch, getRange, getUrgent }. Never throws into the host page. */
-export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranchId, selectBranch, showTab, onRangeChange, onData }) {
+export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranchId, selectBranch, showTab, onRangeChange, onData, onOpenSettings }) {
   const prefs = loadPrefs();
   const multi = visibleBranchIds.length > 1;
   const saved = savedRange(prefs);
@@ -101,6 +103,7 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
         '<div class="ops-controls">' +
           (multi ? '<div class="ops-seg" role="group" aria-label="Branch scope" id="ops-scope">' +
             '<button type="button" data-scope="current">Current Branch</button><button type="button" data-scope="all">All Allowed Branches</button></div>' : '') +
+          (onOpenSettings ? '<button type="button" class="btn small secondary" id="ops-settings-btn" title="Layaway deadline, reminders and branch visibility">⚙ Settings</button>' : '') +
           '<div class="ops-seg" role="group" aria-label="Date range" id="ops-presets">' +
             RANGE_PRESETS.map((p) => '<button type="button" data-preset="' + p.key + '">' + p.label + '</button>').join('') + '</div>' +
         '</div>' +
@@ -279,6 +282,8 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
     renderControls(); announceRange(); refresh();
   }
   root.querySelectorAll('#ops-presets button').forEach((b) => b.addEventListener('click', () => setPreset(b.dataset.preset)));
+  const settingsBtn = root.querySelector('#ops-settings-btn');
+  if (settingsBtn) settingsBtn.addEventListener('click', () => onOpenSettings());
   root.querySelectorAll('#ops-scope button').forEach((b) => b.addEventListener('click', () => { state.scope = b.dataset.scope; persist(); renderAll(); }));
   const onCustom = () => {
     const from = $('ops-from').value, to = $('ops-to').value;
@@ -295,6 +300,7 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
   subscribeToChanges([
     'sales_inventory_movements', 'sale_payments', 'layaway_holds', 'layaway_payments', 'scrap_entries', 'subasta_items',
     'layaway_forfeit_date_requests', 'layaway_item_change_requests', 'layaway_payment_deletion_requests', 'layaway_hold_deletion_requests',
+    'layaway_forfeit_requests', 'layaway_reminders',
   ], () => { clearTimeout(timer); timer = setTimeout(refresh, 1500); });
 
   renderAll();
@@ -313,8 +319,9 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
       const out = {};
       if (n('layaway_overdue')) out.layaway = { text: n('layaway_overdue') + ' overdue', tone: 'bad' };
       else {
-        const pend = n('pending_forfeit_date') + n('pending_item_change') + n('pending_payment_deletion') + n('pending_layaway_deletion');
+        const pend = n('pending_forfeit_date') + n('pending_item_change') + n('pending_payment_deletion') + n('pending_layaway_deletion') + n('pending_forfeit_request');
         if (pend) out.layaway = { text: pend + ' to approve', tone: 'warn' };
+        else if (n('reminders_due')) out.layaway = { text: n('reminders_due') + ' to remind', tone: 'warn' };
       }
       if (n('cod_pending')) out.pos = { text: n('cod_pending') + ' COD', tone: 'warn' };
       return out;
