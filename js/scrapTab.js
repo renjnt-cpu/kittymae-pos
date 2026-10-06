@@ -18,16 +18,16 @@ import {
   uploadScrapAttachment, uploadScrapPaymentProof, getScrapAttachmentUrl, convertScrapToSubasta,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges,
-} from './api.js?v=20261007j';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007j';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261007j';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007j';
-import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007j';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007j';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007j';
-import { attachCustomerPicker } from './customerPicker.js?v=20261007j';
-import { manilaToday } from './opsDates.js?v=20261007j';
-import { friendlyError } from './shell.js?v=20261007j';
+} from './api.js?v=20261007k';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007k';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261007k';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007k';
+import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007k';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007k';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007k';
+import { attachCustomerPicker } from './customerPicker.js?v=20261007k';
+import { manilaToday } from './opsDates.js?v=20261007k';
+import { friendlyError } from './shell.js?v=20261007k';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 18): Scrap sortable by Date/Metal-Purity/Customer/Type/Weight/Amount.
 const SC_SORT_FIELDS = [

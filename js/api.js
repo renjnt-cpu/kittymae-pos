@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20261007j';
-import { localDateStr } from './uiKit.js?v=20261007j';
+import { supabase } from './supabaseClient.js?v=20261007k';
+import { localDateStr } from './uiKit.js?v=20261007k';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -656,8 +656,11 @@ export async function deleteSubastaItem(id) {
 
 /** branchId narrows the query server-side -- see listSubastaItems() for why. */
 export async function listScrapEntries(branchId) {
+  // branches!scrap_entries_branch_id_fkey: scrap_entries has had a second link to branches (counterpart_branch_id,
+  // migration 171) that made a bare `branches(name)` "ambiguous" for a while; naming the relationship also gave this
+  // request a fresh URL, so a browser that cached that error response does not replay it.
   let query = supabase.from('scrap_entries')
-    .select('*, branches(name), scrap_payments(*)')
+    .select('*, branches!scrap_entries_branch_id_fkey(name), scrap_payments(*)')
     .order('entry_date', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(LEDGER_ROW_CAP);

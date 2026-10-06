@@ -3,7 +3,7 @@
 // returns what the signed-in employee may already read) are offered underneath, and picking one fills the
 // name / contact / address boxes. Nothing new is collected and no customer table is created: the same
 // person simply ends up spelled the same way everywhere.
-import { searchBranchCustomers } from './api.js?v=20261007j';
+import { searchBranchCustomers } from './api.js?v=20261007k';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
