@@ -3,8 +3,8 @@
 // this site has only 4 pages, so it doesn't build the full ERP header/nav (Dashboard,
 // Branches, Transfers, Bills, etc. don't exist here) -- js/posNav.js renders this site's
 // own minimal nav instead, right after initShell() resolves.
-import { requireSession, linkEmployee } from './auth.js?v=20261007i';
-import { listMyPermissions } from './api.js?v=20261007i';
+import { requireSession, linkEmployee } from './auth.js?v=20261007j';
+import { listMyPermissions } from './api.js?v=20261007j';
 
 export async function initShell() {
   const session = await requireSession();
@@ -41,13 +41,17 @@ export function esc(s) {
 // internals message gets a plain-language line in front so a normal user knows what
 // happened and what to do, with the detail kept for whoever debugs it (MASTER UI 31).
 const TECHNICAL_ERROR = /violates|constraint|relation "|syntax error|null value|permission denied|JSON|invalid input|duplicate key|does not exist|PGRST|JWT|Failed to fetch|NetworkError|timeout/i;
+/** The wording toast() shows for an error -- exported so an error shown inside a drawer reads the same way. */
+export function friendlyError(text) {
+  const shown = String(text);
+  return TECHNICAL_ERROR.test(shown)
+    ? 'Something went wrong and the change was not saved. Please try again -- if it keeps happening, tell an Admin. (Details: ' + shown + ')'
+    : shown;
+}
 export function toast(targetId, text, isError) {
   const el = document.getElementById(targetId);
   if (!el) return;
-  let shown = String(text);
-  if (isError && TECHNICAL_ERROR.test(shown)) {
-    shown = 'Something went wrong and the change was not saved. Please try again -- if it keeps happening, tell an Admin. (Details: ' + shown + ')';
-  }
+  const shown = isError ? friendlyError(text) : String(text);
   el.innerHTML = '<div class="msg ' + (isError ? 'error' : 'ok') + '">' + esc(shown) + '</div>';
   setTimeout(() => { el.innerHTML = ''; }, isError ? 9000 : 5000);
 }

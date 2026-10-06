@@ -72,11 +72,11 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', cancel
 /** Asks for a written reason (and, when `errorTypes` is given, what kind of mistake it was).
  * message is plain text. Resolves { reason, errorType } or null when cancelled. */
 export function reasonDialog({ title, message, label = 'Reason', required = true, placeholder = '', confirmLabel = 'Submit',
-  cancelLabel = 'Cancel', errorTypes = null, errorLabel = 'What went wrong?', danger = false, initialReason = '' }) {
+  cancelLabel = 'Cancel', errorTypes = null, errorLabel = 'What went wrong?', danger = false, initialReason = '', initialErrorType = null }) {
   const body =
     (errorTypes && errorTypes.length
       ? '<div class="field"><label for="dlg-errtype">' + escHtml(errorLabel) + '</label><select id="dlg-errtype">' +
-          errorTypes.map((t) => '<option>' + escHtml(t) + '</option>').join('') + '</select></div>'
+          errorTypes.map((t) => '<option' + (t === initialErrorType ? ' selected' : '') + '>' + escHtml(t) + '</option>').join('') + '</select></div>'
       : '') +
     '<div class="field"><label for="dlg-reason">' + escHtml(label) + (required ? ' *' : '') + '</label>' +
       '<textarea id="dlg-reason" rows="3" placeholder="' + escHtml(placeholder) + '"></textarea></div>';

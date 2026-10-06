@@ -5,8 +5,8 @@
 // keep their own search/filters; this module owns only the date range (pushed to them
 // through onRangeChange) and the at-a-glance picture. Layaway deadlines/overdue and pending
 // approvals deliberately ignore the date range -- they describe what needs action today.
-import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007i';
-import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261007i';
+import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007j';
+import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261007j';
 
 const STORE_KEY = 'km-branch-ops-v1';
 
@@ -50,6 +50,8 @@ export const ATTENTION_KINDS = {
   zero_amount_sale:         { rank: 8, tone: 'warn', tab: 'pos',     view: 'zero',      text: (n) => plural(n, 'sale') + ' with a ₱0 line item to fix' },
   pickup_pending:           { rank: 9, tone: 'info', tab: 'pos',     view: 'pickup',    text: (n) => plural(n, 'sale') + ' waiting for pickup' },
   layaway_lacking:          { rank: 10, tone: 'info', tab: 'layaway', view: 'lacking',  text: (n) => plural(n, 'layaway item') + ' waiting for stock' },
+  scrap_unpaid:             { rank: 3, tone: 'bad',  tab: 'scrap',   view: 'unpaid',    text: (n, a) => plural(n, 'scrap purchase') + ' not fully paid' + (a ? ' — ' + money(a) + ' owed to customers' : '') },
+  pending_scrap_request:    { rank: 4, tone: 'warn', tab: 'scrap',   view: 'requests',  text: (n, a) => plural(n, 'scrap delete request') + ' awaiting approval' + (a ? ' — ' + money(a) : '') },
 };
 
 function loadPrefs() {
@@ -166,7 +168,8 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
     const avgSale = pos.transactions ? pos.net / pos.transactions : 0;
     const avgGram = scr.grams ? scr.purchased / scr.grams : 0;
     const topMethods = Object.entries(rec.by_method || {}).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([m, v]) => esc(m) + ' ' + money(v)).join(' · ');
-    const penParts = [['forfeit_date', 'forfeit date'], ['item_change', 'item change'], ['payment_deletion', 'payment deletion'], ['layaway_deletion', 'layaway deletion']]
+    const penParts = [['forfeit_date', 'forfeit date'], ['item_change', 'item change'], ['payment_deletion', 'payment deletion'], ['layaway_deletion', 'layaway deletion'],
+      ['forfeit_request', 'forfeiture'], ['record_request', 'scrap/subasta/POS delete']]
       .filter(([k]) => pen[k]).map(([k, l]) => num(pen[k]) + ' ' + l);
     box.innerHTML = [
       card({ label: 'POS Sales', value: money(pos.net), sub: plural(pos.items || 0, 'item') + ' sold', tab: 'pos' }),
@@ -175,7 +178,8 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
         sub: money(lay.on_hold_balance) + ' still owed · ' + plural(lay.on_hold_orders || 0, 'order'),
         extra: lay.overdue_lines ? '<span class="ops-flag">' + plural(lay.overdue_lines, 'item') + ' overdue</span>' : (lay.nearing_lines ? '<span class="ops-flag warn">' + num(lay.nearing_lines) + ' nearing the deadline</span>' : '') }),
       card({ label: 'Layaway Payments Received', value: money(lay.collected), sub: plural(lay.payments || 0, 'payment'), tab: 'layaway' }),
-      card({ label: 'Scrap Purchased', value: money(scr.purchased), sub: plural(scr.entries || 0, 'entry', 'entries'), tab: 'scrap' }),
+      card({ label: 'Scrap Purchased', value: money(scr.purchased), sub: plural(scr.entries || 0, 'entry', 'entries'), tab: 'scrap', view: scr.unpaid_entries ? 'unpaid' : '', tone: scr.unpaid_entries ? 'bad' : '',
+        extra: scr.unpaid_entries ? '<span class="ops-flag">' + money(scr.unpaid_balance) + ' unpaid · ' + plural(scr.unpaid_entries, 'purchase') + '</span>' : '' }),
       card({ label: 'Scrap Grams', value: grams(scr.grams), sub: scr.grams ? 'avg ' + money(avgGram) + ' per gram' : 'none bought in this range', tab: 'scrap' }),
       card({ label: 'Subasta Listed', value: num(sub.listed_now), tag: 'right now', sub: num(sub.pending_now) + ' pending', tab: 'subasta' }),
       card({ label: 'Subasta Sold', value: num(sub.sold), sub: sub.sold ? money(sub.sales) + ' in sales' : 'none sold in this range', tab: 'subasta' }),
@@ -300,7 +304,7 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
   subscribeToChanges([
     'sales_inventory_movements', 'sale_payments', 'layaway_holds', 'layaway_payments', 'scrap_entries', 'subasta_items',
     'layaway_forfeit_date_requests', 'layaway_item_change_requests', 'layaway_payment_deletion_requests', 'layaway_hold_deletion_requests',
-    'layaway_forfeit_requests', 'layaway_reminders',
+    'layaway_forfeit_requests', 'layaway_reminders', 'scrap_payments', 'branch_record_requests',
   ], () => { clearTimeout(timer); timer = setTimeout(refresh, 1500); });
 
   renderAll();
@@ -324,6 +328,8 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
         else if (n('reminders_due')) out.layaway = { text: n('reminders_due') + ' to remind', tone: 'warn' };
       }
       if (n('cod_pending')) out.pos = { text: n('cod_pending') + ' COD', tone: 'warn' };
+      if (n('scrap_unpaid')) out.scrap = { text: n('scrap_unpaid') + ' unpaid', tone: 'bad' };
+      else if (n('pending_scrap_request')) out.scrap = { text: n('pending_scrap_request') + ' to approve', tone: 'warn' };
       return out;
     },
   };

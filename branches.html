@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261007i">
+<link rel="stylesheet" href="css/styles.css?v=20261007j">
 </head>
 <body>
 <main>
@@ -21,17 +21,17 @@
 // to live here too -- moved to its own ERP-only page (Ren, 2026-09-24: "remove online order
 // in all branch in the POS move online order in the ERP only make it in one module...
 // under sales").
-import { initShell, toast, esc } from './js/shell.js?v=20261007i';
-import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007i';
-import { renderPosNav } from './js/posNav.js?v=20261007i';
-import { branchButtonStyle } from './js/branchColors.js?v=20261007i';
-import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007i';
-import { initBranchOps, getInitialRange } from './js/branchOps.js?v=20261007i';
-import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007i';
-import { initPosTab } from './js/posTab.js?v=20261007i';
-import { initLayawayTab } from './js/layawayTab.js?v=20261007i';
-import { initScrapTab } from './js/scrapTab.js?v=20261007i';
-import { initSubastaTab } from './js/subastaTab.js?v=20261007i';
+import { initShell, toast, esc } from './js/shell.js?v=20261007j';
+import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007j';
+import { renderPosNav } from './js/posNav.js?v=20261007j';
+import { branchButtonStyle } from './js/branchColors.js?v=20261007j';
+import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007j';
+import { initBranchOps, getInitialRange } from './js/branchOps.js?v=20261007j';
+import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007j';
+import { initPosTab } from './js/posTab.js?v=20261007j';
+import { initLayawayTab } from './js/layawayTab.js?v=20261007j';
+import { initScrapTab } from './js/scrapTab.js?v=20261007j';
+import { initSubastaTab } from './js/subastaTab.js?v=20261007j';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
@@ -126,7 +126,7 @@ async function mountBranches(visibleBranches, branches) {
   };
   pos = await initPosTab({ root: document.getElementById('pos-root'), ...common, branches, onCountUpdate: (count) => { posCount = count; renderScrapSubTabs(); } });
   layaway = await initLayawayTab({ root: document.getElementById('layaway-root'), ...common, branches, onCountUpdate: (count) => { layawayCount = count; renderScrapSubTabs(); } });
-  scrap = await initScrapTab({ root: document.getElementById('scrap-root'), ...common, onCountUpdate: (count) => { scrapCount = count; renderScrapSubTabs(); } });
+  scrap = await initScrapTab({ root: document.getElementById('scrap-root'), ...common, branches, onCountUpdate: (count) => { scrapCount = count; renderScrapSubTabs(); } });
   subasta = await initSubastaTab({ root: document.getElementById('subasta-root'), ...common, branches, onCountUpdate: (count) => { subastaCount = count; renderScrapSubTabs(); } });
   await refreshForfeitedNotice();
   // Someone forfeiting a hold (or Admin reopening one) from the Layaway tab should
@@ -191,9 +191,9 @@ async function mountBranches(visibleBranches, branches) {
   // filter down to what was clicked (each tab decides what a "view" means; one without
   // applyView just opens).
   function openTab(key, view) {
-    // Views about what is still open today (a ₱0 sale, an uncollected COD, a pending pickup)
-    // have to look across all dates, not just the selected range.
-    if (['zero', 'cod', 'pickup'].includes(view) && ops && ops.getRange().preset !== 'all') ops.setPreset('all');
+    // Views about what is still open today (a ₱0 sale, an uncollected COD, a pending pickup, a scrap
+    // purchase not fully paid) have to look across all dates, not just the selected range.
+    if (['zero', 'cod', 'pickup', 'unpaid'].includes(view) && ops && ops.getRange().preset !== 'all') ops.setPreset('all');
     showSubTab(key);
     const mod = { pos, layaway, scrap, subasta }[key];
     if (view && mod && mod.applyView) mod.applyView(view);

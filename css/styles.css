@@ -559,3 +559,33 @@ details.lw-approval.has-pending, details.lw-remind.has-pending { border:1px soli
   .table-scroll.table-2col colgroup { display:none; }
   .table-scroll.table-2col tbody, .table-scroll.table-2col tfoot { display:block; }
 }
+
+/* ---- Scrap upgrade (Ren, 2026-10-07): paging footer, purity breakdown, payment lines, customer suggestions ---- */
+.pager { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin:10px 0; font-size:12px; }
+.sc-purity { display:grid; grid-template-columns:repeat(auto-fit, minmax(104px, 1fr)); gap:8px; margin-bottom:14px; }
+.sc-pur { background:var(--rose-bg); border:1px solid var(--rose-lt); border-radius:8px; padding:8px 10px; min-width:0; }
+.sc-pur.zero { opacity:0.55; }
+.sc-pur-lbl { font-size:11px; font-weight:700; color:var(--muted); letter-spacing:0.03em; }
+.sc-pur-g { font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.sc-pur-a { font-size:11px; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.sc-row2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.sc-row2 .field input, .sc-row2 .field select { min-width:0; width:100%; }
+.sc-payrow { border:1px solid #eee; border-radius:8px; padding:8px 10px; margin-bottom:8px; }
+.sc-payrow-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; font-size:12px; }
+.sc-pay-line { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; padding:7px 0; border-bottom:1px solid #f1f1f1; font-size:12.5px; }
+.sc-pay-line:last-of-type { border-bottom:none; }
+.sc-table { width:100%; border-collapse:collapse; }
+.sc-table td.nw, .sc-table th.nw { white-space:nowrap; }
+.sc-table td { vertical-align:top; }
+#sc-form [hidden], #sc-detail-body [hidden], #sc-edit-form [hidden] { display:none !important; }
+tr[data-row-id] { cursor:pointer; }
+tr[data-row-id]:hover td { background:#fafafa; }
+.cust-suggest { position:absolute; left:0; right:0; top:100%; z-index:30; background:#fff; border:1px solid #ddd; border-radius:6px; box-shadow:0 4px 10px rgba(0,0,0,0.12); max-height:220px; overflow-y:auto; }
+.cust-suggest[hidden] { display:none; }
+.cust-suggest button { display:block; width:100%; text-align:left; padding:7px 10px; background:none; border:none; border-bottom:1px solid #f1f1f1; cursor:pointer; font:inherit; font-size:12px; }
+.cust-suggest button:last-child { border-bottom:none; }
+.cust-suggest button:hover, .cust-suggest button:focus-visible { background:var(--rose-bg); }
+@media (max-width:480px) {
+  .sc-row2 { grid-template-columns:1fr; }
+  .pager { justify-content:center; }
+}

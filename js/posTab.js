@@ -12,11 +12,11 @@
 import {
   searchProducts, listActiveEmployees, createPosSale, listSales, listSalePayments,
   updatePosSaleItem, updatePosSalePayments, markCodCollected, deletePosSale, markSalePickedUp, subscribeToChanges,
-} from './api.js?v=20261007i';
-import { branchColor } from './branchColors.js?v=20261007i';
-import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20261007i';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20261007i';
-import { manilaDateStr } from './opsDates.js?v=20261007i';
+} from './api.js?v=20261007j';
+import { branchColor } from './branchColors.js?v=20261007j';
+import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20261007j';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20261007j';
+import { manilaDateStr } from './opsDates.js?v=20261007j';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 12): Sales Transactions sortable
 // across Date & Time/Order/Customer/SKU/Qty/Amount/Payment. The ledger is one row per

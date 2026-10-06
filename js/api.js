@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20261007i';
-import { localDateStr } from './uiKit.js?v=20261007i';
+import { supabase } from './supabaseClient.js?v=20261007j';
+import { localDateStr } from './uiKit.js?v=20261007j';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -659,11 +659,32 @@ export async function listScrapEntries(branchId) {
   let query = supabase.from('scrap_entries')
     .select('*, branches(name), scrap_payments(*)')
     .order('entry_date', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(LEDGER_ROW_CAP);
   if (branchId != null) query = query.eq('branch_id', branchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return attachEmployeeNames(data, { creator: 'created_by' });
+  // One name lookup for everyone who touched these rows: who recorded each entry, who last edited it,
+  // and who recorded each payment line (get_employee_names() works for every role, see attachEmployeeNames).
+  const ids = new Set();
+  data.forEach((r) => {
+    [r.created_by, r.updated_by].forEach((id) => { if (id) ids.add(id); });
+    (r.scrap_payments || []).forEach((p) => { if (p.recorded_by) ids.add(p.recorded_by); });
+  });
+  let by = {};
+  if (ids.size) {
+    const { data: names, error: nameErr } = await supabase.rpc('get_employee_names', { ids: Array.from(ids) });
+    if (nameErr) throw new Error(nameErr.message);
+    by = Object.fromEntries((names || []).map((e) => [e.id, e.full_name]));
+  }
+  const nm = (id) => (id && by[id] ? { full_name: by[id] } : null);
+  data.forEach((r) => {
+    r.creator = nm(r.created_by);
+    r.updater = nm(r.updated_by);
+    r.scrap_payments = (r.scrap_payments || []).map((p) => Object.assign(p, { recorder: nm(p.recorded_by) }))
+      .sort((a, b) => String(a.paid_at || '').localeCompare(String(b.paid_at || '')) || a.id - b.id);
+  });
+  return data;
 }
 
 export async function getScrapBalances() {
@@ -680,41 +701,50 @@ export async function getScrapCashBalances() {
   return data;
 }
 
-/** payments ([{method, amount}], at least one required) replaces the old single
- * paymentMethod/totalAmount fields -- total_amount is their sum and payment_method a
- * quick summary label ('Multiple' when more than one method is used). Returns the new
- * entry's id so a photo picked in the same Add form submit can be uploaded and linked
- * right after it's created (mirrors bills' attachment flow). */
-export async function createScrapEntry({ branchId, entryDate, entryType, metalType, karat, weightGrams, pricePerGram, customerName, contactNumber, payments, source, notes }) {
-  const empId = await currentEmployeeId();
-  const totalAmount = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-  const { data, error } = await supabase.from('scrap_entries').insert({
-    branch_id: branchId, entry_date: entryDate || localDateStr(),
-    entry_type: entryType || 'In', metal_type: metalType, karat: karat || null,
-    weight_grams: weightGrams, price_per_gram: pricePerGram || null, total_amount: totalAmount || null,
-    customer_name: customerName || null, contact_number: contactNumber || null,
-    payment_method: summarizePaymentMethod(payments),
-    source: source || null, notes: notes || null, created_by: empId,
-  }).select('id').single();
+/** Saves a scrap entry and its payment lines in ONE database call (create_scrap_entry_v2, migration 171), so a
+ * half-saved purchase cannot exist: the amounts, dates and payments are all checked together on the server.
+ * o: { branchId, entryDate, entryTime, kind, metal, purity, weight, pricePerGram, gross, adjustment, adjustmentReason,
+ * final, customerName, contact, address, sourceType, source, notes, counterpartBranch,
+ * payments: [{ method, amount, reference, paidAt, notes }] }. Returns { entryId, paymentIds } -- the ids line up with
+ * `payments`, so the photo/proof files picked in the same form can be uploaded and linked right after. */
+export async function createScrapEntryV2(o) {
+  const { data, error } = await supabase.rpc('create_scrap_entry_v2', {
+    p_branch_id: o.branchId, p_entry_date: o.entryDate || null, p_entry_time: o.entryTime || null, p_kind: o.kind,
+    p_metal: o.metal, p_karat: o.purity, p_weight: o.weight, p_price_per_gram: o.pricePerGram ?? null,
+    p_gross: o.gross ?? null, p_adjustment: o.adjustment || 0, p_adjustment_reason: o.adjustmentReason || null,
+    p_final: o.final ?? 0, p_customer_name: o.customerName || null, p_contact: o.contact || null, p_address: o.address || null,
+    p_source_type: o.sourceType || null, p_source: o.source || null, p_notes: o.notes || null,
+    p_payments: (o.payments || []).map((p) => ({ method: p.method, amount: p.amount, reference: p.reference || null, paid_at: p.paidAt || null, notes: p.notes || null })),
+    p_counterpart_branch: o.counterpartBranch ?? null,
+  });
   if (error) throw new Error(error.message);
-
-  if (payments.length) {
-    const rows = payments.filter((p) => p.amount > 0).map((p) => ({ scrap_entry_id: data.id, payment_method: p.method, amount: p.amount }));
-    if (rows.length) {
-      const { error: payErr } = await supabase.from('scrap_payments').insert(rows);
-      if (payErr) throw new Error(payErr.message);
-    }
-  }
-  return data.id;
+  return { entryId: data.entry_id, paymentIds: data.payment_ids || [] };
 }
 
-export async function deleteScrapEntry(id) {
-  const { data: entry } = await supabase.from('scrap_entries').select('attachment_path').eq('id', id).single();
-  if (entry && entry.attachment_path) {
-    await supabase.storage.from('scrap-attachments').remove([entry.attachment_path]);
-  }
-  const { error } = await supabase.from('scrap_entries').delete().eq('id', id);
+/** One more payment line on an existing entry (checked against the balance on the server). Returns the payment id. */
+export async function addScrapPayment(entryId, { method, amount, reference, paidAt, notes }) {
+  const { data, error } = await supabase.rpc('add_scrap_payment', {
+    p_entry_id: entryId, p_method: method, p_amount: amount, p_reference: reference || null, p_paid_at: paidAt || null, p_notes: notes || null,
+  });
   if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Corrects an entry: `patch` holds only the fields being changed (column names), plus the reason and what kind of
+ * mistake it was. The old and new values land in the audit trail and the error-correction log (update_scrap_entry). */
+export async function updateScrapEntry(id, patch, reason, errorType) {
+  const { error } = await supabase.rpc('update_scrap_entry', { p_id: id, p_patch: patch, p_reason: reason, p_error_type: errorType });
+  if (error) throw new Error(error.message);
+}
+
+/** Server-side figures for the Scrap tab: tiles, purity breakdown, grams by branch, weight-on-hand roll-forward
+ * (scrap_ops_report, migration 172). branchIds omitted = every branch the caller may see. */
+export async function getScrapOpsReport(from, to, branchIds) {
+  const args = { p_from: from, p_to: to };
+  if (branchIds) args.p_branch_ids = branchIds;
+  const { data, error } = await supabase.rpc('scrap_ops_report', args);
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 /** Reclassifies an In (received) Scrap entry as a Subasta item instead -- for when
@@ -734,11 +764,25 @@ export async function convertScrapToSubasta({ scrapEntryId, itemDescription, paw
 
 /** Path is "<branch_id>/<scrap_entry_id>/<file>" so Branch Supervisor storage access
  * can be scoped by branch, matching scrap_entries' own RLS. */
+const safeFileName = (name) => String(name || 'file').replace(/[^A-Za-z0-9._-]+/g, '_').slice(-80);
+
 export async function uploadScrapAttachment(branchId, scrapId, file) {
-  const path = branchId + '/' + scrapId + '/' + Date.now() + '_' + file.name;
+  const path = branchId + '/' + scrapId + '/' + Date.now() + '_' + safeFileName(file.name);
   const { error: upErr } = await supabase.storage.from('scrap-attachments').upload(path, file, { upsert: true });
   if (upErr) throw new Error(upErr.message);
-  const { error: updErr } = await supabase.from('scrap_entries').update({ attachment_path: path }).eq('id', scrapId);
+  // Linked through a function (not a direct update) so the person who recorded the entry can attach
+  // its photo too, and the attach is written to the audit trail.
+  const { error: updErr } = await supabase.rpc('set_scrap_attachment', { p_entry_id: scrapId, p_path: path });
+  if (updErr) throw new Error(updErr.message);
+  return path;
+}
+
+/** Proof of payment (a screenshot / receipt) for one payment line, kept next to the entry's own photo. */
+export async function uploadScrapPaymentProof(branchId, scrapId, paymentId, file) {
+  const path = branchId + '/' + scrapId + '/pay' + paymentId + '_' + Date.now() + '_' + safeFileName(file.name);
+  const { error: upErr } = await supabase.storage.from('scrap-attachments').upload(path, file, { upsert: true });
+  if (upErr) throw new Error(upErr.message);
+  const { error: updErr } = await supabase.rpc('set_scrap_payment_proof', { p_payment_id: paymentId, p_path: path });
   if (updErr) throw new Error(updErr.message);
   return path;
 }
@@ -747,6 +791,66 @@ export async function getScrapAttachmentUrl(path) {
   const { data, error } = await supabase.storage.from('scrap-attachments').createSignedUrl(path, 300);
   if (error) throw new Error(error.message);
   return data.signedUrl;
+}
+
+// ---- Audit trail + approvals shared by Scrap, Subasta and POS (migration 171) ----
+
+/** Who changed what on one record, newest first (branch_audit_log; visible to anyone who can see that branch). */
+export async function listBranchAuditLog(recordTable, recordId) {
+  const { data, error } = await supabase.from('branch_audit_log').select('*')
+    .eq('record_table', recordTable).eq('record_id', String(recordId))
+    .order('changed_at', { ascending: false }).limit(100);
+  if (error) throw new Error(error.message);
+  return attachEmployeeNames(data, { actor: 'changed_by' });
+}
+
+/** Delete / void / refund requests still waiting on someone for one kind of record. RLS: approvers see every
+ * request for the branches they can see, everyone else sees only their own. */
+export async function listBranchRecordRequests(recordTable) {
+  const { data, error } = await supabase.from('branch_record_requests').select('*')
+    .eq('record_table', recordTable).in('status', ['Pending', 'Supervisor Approved'])
+    .order('requested_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return attachEmployeeNames(data, { requester: 'requested_by', supervisor: 'supervisor_approved_by' });
+}
+
+export async function requestBranchRecordAction(recordTable, recordId, action, reason, errorType) {
+  const { data, error } = await supabase.rpc('request_branch_record_action', {
+    p_record_table: recordTable, p_record_id: String(recordId), p_action: action, p_reason: reason, p_error_type: errorType || null,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+export async function approveBranchRecordStage1(requestId) {
+  const { error } = await supabase.rpc('approve_branch_record_action_stage1', { p_request_id: requestId });
+  if (error) throw new Error(error.message);
+}
+export async function approveBranchRecordFinal(requestId) {
+  const { error } = await supabase.rpc('approve_branch_record_action_final', { p_request_id: requestId });
+  if (error) throw new Error(error.message);
+}
+export async function rejectBranchRecordAction(requestId, reason) {
+  const { error } = await supabase.rpc('reject_branch_record_action', { p_request_id: requestId, p_reason: reason || null });
+  if (error) throw new Error(error.message);
+}
+export async function cancelBranchRecordAction(requestId) {
+  const { error } = await supabase.rpc('cancel_branch_record_action', { p_request_id: requestId });
+  if (error) throw new Error(error.message);
+}
+/** Admin only: request + both approvals in one step. */
+export async function adminApplyBranchRecordAction(recordTable, recordId, action, reason, errorType) {
+  const { data, error } = await supabase.rpc('admin_apply_branch_record_action', {
+    p_record_table: recordTable, p_record_id: String(recordId), p_action: action, p_reason: reason, p_error_type: errorType || null,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Customers already on file (Layaway, POS, Scrap, Refunds) matching a name or contact number -- one row per person. */
+export async function searchBranchCustomers(q, limit = 8) {
+  const { data, error } = await supabase.rpc('search_branch_customers', { p_q: q, p_limit: limit });
+  if (error) throw new Error(error.message);
+  return data || [];
 }
 
 // ---- Transactions (GCash + Bank Transfer statement lines) — Admin/Manager see and
