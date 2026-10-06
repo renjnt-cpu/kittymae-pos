@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Record Movement — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261007n">
+<link rel="stylesheet" href="css/styles.css?v=20261007o">
 </head>
 <body>
 <main>
@@ -50,14 +50,14 @@
 </main>
 
 <script type="module">
-import { initShell, toast, esc } from './js/shell.js?v=20261007n';
+import { initShell, toast, esc } from './js/shell.js?v=20261007o';
 import {
   getBranches, recordMovement, recordSale, listSales, searchProducts,
   subscribeToChanges,
-} from './js/api.js?v=20261007n';
-import { renderPosNav } from './js/posNav.js?v=20261007n';
-import { branchBadge, branchOptionStyle } from './js/branchColors.js?v=20261007n';
-import { localDateStr } from './js/uiKit.js?v=20261007n';
+} from './js/api.js?v=20261007o';
+import { renderPosNav } from './js/posNav.js?v=20261007o';
+import { branchBadge, branchOptionStyle } from './js/branchColors.js?v=20261007o';
+import { localDateStr } from './js/uiKit.js?v=20261007o';
 
 const REMOVES = new Set(['Stock Out', 'Damage', 'Missing', 'Supplier Return', 'Sale']);
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
@@ -157,7 +157,7 @@ if (employee) {
       const today = localDateStr();
       const rows = await listSales({ branchId: branchId ?? undefined, fromDate: today, toDate: today });
       const totalQty = rows.reduce((s, r) => s + r.qty, 0);
-      const totalAmount = rows.reduce((s, r) => s + Number(r.qty) * Number(r.unit_price || 0), 0);
+      const totalAmount = rows.reduce((s, r) => s + Number(r.qty) * Number(r.unit_price || 0) - Number(r.discount || 0), 0);
       box.innerHTML = tile(totalQty, 'Sold Today' + (branchId ? ' — ' + esc(branchName(branchId)) : ' — All Branches')) +
         tile(money(totalAmount), 'Sales Total Today');
     } catch (err) {

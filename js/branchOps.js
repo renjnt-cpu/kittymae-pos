@@ -4,13 +4,13 @@
 // (branch_ops_summary / branch_ops_attention, migration 166) so the numbers never depend on how many rows a tab happened to load.
 // Every card, flag and branch name is a way into the Branches page on the same branch and dates. Layaway deadlines/overdue and
 // pending approvals deliberately ignore the date range -- they describe what needs action today.
-import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007n';
-import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261007n';
-import { loadPrefs, savePrefs, savedRange } from './opsPrefs.js?v=20261007n';
-import { ATTENTION_KINDS, urgentFrom, money, num, plural } from './opsAttention.js?v=20261007n';
+import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007o';
+import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261007o';
+import { loadPrefs, savePrefs, savedRange } from './opsPrefs.js?v=20261007o';
+import { ATTENTION_KINDS, urgentFrom, money, num, plural } from './opsAttention.js?v=20261007o';
 
 export { ATTENTION_KINDS };
-export { getInitialRange } from './opsPrefs.js?v=20261007n';
+export { getInitialRange } from './opsPrefs.js?v=20261007o';
 
 const grams = (n) => Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 3 }) + ' g';
 
@@ -134,7 +134,7 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
       .sort((x, y) => ATTENTION_KINDS[x.kind].rank - ATTENTION_KINDS[y.kind].rank)[0];
     const pendTarget = firstPending ? ATTENTION_KINDS[firstPending.kind] : { tab: 'layaway', view: 'approvals' };
     box.innerHTML = [
-      card({ label: 'POS Sales', value: money(pos.net), sub: plural(pos.items || 0, 'item') + ' sold', tab: 'pos' }),
+      card({ label: 'POS Sales', value: money(pos.net), sub: plural(pos.items || 0, 'item') + ' sold' + (pos.discounts > 0 ? ' · ' + money(pos.discounts) + ' in discounts' : ''), tab: 'pos' }),
       card({ label: 'POS Transactions', value: num(pos.transactions), sub: pos.transactions ? 'avg ' + money(avgSale) + ' per sale' : 'no sales in this range', tab: 'pos' }),
       card({ label: 'Layaway On Hold', value: num(lay.on_hold_lines), tag: 'right now', tab: 'layaway', view: 'onhold', tone: lay.overdue_lines ? 'bad' : '',
         sub: money(lay.on_hold_balance) + ' still owed · ' + plural(lay.on_hold_orders || 0, 'order'),

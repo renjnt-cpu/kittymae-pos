@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261007n">
+<link rel="stylesheet" href="css/styles.css?v=20261007o">
 </head>
 <body>
 <main>
@@ -19,18 +19,18 @@
 // the full Needs Attention list -- moved to POS -> Branch Dashboard. Each module is still its own self-contained tab module mounted into
 // its own root -- this page only owns the branch selection, the sticky bar, the forfeited-layaway warning, the deep links and the
 // activity-feed links. Online Orders used to live here too -- moved to its own ERP-only page (Ren, 2026-09-24).
-import { initShell, toast, esc } from './js/shell.js?v=20261007n';
-import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007n';
-import { renderPosNav } from './js/posNav.js?v=20261007n';
-import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007n';
-import { getInitialRange, loadBranchPref, saveBranchPref } from './js/opsPrefs.js?v=20261007n';
-import { initOpsBar } from './js/opsBar.js?v=20261007n';
-import { initOpsStrip } from './js/opsStrip.js?v=20261007n';
-import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007n';
-import { initPosTab } from './js/posTab.js?v=20261007n';
-import { initLayawayTab } from './js/layawayTab.js?v=20261007n';
-import { initScrapTab } from './js/scrapTab.js?v=20261007n';
-import { initSubastaTab } from './js/subastaTab.js?v=20261007n';
+import { initShell, toast, esc } from './js/shell.js?v=20261007o';
+import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007o';
+import { renderPosNav } from './js/posNav.js?v=20261007o';
+import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007o';
+import { getInitialRange, loadBranchPref, saveBranchPref } from './js/opsPrefs.js?v=20261007o';
+import { initOpsBar } from './js/opsBar.js?v=20261007o';
+import { initOpsStrip } from './js/opsStrip.js?v=20261007o';
+import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007o';
+import { initPosTab } from './js/posTab.js?v=20261007o';
+import { initLayawayTab } from './js/layawayTab.js?v=20261007o';
+import { initScrapTab } from './js/scrapTab.js?v=20261007o';
+import { initSubastaTab } from './js/subastaTab.js?v=20261007o';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
@@ -171,7 +171,7 @@ async function mountBranches(visibleBranches, branches) {
   function openTab(key, view) {
     // Views about what is still open today (a ₱0 sale, an uncollected COD, a pending pickup, a purchase or sale not fully paid) have to look
     // across all dates, not just the selected range.
-    if (['zero', 'cod', 'pickup', 'unpaid'].includes(view) && bar && bar.getRange().preset !== 'all') bar.setPreset('all');
+    if (['zero', 'cod', 'pickup', 'unpaid', 'balance'].includes(view) && bar && bar.getRange().preset !== 'all') bar.setPreset('all');
     showSubTab(key);
     const mod = mods[key];
     if (view && mod && mod.applyView) mod.applyView(view);
@@ -223,14 +223,16 @@ async function mountBranches(visibleBranches, branches) {
   //     is already open; from another page it arrives via ?tab=&open= instead. A record
   //     that belongs to another branch switches to that branch first (if this employee may
   //     see it) -- previously it silently did nothing.
+  // (POS opens a sale even when it is outside the loaded date range, so it offers openDetailAsync.)
+  const openIn = async (mod, id) => (mod.openDetailAsync ? mod.openDetailAsync(id) : mod.openDetail(id));
   async function openRecord(tab, mod, table, id) {
     showSubTab(tab);
-    if (mod && mod.openDetail(id) !== false) return;
+    if (mod && (await openIn(mod, id)) !== false) return;
     try {
       const b = await getRecordBranch(table, id);
       if (b != null && b !== selectedBranch && canSee(b)) {
         await selectBranch(b);
-        mod.openDetail(id);
+        await openIn(mod, id);
       }
     } catch (err) { /* not found / not visible: nothing to open */ }
   }

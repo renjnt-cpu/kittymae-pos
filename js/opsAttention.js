@@ -22,6 +22,8 @@ export const ATTENTION_KINDS = {
   cod_pending:              { rank: 7, tone: 'warn', tab: 'pos',     view: 'cod',       text: (n, a) => plural(n, 'COD sale') + ' waiting to be collected' + (a ? ' — ' + money(a) : '') },
   zero_amount_sale:         { rank: 8, tone: 'warn', tab: 'pos',     view: 'zero',      text: (n) => plural(n, 'sale') + ' with a ₱0 line item to fix' },
   pickup_pending:           { rank: 9, tone: 'info', tab: 'pos',     view: 'pickup',    text: (n) => plural(n, 'sale') + ' waiting for pickup' },
+  pos_balance:              { rank: 3, tone: 'bad',  tab: 'pos',     view: 'balance',   text: (n, a) => plural(n, 'sale') + ' not fully paid' + (a ? ' â ' + money(a) + ' still owed' : '') },
+  pending_pos_request:      { rank: 4, tone: 'warn', tab: 'pos',     view: 'requests',  text: (n, a) => plural(n, 'sale void / delete request') + ' awaiting approval' + (a ? ' â ' + money(a) : '') },
   layaway_lacking:          { rank: 10, tone: 'info', tab: 'layaway', view: 'lacking',  text: (n) => plural(n, 'layaway item') + ' waiting for stock' },
   scrap_unpaid:             { rank: 3, tone: 'bad',  tab: 'scrap',   view: 'unpaid',    text: (n, a) => plural(n, 'scrap purchase') + ' not fully paid' + (a ? ' — ' + money(a) + ' owed to customers' : '') },
   pending_scrap_request:    { rank: 4, tone: 'warn', tab: 'scrap',   view: 'requests',  text: (n, a) => plural(n, 'scrap delete request') + ' awaiting approval' + (a ? ' — ' + money(a) : '') },
@@ -41,7 +43,9 @@ export function urgentFrom(attention, branchId) {
     if (pend) out.layaway = { text: pend + ' to approve', tone: 'warn' };
     else if (n('reminders_due')) out.layaway = { text: n('reminders_due') + ' to remind', tone: 'warn' };
   }
-  if (n('cod_pending')) out.pos = { text: n('cod_pending') + ' COD', tone: 'warn' };
+  if (n('pos_balance')) out.pos = { text: n('pos_balance') + ' unpaid', tone: 'bad' };
+  else if (n('pending_pos_request')) out.pos = { text: n('pending_pos_request') + ' to approve', tone: 'warn' };
+  else if (n('cod_pending')) out.pos = { text: n('cod_pending') + ' COD', tone: 'warn' };
   if (n('scrap_unpaid')) out.scrap = { text: n('scrap_unpaid') + ' unpaid', tone: 'bad' };
   else if (n('pending_scrap_request')) out.scrap = { text: n('pending_scrap_request') + ' to approve', tone: 'warn' };
   if (n('subasta_unpaid')) out.subasta = { text: n('subasta_unpaid') + ' unpaid', tone: 'bad' };

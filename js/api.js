@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20261007n';
-import { localDateStr } from './uiKit.js?v=20261007n';
+import { supabase } from './supabaseClient.js?v=20261007o';
+import { localDateStr } from './uiKit.js?v=20261007o';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -333,8 +333,9 @@ export async function listSales({ branchId, fromDate, toDate } = {}) {
     .order('sale_date', { ascending: false })
     .limit(LEDGER_ROW_CAP);
   if (branchId != null) query = query.eq('branch_id', branchId);
-  if (fromDate) query = query.gte('sale_date', fromDate);
-  if (toDate) query = query.lte('sale_date', toDate + 'T23:59:59');
+  // From/To are Manila calendar days (the whole app buckets days that way), so the bounds are Manila midnights.
+  if (fromDate) query = query.gte('sale_date', fromDate + 'T00:00:00+08:00');
+  if (toDate) query = query.lte('sale_date', toDate + 'T23:59:59.999+08:00');
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   return data;
@@ -345,15 +346,19 @@ export async function listSales({ branchId, fromDate, toDate } = {}) {
 // methods. Reuses record_sale() per item under the hood inside create_pos_sale(),
 // which is why a later item failing (e.g. out of stock) rolls back everything already
 // rung up in that same checkout instead of leaving a half-completed sale.
-export async function createPosSale({ branchId, items, customerName, contactNumber, orderNumber, payments, saleDate, notes, pickupAddress }) {
+/** items: [{ sku, qty, unitPrice, discount, discountReason }]; payments: [{ method, amount (what the customer handed over), reference }];
+ * saleDate is a full timestamp (date + time); customerType is 'Walk-In' | 'COD' | 'Existing Customer'; allowBalance = the person chose to
+ * leave a balance on credit. The database checks every payment rule again (methods, references, change only on cash, short payments). */
+export async function createPosSale({ branchId, items, customerName, contactNumber, orderNumber, payments, saleDate, notes, pickupAddress, customerType, allowBalance }) {
   const { data, error } = await supabase.rpc('create_pos_sale', {
     p_branch_id: branchId,
-    p_items: items.map((it) => ({ sku: it.sku, qty: it.qty, unit_price: it.unitPrice ?? null })),
+    p_items: items.map((it) => ({ sku: it.sku, qty: it.qty, unit_price: it.unitPrice ?? null, discount: it.discount || 0, discount_reason: it.discountReason || null })),
     p_customer_name: customerName || null, p_contact_number: contactNumber || null,
     p_order_number: orderNumber || null,
     p_payments: (payments || []).map((p) => ({ method: p.method, amount: p.amount, reference: p.reference || null })),
     p_sale_date: saleDate || null, p_notes: notes || null,
     p_pickup_address: pickupAddress || null,
+    p_customer_type: customerType || null, p_allow_balance: !!allowBalance,
   });
   if (error) throw new Error(error.message);
   return data; // the new sale_group_id
@@ -363,11 +368,12 @@ export async function createPosSale({ branchId, items, customerName, contactNumb
  * order ref/notes) -- Admin/Manager/Branch Supervisor only (update_pos_sale_item
  * enforces this server-side too). Reverses the original item's stock effect and
  * applies the corrected one so qty_available stays accurate. */
-export async function updatePosSaleItem({ movementId, sku, qty, unitPrice, customerName, contactNumber, orderNumber, notes, reason }) {
+export async function updatePosSaleItem({ movementId, sku, qty, unitPrice, customerName, contactNumber, orderNumber, notes, reason, discount, discountReason }) {
   const { error } = await supabase.rpc('update_pos_sale_item', {
     p_movement_id: movementId, p_sku: sku, p_qty: qty, p_unit_price: unitPrice ?? null,
     p_customer_name: customerName || null, p_contact_number: contactNumber || null, p_order_number: orderNumber || null,
     p_notes: notes || null, p_reason: reason || null,
+    p_discount: discount ?? null, p_discount_reason: discountReason || null,
   });
   if (error) throw new Error(error.message);
 }
@@ -375,10 +381,8 @@ export async function updatePosSaleItem({ movementId, sku, qty, unitPrice, custo
 /** Fully delete a completed sale (every line + its payments), restoring the stock
  * each line took -- for a sale that should never have existed at all. Admin/Manager/
  * Branch Supervisor only. */
-export async function deletePosSale(saleGroupId) {
-  const { error } = await supabase.rpc('delete_pos_sale', { p_sale_group_id: saleGroupId });
-  if (error) throw new Error(error.message);
-}
+// (deletePosSale was removed: a sale can no longer be deleted in one call -- migration 188. Use requestBranchRecordAction('pos_sale', saleGroupId,
+// 'Delete' | 'Void', reason, errorType) -- a supervisor and then Admin approve it -- or, for Admin, adminApplyBranchRecordAction(...), which does every step.)
 
 /** Flips a pickup sale's status from Pending Pickup to Picked Up (mark_sale_picked_up's
  * own gate: Admin/Manager/Branch Supervisor/Branch Team Leader, same as markCodCollected). */
@@ -401,7 +405,7 @@ export async function listSalePayments(groupIds) {
 export async function updatePosSalePayments(saleGroupId, payments, reason) {
   const { error } = await supabase.rpc('update_pos_sale_payments', {
     p_sale_group_id: saleGroupId,
-    p_payments: payments.map((p) => ({ method: p.method, amount: p.amount, reference: p.reference || null })),
+    p_payments: payments.map((p) => ({ method: p.method, amount: p.amount, reference: p.reference || null, paid_at: p.paidAt || null })),
     p_reason: reason || null,
   });
   if (error) throw new Error(error.message);
@@ -414,6 +418,71 @@ export async function updatePosSalePayments(saleGroupId, payments, reason) {
 export async function markCodCollected(paymentId) {
   const { error } = await supabase.rpc('mark_cod_collected', { p_payment_id: paymentId });
   if (error) throw new Error(error.message);
+}
+
+/** Collects (part of) the balance of a sale later, with the date it was paid and a reference (add_pos_sale_payment). COD is collected
+ * with markCodCollected(), not here. Cash may be handed over above the balance -- the change is worked out by the database. */
+export async function addPosSalePayment({ saleGroupId, method, amount, reference, paidAt, notes }) {
+  const { error } = await supabase.rpc('add_pos_sale_payment', {
+    p_sale_group_id: saleGroupId, p_method: method, p_amount: amount, p_reference: reference || null, p_paid_at: paidAt || null, p_notes: notes || null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** One sale (every line + its payments) by its sale_group_id, whatever the date -- for opening a sale from a notification when it is not in the loaded range. */
+export async function getPosSaleGroup(saleGroupId) {
+  const { data, error } = await supabase.from('sales_inventory_movements').select('*, products(item_name, product_line), branches(name)')
+    .eq('sale_group_id', saleGroupId).order('id', { ascending: true });
+  if (error) throw new Error(error.message);
+  const payments = data && data.length ? await listSalePayments([saleGroupId]) : [];
+  return { rows: data || [], payments };
+}
+
+/** The POS tab's summary tiles for one branch and a Manila date range, from the server (pos_ops_report, migration 189). */
+export async function getPosOpsReport(from, to, branchId) {
+  const { data, error } = await supabase.rpc('pos_ops_report', { p_from: from, p_to: to, p_branch_id: branchId });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** What was changed on one sale, oldest first (pos_sale_change_log) -- the audit trail (listBranchAuditLog) adds who created / requested / approved. */
+export async function listPosSaleChangeLog(saleGroupId) {
+  const { data, error } = await supabase.from('pos_sale_change_log').select('*').eq('sale_group_id', saleGroupId).order('changed_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  return attachEmployeeNames(data, { who: 'changed_by' });
+}
+
+/** Sales that were voided or deleted (approved requests -- each keeps a snapshot of the sale), newest first. fromDate / toDate are
+ * Manila days and filter on the day the request was finally approved. RLS: approvers see all of their branches, others only their own requests. */
+export async function listPosSaleRemovals({ branchId, fromDate, toDate, limit = 200 } = {}) {
+  let q = supabase.from('branch_record_requests').select('*').eq('record_table', 'pos_sale').eq('status', 'Approved')
+    .order('final_approved_at', { ascending: false }).limit(limit);
+  if (branchId != null) q = q.eq('branch_id', branchId);
+  if (fromDate) q = q.gte('final_approved_at', fromDate + 'T00:00:00+08:00');
+  if (toDate) q = q.lte('final_approved_at', toDate + 'T23:59:59.999+08:00');
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return attachEmployeeNames(data, { requester: 'requested_by', supervisor: 'supervisor_approved_by', approver: 'final_approved_by' });
+}
+
+// ---- Refund requests from a POS sale go to the existing Refund Management (refund_create) -- there is only one refund system ----
+export async function listRefundReasons() {
+  const { data, error } = await supabase.from('refund_reasons').select('name').eq('active', true).order('sort_order', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data || []).map((r) => r.name);
+}
+/** Refund requests already filed for an order number (number, status, amount, requested_date) -- refund_order_lookup().other_refunds. */
+export async function listRefundsForOrder(orderRef) {
+  if (!orderRef) return [];
+  const { data, error } = await supabase.rpc('refund_order_lookup', { p_ref: orderRef });
+  if (error) throw new Error(error.message);
+  return (data && data.other_refunds) || [];
+}
+/** Files a refund request; resolves { ok: true, refund_request_number } or { ok: false, errors: [...], duplicate?, over_limit?, left? }. */
+export async function createRefundRequest(payload) {
+  const { data, error } = await supabase.rpc('refund_create', { p: payload });
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 export async function getTransactionHistory(sku, branchId) {

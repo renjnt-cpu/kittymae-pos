@@ -17,4 +17,11 @@ export const PAYMENT_METHODS = ['Cash', 'Terminal', 'Store Sales Cash', 'GCash',
 // still use unchanged. A COD payment starts life "Pending Collection" rather than
 // immediately counted as collected money -- see sale_payments.payment_status and
 // mark_cod_collected() in the database.
-export const POS_PAYMENT_METHODS = ['Cash', 'Terminal', 'Store Sales Cash', 'GCash', 'Bank Transfer', 'COD', 'Other'];
+export const POS_PAYMENT_METHODS = ['Cash', 'Terminal', 'Store Sales Cash', 'GCash', 'Maya', 'Bank Transfer', 'COD', 'Other'];
+
+// POS payment rules (Ren's Branches spec, 2026-10-07; the database enforces the same ones in _pos_apply_payments(), migration 187):
+// these methods need a reference number, and only these hand back change.
+export const POS_REF_REQUIRED = ['GCash', 'Maya', 'Bank Transfer', 'Terminal'];
+export const POS_CASH_METHODS = ['Cash', 'Store Sales Cash'];
+// "Terminal" is the card terminal -- shown as "Terminal / Card" so nobody looks for a separate Card option.
+export const posMethodLabel = (m) => (m === 'Terminal' ? 'Terminal / Card' : m);
