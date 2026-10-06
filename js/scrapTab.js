@@ -9,9 +9,9 @@
 import {
   listScrapEntries, getScrapCashBalances, createScrapEntry, deleteScrapEntry,
   uploadScrapAttachment, getScrapAttachmentUrl, convertScrapToSubasta, subscribeToChanges,
-} from './api.js?v=20261004a';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261004a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20261004a';
+} from './api.js?v=20261007a';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20261007a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 18): Scrap sortable by Date/
 // Metal-Karat/Weight/Amount/Type/Customer.
@@ -64,7 +64,7 @@ function readPaymentSlots(f) {
  * to `getBranchId()` at call time. `esc`/`toast` are the page's own shell.js
  * helpers; `msgId` is the id of the page's toast container; `employee` is the
  * signed-in employee record. Returns { reload, unsubscribe }. */
-export async function initScrapTab({ root, esc, toast, msgId, getBranchId, employee, onCountUpdate }) {
+export async function initScrapTab({ root, esc, toast, msgId, getBranchId, employee, onCountUpdate, getRange, requestRange }) {
   const isScoped = employee.role === 'Branch Supervisor';
   function canWriteHere() {
     return ['Admin', 'Manager'].includes(employee.role) || (isScoped && getBranchId() === employee.branch_id) ||
@@ -100,8 +100,8 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
         '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="sc-f-search" placeholder="Metal, grams, customer, payment, source, date…"></div>' +
         '<div class="field"><label>Metal</label><select id="sc-f-metal"><option value="all">All</option><option>Gold</option><option>Silver</option></select></div>' +
         '<div class="field"><label>Type</label><select id="sc-f-type"><option value="all">All</option><option>In</option><option>Out</option></select></div>' +
-        '<div class="field"><label>From</label><input type="date" id="sc-f-from" value="' + localDateStr() + '"></div>' +
-        '<div class="field"><label>To</label><input type="date" id="sc-f-to" value="' + localDateStr() + '"></div>' +
+        '<div class="field range-managed"><label>From</label><input type="date" id="sc-f-from"></div>' +
+        '<div class="field range-managed"><label>To</label><input type="date" id="sc-f-to"></div>' +
         sortControlHtml(SC_SORT_FIELDS, sort, 'sc-sort-field', 'sc-sort-dir') +
         '<button type="button" class="btn small secondary" id="sc-f-clear">Clear Filters</button>' +
       '</div>' +
@@ -155,6 +155,12 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     '</div>';
 
   document.getElementById('tab-filters-slot')?.appendChild(document.getElementById('scrap-filter-card'));
+  // Start on the page's global date range (later changes arrive as 'change' events on these inputs).
+  const range0 = getRange ? getRange() : null;
+  if (range0) {
+    document.getElementById('sc-f-from').value = range0.preset === 'all' ? '' : range0.from;
+    document.getElementById('sc-f-to').value = range0.preset === 'all' ? '' : range0.to;
+  }
 
   document.getElementById('sc-metal')?.addEventListener('change', (ev) => {
     document.getElementById('sc-karat').innerHTML = karatOptionsFor(ev.target.value);
@@ -185,13 +191,14 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
   document.getElementById('sc-detail-backdrop').addEventListener('click', closeDetailDrawer);
   function openDetail(id) {
     const r = allScrap.find((x) => x.id === id);
-    if (!r) return;
+    if (!r) return false; // not in the loaded branch -- the host may switch branch and retry
     document.getElementById('sc-detail-title').textContent = r.metal_type + ' ' + (r.karat || '') + ' — ' + r.entry_type;
     const body = document.getElementById('sc-detail-body');
     body.innerHTML = renderDetailBody(r);
     wireDetailBody(body, r);
     document.getElementById('sc-detail-backdrop').classList.add('open');
     document.getElementById('sc-detail-drawer').classList.add('open');
+    return true;
   }
   document.getElementById('sc-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -298,11 +305,14 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     // The module pill count, the active-filter strip, the tiles, the balance and the
     // list all come from these same filtered rows (MASTER UI rules 6/19/20/28).
     if (onCountUpdate) onCountUpdate(rows.length);
-    const hasFilters = !!(fSearch || fMetal !== 'all' || fType !== 'all' || fFrom || fTo);
+    // The date range is the page's global range (Branch Operations Summary), not a filter
+    // that Clear Filters could undo -- it is named in the empty-state message instead.
+    const hasFilters = !!(fSearch || fMetal !== 'all' || fType !== 'all');
+    const rangeNow = getRange ? getRange() : null;
+    const rangeLabel = rangeNow && rangeNow.preset !== 'all' ? rangeNow.label : '';
     const activeEl = document.getElementById('sc-active');
     activeEl.innerHTML = activeFiltersHtml([
       { label: 'Search', value: esc(fSearch) }, { label: 'Metal', value: esc(fMetal) }, { label: 'Type', value: esc(fType) },
-      { label: 'From', value: esc(fFrom) }, { label: 'To', value: esc(fTo) },
     ], 'sc-f-clear');
     wireProxyButtons(activeEl);
 
@@ -330,11 +340,19 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     const list = document.getElementById('sc-list');
     if (!rows.length) {
       list.innerHTML = emptyStateHtml({
-        message: hasFilters ? 'No scrap entries match these filters.' : 'No scrap entries recorded for this branch yet.',
+        message: hasFilters ? 'No scrap entries match these filters' + (rangeLabel ? ' for ' + esc(rangeLabel) : '') + '.'
+          : (rangeLabel ? 'No scrap entries for ' + esc(rangeLabel) + '.' : 'No scrap entries recorded for this branch yet.'),
         hasFilters, clearId: 'sc-f-clear',
         createLabel: canAddHere() ? '+ New Scrap' : null, createId: 'sc-new-btn',
       });
       wireProxyButtons(list);
+      if (rangeLabel && requestRange) {
+        const more = document.createElement('div');
+        more.className = 'empty-state-actions'; more.style.marginTop = '8px';
+        more.innerHTML = '<button type="button" class="btn small secondary">Search all dates</button>';
+        more.querySelector('button').addEventListener('click', () => requestRange('all'));
+        list.querySelector('.empty-state')?.appendChild(more);
+      }
       return;
     }
 
@@ -446,9 +464,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     document.getElementById('sc-f-search').value = '';
     document.getElementById('sc-f-metal').value = 'all';
     document.getElementById('sc-f-type').value = 'all';
-    document.getElementById('sc-f-from').value = '';
-    document.getElementById('sc-f-to').value = '';
-    render();
+    render(); // the date range is the page's global range -- not cleared here
   });
   wireSortControl('sc-sort-field', 'sc-sort-dir', sort, render);
 

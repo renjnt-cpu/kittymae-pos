@@ -8,9 +8,9 @@
 // UI rules: primary action, Summary tiles, Search & Filters, records.
 import {
   listSubastaItems, createSubastaItem, updateSubastaItem, deleteSubastaItem, searchProducts, subscribeToChanges,
-} from './api.js?v=20261004a';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261004a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20261004a';
+} from './api.js?v=20261007a';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20261007a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 19): Subasta sortable by Pawn
 // Date/Item/SKU/Weight/Sale Price/Status.
@@ -67,7 +67,7 @@ function readPaymentSlots(f) {
  * helpers; `msgId` is the page's toast container id; `employee` is the signed-in
  * employee record; `branches` is the page's active-branch list (for the Branch
  * picker in the edit form). Returns { reload, unsubscribe, openDetail }. */
-export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, employee, branches, onCountUpdate }) {
+export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, employee, branches, onCountUpdate, getRange, requestRange }) {
   const isScoped = employee.role === 'Branch Supervisor';
   function canWriteHere() {
     return ['Admin', 'Manager'].includes(employee.role) || (isScoped && getBranchId() === employee.branch_id) ||
@@ -212,7 +212,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
   document.getElementById('sb-detail-backdrop').addEventListener('click', closeDetailDrawer);
   function openDetail(id) {
     const r = allSubasta.find((x) => Number(x.id) === Number(id));
-    if (!r) return;
+    if (!r) return false; // not in the loaded branch -- the host may switch branch and retry
     // .textContent escapes on its own -- esc() here would double-escape.
     document.getElementById('sb-detail-title').textContent = r.item_description + (r.pawn_reference ? ' — ' + r.pawn_reference : '');
     const body = document.getElementById('sb-detail-body');
@@ -220,6 +220,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
     wireDetailBody(body, r);
     document.getElementById('sb-detail-backdrop').classList.add('open');
     document.getElementById('sb-detail-drawer').classList.add('open');
+    return true;
   }
   // After an in-drawer action (Edit save): keep the drawer open on fresh data if the
   // item still exists, else close it.

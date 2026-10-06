@@ -12,10 +12,11 @@
 import {
   searchProducts, listActiveEmployees, createPosSale, listSales, listSalePayments,
   updatePosSaleItem, updatePosSalePayments, markCodCollected, deletePosSale, markSalePickedUp, subscribeToChanges,
-} from './api.js?v=20261004a';
-import { branchColor } from './branchColors.js?v=20261004a';
-import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20261004a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20261004a';
+} from './api.js?v=20261007a';
+import { branchColor } from './branchColors.js?v=20261007a';
+import { POS_PAYMENT_METHODS } from './paymentMethods.js?v=20261007a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, localDateStr, flagInvalid } from './uiKit.js?v=20261007a';
+import { manilaDateStr } from './opsDates.js?v=20261007a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 12): Sales Transactions sortable
 // across Date & Time/Order/Customer/SKU/Qty/Amount/Payment. The ledger is one row per
@@ -83,8 +84,9 @@ function readPaymentSlots(f, prefix) {
  * `getBranchId()` at call time. `esc`/`toast` are the page's own shell.js helpers;
  * `msgId` is the page's toast container id; `employee` is the signed-in employee
  * record; `branches` is the page's active-branch list. Returns
- * { reload, unsubscribe, openDetail }. */
-export async function initPosTab({ root, esc, toast, msgId, getBranchId, employee, branches, onCountUpdate }) {
+ * { reload, unsubscribe, openDetail, applyView }. `getRange()` is the page's global date
+ * range (Branch Operations Summary) -- this tab's own From/To are driven by it. */
+export async function initPosTab({ root, esc, toast, msgId, getBranchId, employee, branches, onCountUpdate, getRange, requestRange }) {
   const isScoped = employee.role === 'Branch Supervisor';
   // Editing/deleting a completed POS sale (update_pos_sale_item/delete_pos_sale
   // enforce this same gate server-side) -- Ren, 2026-09-16/17: Admin/Manager/Branch
@@ -141,8 +143,10 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     '<div class="card" id="pos-filter-card" data-filter-tab="pos">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
         '<div class="field" style="min-width:200px;"><label>Search</label><input type="text" id="pos-f-search" placeholder="SKU, item, customer, order, admin…"></div>' +
-        '<div class="field"><label>From</label><input type="date" id="pos-f-from"></div>' +
-        '<div class="field"><label>To</label><input type="date" id="pos-f-to"></div>' +
+        // From/To are driven by the page's global date range (Branch Operations Summary),
+        // so they are kept in the DOM (render() reads them) but not shown.
+        '<div class="field range-managed"><label>From</label><input type="date" id="pos-f-from"></div>' +
+        '<div class="field range-managed"><label>To</label><input type="date" id="pos-f-to"></div>' +
         // Catches a line a staff member rang up without ever entering a Unit Price
         // (Ren, 2026-09-22) -- shows the whole sale a zero-total line belongs to, not
         // just that one row, since View Details/fixing it happens at the sale level.
@@ -152,9 +156,9 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
       '</div>' +
     '</div>' +
     '<div id="pos-active"></div>' +
-    '<h3 style="margin-top:0;">Sales by Admin &amp; Payment Method <span class="muted" style="font-weight:normal;font-size:12px;">— reflects the From/To date range above, all admins for this branch</span></h3>' +
+    '<h3 style="margin-top:0;">Sales by Admin &amp; Payment Method <span class="muted" style="font-weight:normal;font-size:12px;">— reflects the selected date range, all admins for this branch</span></h3>' +
     '<div id="pos-by-admin" style="margin-bottom:20px;"><div class="muted">Loading…</div></div>' +
-    '<h3 style="margin-top:6px;">Sales Transactions</h3>' +
+    '<h3 style="margin-top:6px;">Sales Transactions <span class="muted" id="pos-range-note" style="font-weight:normal;font-size:12px;"></span></h3>' +
     '<div id="pos-list"><div class="muted">Loading…</div></div>' +
 
     // ---- Form Drawer: New Sale (product search + cart + checkout) ----
@@ -220,6 +224,15 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     '</div>';
 
   document.getElementById('tab-filters-slot')?.appendChild(document.getElementById('pos-filter-card'));
+  // Start on the page's global date range (later changes arrive as 'change' events on these inputs).
+  const range0 = getRange ? getRange() : null;
+  if (range0) {
+    document.getElementById('pos-f-from').value = range0.preset === 'all' ? '' : range0.from;
+    document.getElementById('pos-f-to').value = range0.preset === 'all' ? '' : range0.to;
+  }
+  // A Needs Attention / summary-card click can ask for one specific slice of the ledger.
+  let viewFilter = ''; // '' | 'cod' | 'pickup'
+  const VIEW_LABELS = { cod: 'COD awaiting collection', pickup: 'Waiting for pickup' };
 
   // ---- product search + cart (P1 responsive redesign, now inside the drawer) ----
   let posCart = [];
@@ -358,7 +371,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   document.getElementById('pos-detail-backdrop').addEventListener('click', closeDetailDrawer);
   function openDetail(groupId) {
     const g = groupPosSales(allPosSales).find((x) => String(x.groupId) === String(groupId));
-    if (!g) return;
+    if (!g) return false; // not in the loaded branch -- the host may switch branch and retry
     const first = g.items[0];
     // .textContent escapes on its own -- esc() here would double-escape.
     document.getElementById('pos-detail-title').textContent = 'Sale' + (first.order_number ? ' — Order #' + first.order_number : '');
@@ -368,6 +381,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     wireDetailBody(body, g);
     document.getElementById('pos-detail-backdrop').classList.add('open');
     document.getElementById('pos-detail-drawer').classList.add('open');
+    return true;
   }
   function refreshDetailIfOpen(groupId) {
     if (!document.getElementById('pos-detail-drawer').classList.contains('open')) return;
@@ -631,8 +645,11 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     const fTo = document.getElementById('pos-f-to').value;
     const fZero = document.getElementById('pos-f-zero').checked;
     let rows = allPosSales;
-    if (fFrom) rows = rows.filter((r) => r.sale_date >= fFrom);
-    if (fTo) rows = rows.filter((r) => r.sale_date <= fTo + 'T23:59:59');
+    // Bucketed by the MANILA calendar day, exactly like the Branch Operations Summary --
+    // comparing the raw UTC timestamp text to a date put a sale rung up between midnight and
+    // 8 AM on the previous day.
+    if (fFrom) rows = rows.filter((r) => manilaDateStr(r.sale_date) >= fFrom);
+    if (fTo) rows = rows.filter((r) => manilaDateStr(r.sale_date) <= fTo);
     renderByAdminPayment(rows); // date-filtered only -- not narrowed by the free-text search/zero-amount filter
     let groups = groupPosSales(rows);
     // Ren, 2026-10-02: "add admin in the filter search to easily identify there
@@ -645,6 +662,8 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     // Surfaces the whole sale a ₱0 line belongs to (not just that one row) -- a
     // multi-item sale with one missing price is still one thing to go fix.
     if (fZero) groups = groups.filter((g) => g.items.some((r) => Number(r.unit_price || 0) * r.qty === 0));
+    if (viewFilter === 'cod') groups = groups.filter((g) => (posPaymentsByGroup[g.groupId] || []).some((p) => p.payment_method === 'COD' && p.payment_status === 'Pending Collection'));
+    if (viewFilter === 'pickup') groups = groups.filter((g) => g.items[0].pickup_status === 'Pending Pickup');
     renderSummary(groups);
 
     // Pill count, tiles, active-filter strip and ledger all follow these same filters
@@ -652,18 +671,31 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     if (onCountUpdate) onCountUpdate(groups.length);
     const totalAmount = groups.reduce((s, g) => s + groupSubtotal(g), 0);
     document.getElementById('pos-tiles').innerHTML = tile(groups.length, 'Sales') + tile(money(totalAmount), 'Total Amount');
-    const hasFilters = !!(fSearch || fFrom || fTo || fZero);
+    // The date range is the page's global range (shown in the Branch Operations Summary and in
+    // the note beside the heading), so it is not a "filter" that Clear Filters could undo.
+    const hasFilters = !!(fSearch || fZero || viewFilter);
+    const rangeNow = getRange ? getRange() : null;
+    const rangeLabel = rangeNow && rangeNow.preset !== 'all' ? rangeNow.label : '';
+    document.getElementById('pos-range-note').textContent = rangeLabel ? '— ' + rangeLabel : '— all dates';
     const activeEl = document.getElementById('pos-active');
-    activeEl.innerHTML = activeFiltersHtml([{ label: 'Search', value: esc(fSearch) }, { label: 'From', value: esc(fFrom) }, { label: 'To', value: esc(fTo) }, { label: 'Zero-amount only', value: fZero ? 'Yes' : '' }], 'pos-f-clear');
+    activeEl.innerHTML = activeFiltersHtml([{ label: 'Search', value: esc(fSearch) }, { label: 'Zero-amount only', value: fZero ? 'Yes' : '' }, { label: 'Showing', value: viewFilter ? esc(VIEW_LABELS[viewFilter]) : '' }], 'pos-f-clear');
     wireProxyButtons(activeEl);
 
     const box = document.getElementById('pos-list');
     if (!groups.length) {
       box.innerHTML = emptyStateHtml({
-        message: hasFilters ? 'No walk-in sales match these filters.' : 'No walk-in sales recorded for this branch yet.',
+        message: hasFilters ? 'No walk-in sales match these filters' + (rangeLabel ? ' for ' + esc(rangeLabel) : '') + '.'
+          : (rangeLabel ? 'No walk-in sales for ' + esc(rangeLabel) + '.' : 'No walk-in sales recorded for this branch yet.'),
         hasFilters, clearId: 'pos-f-clear', createLabel: canAddHere() ? '+ New Sale' : null, createId: 'pos-new-btn',
       });
       wireProxyButtons(box);
+      if (rangeLabel && requestRange) {
+        const more = document.createElement('div');
+        more.className = 'empty-state-actions'; more.style.marginTop = '8px';
+        more.innerHTML = '<button type="button" class="btn small secondary">Search all dates</button>';
+        more.querySelector('button').addEventListener('click', () => requestRange('all'));
+        box.querySelector('.empty-state')?.appendChild(more);
+      }
       return;
     }
     // One formal ledger row per line item (Ren, 2026-09-16: "arrange this POS as
@@ -907,17 +939,26 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   document.getElementById('pos-f-zero').addEventListener('change', render);
   document.getElementById('pos-f-clear').addEventListener('click', () => {
     document.getElementById('pos-f-search').value = '';
-    document.getElementById('pos-f-from').value = '';
-    document.getElementById('pos-f-to').value = '';
     document.getElementById('pos-f-zero').checked = false;
-    render();
+    viewFilter = '';
+    render(); // the date range is the page's global range -- not cleared here
   });
   wireSortControl('pos-sort-field', 'pos-sort-dir', sort, render);
 
   const unsubscribe = subscribeToChanges(['sales_inventory_movements', 'sale_payments'], load);
   await load();
 
+  // Needs Attention / summary-card click: narrow the ledger to what was clicked. These are
+  // "what is still open today" views, so they look across all dates (the host widens the range).
+  function applyView(view) {
+    document.getElementById('pos-f-search').value = '';
+    document.getElementById('pos-f-zero').checked = view === 'zero';
+    viewFilter = view === 'cod' || view === 'pickup' ? view : '';
+    render();
+    document.getElementById('pos-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   // openDetail is exposed so a clicked activity notification (activityFeed.js, spec
   // 321) can open a sale's own Detail Drawer in place. Takes the sale_group_id.
-  return { reload: load, unsubscribe, openDetail };
+  return { reload: load, unsubscribe, openDetail, applyView };
 }

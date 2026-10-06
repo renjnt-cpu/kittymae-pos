@@ -14,9 +14,11 @@ import {
   requestLayawayPaymentDeletion, listLayawayPaymentDeletionRequests, approveLayawayPaymentDeletion, rejectLayawayPaymentDeletion,
   requestLayawayHoldDeletion, listLayawayHoldDeletionRequests, approveLayawayHoldDeletionStage1, approveLayawayHoldDeletionFinal, rejectLayawayHoldDeletion,
   markLayawayStockAvailable,
-} from './api.js?v=20261004a';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261004a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20261004a';
+} from './api.js?v=20261007a';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20261007a';
+import { daysBetween, manilaToday } from './opsDates.js?v=20261007a';
+import { getOpsConfig, layawayDeadline } from './branchOpsConfig.js?v=20261007a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -82,24 +84,20 @@ const effectivePrice = (p) => p.pricing_mode === 'Per Gram'
   ? (p.current_gold_rate_per_g != null && p.gross_weight_g != null ? p.current_gold_rate_per_g * p.gross_weight_g : null)
   : p.system_selling_price;
 const STATUS_BADGE = { 'On Hold': 'pending', 'Completed': 'ok', 'Cancelled': 'low', 'Forfeited': 'low' };
-// A layaway with no activity forfeits 2 months (~60 days) after Date Purchased
-// (hold_date) by default -- staff can override this per-hold with an explicit Forfeit
-// Date (99_layaway_forfeit_date.sql). WARN_LEAD_DAYS gives a 2-week heads-up before
-// whatever the effective forfeit date is, so staff can chase payment before it's
-// actually too late, not just after.
-const FORFEITURE_DAYS = 60;
-const FORFEITURE_WARN_LEAD_DAYS = 15;
+// A layaway with no explicit Forfeit Date is due a set number of calendar months after its
+// layaway date (hold_date) -- 2 by default, changeable in Branch Operations settings
+// (branchOpsConfig.js, the same rule as layaway_deadline() in the database, so these rows and
+// the Branch Operations Summary always agree). Staff can still override it per hold with an
+// explicit Forfeit Date. The "nearing" window (default 15 days) gives a heads-up before the
+// deadline so staff can chase payment before it's actually too late, not just after.
+// Today is the MANILA calendar day, not the viewer's clock.
 function daysSince(dateStr) {
   if (!dateStr) return 0;
-  return Math.floor((new Date() - new Date(dateStr + 'T00:00:00')) / 86400000);
+  return daysBetween(dateStr, manilaToday());
 }
-/** The default Forfeit Date when staff hasn't set an explicit one -- 60 days after
- * Date Purchased, same window this whole feature always used before it became
- * editable. */
+/** The default Forfeit Date when staff hasn't set an explicit one. */
 function defaultForfeitDate(holdDateStr) {
-  const d = new Date(holdDateStr + 'T00:00:00');
-  d.setDate(d.getDate() + FORFEITURE_DAYS);
-  return localDateStr(d);
+  return layawayDeadline(null, holdDateStr);
 }
 // Same branch-scope rule as assert_can_act_on_branch()/record_sale() -- whole staff
 // can hold/pay/complete/cancel a layaway for their own branch; this group can do it
@@ -145,7 +143,7 @@ function readPaymentSlots(f) {
  * the page's toast container; `employee` is the signed-in employee record.
  * Returns { reload } for the host page to call after a branch switch. Async because
  * the Hold form needs the active-staff list (for "Handled By") before it can render. */
-export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, employee, onCountUpdate }) {
+export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, employee, onCountUpdate, getRange, requestRange }) {
   const isScoped = ['Admin', 'Manager'].includes(employee.role) ? false : !UNSCOPED_POSITIONS.includes(employee.position);
   // Branch Supervisor was missing from this line despite being a manager-level role
   // everywhere else in the app -- it now covers deleting a payment and editing a
@@ -354,10 +352,12 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     '<h2 style="margin-top:26px;">Monthly Monitoring</h2>' +
     '<div class="card">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
-        '<div class="field"><label>From</label><input type="date" id="mm-from"></div>' +
-        '<div class="field"><label>To</label><input type="date" id="mm-to"></div>' +
+        // From/To (here and in Payments Received below) are driven by the page's global date
+        // range (Branch Operations Summary): kept in the DOM, not shown.
+        '<div class="field range-managed"><label>From</label><input type="date" id="mm-from"></div>' +
+        '<div class="field range-managed"><label>To</label><input type="date" id="mm-to"></div>' +
         sortControlHtml(MM_SORT_FIELDS, mmSort, 'mm-sort-field', 'mm-sort-dir') +
-        '<button type="button" class="btn small secondary" id="mm-clear">All Time</button>' +
+        '<button type="button" class="btn small secondary range-managed" id="mm-clear">All Time</button>' +
       '</div>' +
     '</div>' +
     '<div class="tiles" id="mm-tiles"></div>' +
@@ -373,8 +373,8 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     '<div class="card">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
         '<div class="field" style="min-width:180px;"><label>Search</label><input type="text" id="mm-pay-f-search" placeholder="Order ID, SKU, customer, amount, receipt #…"></div>' +
-        '<div class="field"><label>From</label><input type="date" id="mm-pay-f-from"></div>' +
-        '<div class="field"><label>To</label><input type="date" id="mm-pay-f-to"></div>' +
+        '<div class="field range-managed"><label>From</label><input type="date" id="mm-pay-f-from"></div>' +
+        '<div class="field range-managed"><label>To</label><input type="date" id="mm-pay-f-to"></div>' +
         '<div class="field"><label>Method</label><select id="mm-pay-f-method"><option value="all">All</option>' + PAYMENT_METHODS.map((m) => '<option>' + m + '</option>').join('') + '</select></div>' +
         '<div class="field"><label>Status</label><select id="mm-pay-f-status"><option value="all">All</option><option>Downpayment</option><option>Partial</option><option>Paid in Full</option></select></div>' +
         '<div class="field"><label>Recorded By</label><select id="mm-pay-f-recordedby"><option value="all">All</option></select></div>' +
@@ -386,11 +386,17 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     '<div id="mm-payments-table"></div>' +
 
     '<h3 style="margin-top:22px;">Forfeiture Watch <span class="muted" style="font-weight:normal;">— On Hold items, most urgent first (not affected by the date range above)</span></h3>' +
-    '<p class="muted" style="margin-top:-4px;">Unpaid holds are forfeited 2 months after Date Purchased. Rows turn red once an item is close to or past that. Date Purchased is fixed once set (Admin only can correct it); a Forfeit Date change by anyone else needs Admin approval.</p>' +
+    '<p class="muted" style="margin-top:-4px;">Unpaid holds are due ' + getOpsConfig().forfeitMonths + ' months after Date Purchased unless a Forfeit Date is set. Rows turn red once an item is close to or past that. Date Purchased is fixed once set (Admin only can correct it); a Forfeit Date change by anyone else needs Admin approval.</p>' +
     '<div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' + sortControlHtml(FW_SORT_FIELDS, fwSort, 'fw-sort-field', 'fw-sort-dir') + '</div></div>' +
     '<div id="fw-table"></div>';
 
   document.getElementById('tab-filters-slot')?.appendChild(document.getElementById('layaway-filter-card'));
+  // Start on the page's global date range (later changes arrive as 'change' events on these inputs).
+  const range0 = getRange ? getRange() : null;
+  if (range0) {
+    const from0 = range0.preset === 'all' ? '' : range0.from, to0 = range0.preset === 'all' ? '' : range0.to;
+    ['mm', 'mm-pay-f'].forEach((p) => { document.getElementById(p + '-from').value = from0; document.getElementById(p + '-to').value = to0; });
+  }
 
   // ---- Item rows: one or more SKU/Qty/Price lines under the same order, each with
   // its own autocomplete instance (same pattern as movement.html/branches.html's POS
@@ -558,7 +564,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   document.getElementById('lw-detail-backdrop').addEventListener('click', closeDetailDrawer);
   function openDetail(holdId) {
     const h = allHolds.find((x) => x.id === holdId);
-    if (!h) return;
+    if (!h) return false; // not in the loaded branch -- the host may switch branch and retry
     // .textContent escapes on its own -- esc() here would double-escape (e.g. an
     // actual "&" in a customer's name showing up literally as "&amp;").
     document.getElementById('lw-detail-title').textContent = h.customer_name + ' — ' + h.sku;
@@ -567,6 +573,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     wireDetailBody(body, h);
     document.getElementById('lw-detail-backdrop').classList.add('open');
     document.getElementById('lw-detail-drawer').classList.add('open');
+    return true;
   }
   // Called after any action taken from inside the detail drawer -- keeps it open with
   // fresh data if the hold still exists (e.g. a payment was just added), or closes it
@@ -713,8 +720,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   document.getElementById('mm-pay-f-recordedby').addEventListener('change', renderMonthlyPayments);
   document.getElementById('mm-pay-f-clear').addEventListener('click', () => {
     document.getElementById('mm-pay-f-search').value = '';
-    document.getElementById('mm-pay-f-from').value = '';
-    document.getElementById('mm-pay-f-to').value = '';
+    // (From/To are the page's global date range -- not cleared here)
     document.getElementById('mm-pay-f-method').value = 'all';
     document.getElementById('mm-pay-f-status').value = 'all';
     document.getElementById('mm-pay-f-recordedby').value = 'all';
@@ -1554,7 +1560,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
 
     const activeEl = document.getElementById('mm-pay-active');
     activeEl.innerHTML = activeFiltersHtml([
-      { label: 'Search', value: esc(fSearch) }, { label: 'From', value: esc(fFrom) }, { label: 'To', value: esc(fTo) },
+      { label: 'Search', value: esc(fSearch) },
       { label: 'Method', value: fMethod === 'all' ? '' : esc(fMethod) }, { label: 'Status', value: fStatus === 'all' ? '' : esc(fStatus) },
       { label: 'Recorded By', value: recordedByEl.value === 'all' ? '' : esc(recordedByEl.value) },
     ], 'mm-pay-f-clear');
@@ -1562,7 +1568,14 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
 
     const total = filtered.reduce((s, p) => s + Number(p.amount || 0), 0); // total follows the FILTERS, not sort (section 11)
     const sortedPayments = applySort(filtered, mmPaySort, MM_PAY_SORT_COMPARATORS);
-    if (!sortedPayments.length) { box.innerHTML = '<p class="muted">No payments match these filters.</p>'; return; }
+    if (!sortedPayments.length) {
+      const rangeNow = getRange ? getRange() : null;
+      const rangeLabel = rangeNow && rangeNow.preset !== 'all' ? rangeNow.label : '';
+      box.innerHTML = '<p class="muted">No payments match these filters' + (rangeLabel ? ' for ' + esc(rangeLabel) : '') + '.</p>' +
+        (rangeLabel && requestRange ? '<button type="button" class="btn small secondary" id="mm-pay-all-dates">Search all dates</button>' : '');
+      box.querySelector('#mm-pay-all-dates')?.addEventListener('click', () => requestRange('all'));
+      return;
+    }
     box.innerHTML = '<div class="table-scroll"><table>' +
       '<thead><tr><th>Date</th><th>Branch</th><th>Order ID</th><th>SKU</th><th>Customer</th><th>Amount</th><th>Method</th><th>Status</th><th>Recorded By</th></tr></thead><tbody>' +
       sortedPayments.map((p) => '<tr>' +
@@ -1613,8 +1626,8 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       rows.map(({ h, effectiveForfeit, daysPastForfeit }) => {
         const paid = paidSoFar(h);
         const remaining = h.total_price == null ? null : Number(h.total_price) - paid;
-        const isOverdue = daysPastForfeit >= 0;
-        const isWarning = !isOverdue && daysPastForfeit >= -FORFEITURE_WARN_LEAD_DAYS;
+        const isOverdue = daysPastForfeit > 0; // the deadline day itself is "due today", not yet overdue
+        const isWarning = !isOverdue && daysPastForfeit >= -getOpsConfig().nearingDays;
         const rowStyle = isOverdue ? 'background:#fdecea;' : isWarning ? 'background:#fff3f3;' : '';
         const payments = h.layaway_payments || [];
         const paymentStatusById = paymentStatusFor(payments, h.total_price);
@@ -1670,7 +1683,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '</td>' +
           '<td data-label="Paid">' + money(paid) + '</td>' +
           '<td data-label="Remaining">' + (remaining !== null ? money(remaining) : '—') + '</td>' +
-          '<td data-label="Days Remaining">' + (isOverdue ? '<span class="badge low">Overdue ' + daysPastForfeit + 'd</span>' : (-daysPastForfeit) + 'd left') + '</td>' +
+          '<td data-label="Days Remaining">' + (isOverdue ? '<span class="badge low">Overdue ' + daysPastForfeit + 'd</span>' : daysPastForfeit === 0 ? '<span class="badge pending">Due today</span>' : (-daysPastForfeit) + 'd left') + '</td>' +
           '<td data-label="Forfeit Date">' +
             // Admin edits directly; anyone else who can act on this hold submits a
             // request instead (Ren, 2026-09-17: "for approval of me if they want to
@@ -1693,7 +1706,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
             (isOverdue ? ' <span class="badge low">FORFEITURE DUE</span>' : isWarning ? ' <span class="badge low">NEARING</span>' : '') +
             (lastEdit
               ? '<div class="muted" style="font-size:10px;margin-top:2px;">Edited by ' + esc(lastEdit.employees?.full_name || 'Unknown') + ' · ' + fmtDateTime(lastEdit.changed_at) + '</div>'
-              : '<div class="muted" style="font-size:10px;margin-top:2px;">Never edited (default 60-day date)</div>') +
+              : '<div class="muted" style="font-size:10px;margin-top:2px;">Never edited (default ' + getOpsConfig().forfeitMonths + '-month date)</div>') +
             (history.length
               ? '<button type="button" class="btn small secondary fw-forfeit-history" data-hold-id="' + h.id + '" aria-expanded="false" style="font-size:10px;padding:1px 6px;margin-top:2px;"><span class="exp-arrow" aria-hidden="true" style="width:7px;">▸</span> History (' + history.length + ')</button>' +
                 '<div class="fw-forfeit-history-list" data-hold-id="' + h.id + '" style="display:none;font-size:10px;margin-top:4px;border-top:1px dashed #ddd;padding-top:4px;">' +
@@ -1779,7 +1792,26 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   const unsubscribe = subscribeToChanges(['layaway_holds', 'layaway_payments', 'layaway_forfeit_date_log', 'layaway_hold_date_log', 'layaway_forfeit_date_requests'], load);
   await load();
 
+  // Needs Attention / summary-card click: take the person straight to what was clicked.
+  // Overdue and nearing items live in Forfeiture Watch; pending requests in their approval
+  // folders (opened); waiting-for-stock items are the Lacking rows of the On Hold list.
+  function applyView(view) {
+    let target = null;
+    if (view === 'overdue' || view === 'nearing') target = document.getElementById('fw-table');
+    else if (view === 'approvals') {
+      const folders = ['lw-pending-holddel-folder', 'lw-pending-paymentdel-folder', 'lw-pending-itemchange-folder', 'lw-pending-forfeit-folder']
+        .map((id) => document.getElementById(id)).filter(Boolean);
+      target = folders.find((f) => !/\(0\)/.test(f.querySelector('.exp-count')?.textContent || '')) || folders[0] || null;
+      if (target) target.open = true;
+    } else if (view === 'lacking') {
+      const search = document.getElementById('lw-f-search');
+      if (search) { search.value = ''; render(); }
+      target = document.getElementById('lw-list');
+    }
+    (target || document.getElementById('tab-panel-layaway'))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   // openDetail is exposed so a clicked activity notification (activityFeed.js, spec
   // 321) can open this hold's own Detail Drawer in place.
-  return { reload: load, unsubscribe, openDetail };
+  return { reload: load, unsubscribe, openDetail, applyView };
 }

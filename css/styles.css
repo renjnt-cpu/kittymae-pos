@@ -424,3 +424,69 @@ details.exp.exp-cat > .exp-body { padding:10px 12px; }
 .sm-tag-in { background:#eaf6ec; color:#2e7d32; }
 .sm-pos { color:#2e7d32; font-weight:700; }
 .sm-neg { color:#c62828; font-weight:700; }
+
+/* ---- Branch Operations Summary (Ren, 2026-10-07) -- js/branchOps.js. One global date range,
+   ten summary cards, a per-branch comparison and a Needs Attention list at the top of the
+   Branches page. Status colours follow one set everywhere: green = paid/completed/ok,
+   blue = active/listed/info, yellow = pending/nearing, red = overdue/error, grey = inactive. ---- */
+.badge.gray { background:#eeeeee; color:#666; }
+.range-managed { display:none !important; }
+.tab-urgent { font-size:10.5px; font-weight:700; border-radius:10px; padding:1px 7px; white-space:nowrap; }
+.tab-urgent.tone-bad { background:#fdecea; color:var(--warn); }
+.tab-urgent.tone-warn { background:#fff4e0; color:#a15c00; }
+
+.ops-wrap { margin-bottom:16px; }
+.ops-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+.ops-head .ops-title { margin:0 0 2px; font-size:16px; }
+.ops-controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.ops-seg { display:flex; gap:4px; flex-wrap:wrap; }
+.ops-seg button { font:inherit; font-size:12px; padding:6px 12px; border-radius:16px; border:1px solid #ddd; background:#fff; color:#555; cursor:pointer; }
+.ops-seg button[aria-pressed="true"] { background:var(--rose); border-color:var(--rose); color:var(--ink); font-weight:600; }
+.ops-custom { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin:0 0 12px; }
+.ops-custom[hidden] { display:none; }
+.ops-custom .field input { min-width:0; }
+
+.ops-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(176px, 1fr)); gap:10px; margin-bottom:14px; }
+.ops-card { text-align:left; font:inherit; color:var(--ink); background:var(--rose-bg); border:1px solid var(--rose-lt); border-radius:10px; padding:11px 13px; display:flex; flex-direction:column; gap:3px; min-width:0; cursor:pointer; }
+.ops-card:hover { border-color:var(--rose); box-shadow:0 1px 6px rgba(0,0,0,0.08); }
+.ops-card.tone-bad { background:#fdecea; border-color:#f3c1bd; }
+.ops-card.tone-warn { background:#fff4e0; border-color:#f0d29b; }
+.ops-card.tone-ok { background:#eaf6ec; border-color:#bfe0c5; }
+.ops-card-lbl { display:flex; justify-content:space-between; align-items:flex-start; gap:6px; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.03em; }
+.ops-card-num { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; line-height:1.15; overflow-wrap:anywhere; }
+.ops-card-sub { font-size:11.5px; color:var(--muted); }
+.ops-tag { text-transform:none; letter-spacing:0; font-size:10px; background:#fff; border:1px solid #e3e3e3; border-radius:8px; padding:0 6px; white-space:nowrap; color:var(--muted); }
+.ops-flag { align-self:flex-start; margin-top:2px; font-size:11px; font-weight:700; color:var(--warn); background:#fff; border-radius:8px; padding:1px 8px; }
+.ops-flag.warn { color:#a15c00; }
+
+.ops-compare { margin-bottom:14px; }
+.ops-table td, .ops-table th { white-space:nowrap; }
+.ops-table tr.ops-cur td { background:var(--rose-bg); }
+.ops-table tfoot td { background:#f7f7f7; border-top:1px solid #e3e3e3; }
+
+.ops-attn-head { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:8px; font-size:13px; }
+.ops-attn-list { display:flex; flex-direction:column; gap:6px; }
+.ops-attn-item { font:inherit; font-size:13px; color:var(--ink); text-align:left; display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:8px; border:1px solid #e6e6e6; background:#fff; cursor:pointer; }
+.ops-attn-item:hover { box-shadow:0 1px 5px rgba(0,0,0,0.1); }
+.ops-attn-item.tone-bad { background:#fdecea; border-color:#f3c1bd; }
+.ops-attn-item.tone-warn { background:#fff4e0; border-color:#f0d29b; }
+.ops-attn-item.tone-info { background:#e3edfd; border-color:#c3d6f7; }
+.ops-attn-dot { width:9px; height:9px; border-radius:50%; flex:0 0 auto; background:#9aa4ad; }
+.tone-bad .ops-attn-dot { background:var(--warn); }
+.tone-warn .ops-attn-dot { background:#e0a030; }
+.tone-info .ops-attn-dot { background:#1a56b0; }
+.ops-attn-text { flex:1 1 auto; min-width:0; }
+.ops-attn-branch { font-size:11px; background:#fff; border:1px solid #e3e3e3; border-radius:8px; padding:0 8px; white-space:nowrap; }
+.ops-attn-go { color:var(--muted); font-size:16px; }
+.ops-attn-clear { background:#eaf6ec; color:var(--ok); border-radius:8px; padding:9px 12px; font-size:13px; }
+
+@media (max-width:760px) {
+  .ops-cards { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+  .ops-card-num { font-size:19px; }
+  .ops-seg button { min-height:36px; }
+  .ops-attn-item { padding:10px; }
+}
+.ops-table .exp-row-btn { white-space:nowrap; text-align:left; justify-content:flex-start; }
+@media (max-width:760px) {
+  .table-mini .ops-table td, .table-mini .ops-table th { white-space:nowrap !important; }
+}

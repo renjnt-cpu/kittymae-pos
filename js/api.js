@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20261004a';
-import { localDateStr } from './uiKit.js?v=20261004a';
+import { supabase } from './supabaseClient.js?v=20261007a';
+import { localDateStr } from './uiKit.js?v=20261007a';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -76,6 +76,54 @@ export async function getBranches() {
   const { data, error } = await supabase.from('branches').select('*').eq('is_active', true).order('display_order');
   if (error) throw new Error(error.message);
   return data;
+}
+
+// ---- Branch Operations (migration 166): which branches the signed-in employee may see,
+// the shared layaway/reminder settings, and the date-range summary + needs-attention
+// reports the Branches page opens with. The reports run server-side (SECURITY INVOKER,
+// restricted to viewable_branch_ids()) so the figures never depend on how many rows a
+// tab happened to load. ----
+
+/** Branch ids the signed-in employee may see (company-wide roles get every branch). */
+export async function getViewableBranchIds() {
+  const { data, error } = await supabase.rpc('viewable_branch_ids');
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+export async function getBranchOpsSettings() {
+  const { data, error } = await supabase.from('branch_ops_settings').select('key, value');
+  if (error) throw new Error(error.message);
+  return Object.fromEntries((data || []).map((r) => [r.key, r.value]));
+}
+
+/** from/to are 'YYYY-MM-DD' (Manila days). branchIds omitted = every branch the caller may see. */
+export async function getBranchOpsSummary(from, to, branchIds) {
+  const args = { p_from: from, p_to: to };
+  if (branchIds) args.p_branch_ids = branchIds;
+  const { data, error } = await supabase.rpc('branch_ops_summary', args);
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function getBranchOpsAttention(branchIds) {
+  const { data, error } = await supabase.rpc('branch_ops_attention', branchIds ? { p_branch_ids: branchIds } : {});
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+/** The branch a record belongs to -- used when an activity notification points at a record
+ * in a different branch than the one currently selected. table is the activity feed's own
+ * record table name (pos_sale takes a sale_group_id). Null if it cannot be found/seen. */
+export async function getRecordBranch(table, id) {
+  const src = {
+    pos_sale: ['sales_inventory_movements', 'sale_group_id'], layaway_holds: ['layaway_holds', 'id'],
+    scrap_entries: ['scrap_entries', 'id'], subasta_items: ['subasta_items', 'id'],
+  }[table];
+  if (!src) return null;
+  const { data, error } = await supabase.from(src[0]).select('branch_id').eq(src[1], id).limit(1);
+  if (error) throw new Error(error.message);
+  return data && data.length ? data[0].branch_id : null;
 }
 
 // ---- Admin Chat (Ren, 2026-09-24: "is it possible to have internal admin chat" ->
