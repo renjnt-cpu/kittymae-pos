@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20261007k';
-import { localDateStr } from './uiKit.js?v=20261007k';
+import { supabase } from './supabaseClient.js?v=20261007l';
+import { localDateStr } from './uiKit.js?v=20261007l';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -740,6 +740,13 @@ export async function updateScrapEntry(id, patch, reason, errorType) {
   if (error) throw new Error(error.message);
 }
 
+/** Corrects one payment line (method / amount / date paid / reference): `patch` uses column names; a reason and the kind
+ * of mistake are required and the old/new values are logged (update_scrap_payment, migration 176). */
+export async function updateScrapPayment(paymentId, patch, reason, errorType) {
+  const { error } = await supabase.rpc('update_scrap_payment', { p_payment_id: paymentId, p_patch: patch, p_reason: reason, p_error_type: errorType });
+  if (error) throw new Error(error.message);
+}
+
 /** Server-side figures for the Scrap tab: tiles, purity breakdown, grams by branch, weight-on-hand roll-forward
  * (scrap_ops_report, migration 172). branchIds omitted = every branch the caller may see. */
 export async function getScrapOpsReport(from, to, branchIds) {
@@ -807,11 +814,12 @@ export async function listBranchAuditLog(recordTable, recordId) {
   return attachEmployeeNames(data, { actor: 'changed_by' });
 }
 
-/** Delete / void / refund requests still waiting on someone for one kind of record. RLS: approvers see every
- * request for the branches they can see, everyone else sees only their own. */
-export async function listBranchRecordRequests(recordTable) {
+/** Delete / void / refund requests still waiting on someone, for one kind of record or several (a table name or an
+ * array of them). RLS: approvers see every request for the branches they can see, everyone else sees only their own. */
+export async function listBranchRecordRequests(recordTables) {
+  const tables = Array.isArray(recordTables) ? recordTables : [recordTables];
   const { data, error } = await supabase.from('branch_record_requests').select('*')
-    .eq('record_table', recordTable).in('status', ['Pending', 'Supervisor Approved'])
+    .in('record_table', tables).in('status', ['Pending', 'Supervisor Approved'])
     .order('requested_at', { ascending: false });
   if (error) throw new Error(error.message);
   return attachEmployeeNames(data, { requester: 'requested_by', supervisor: 'supervisor_approved_by' });

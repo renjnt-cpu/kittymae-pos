@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261007k">
+<link rel="stylesheet" href="css/styles.css?v=20261007l">
 </head>
 <body>
 <main>
@@ -21,17 +21,17 @@
 // to live here too -- moved to its own ERP-only page (Ren, 2026-09-24: "remove online order
 // in all branch in the POS move online order in the ERP only make it in one module...
 // under sales").
-import { initShell, toast, esc } from './js/shell.js?v=20261007k';
-import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007k';
-import { renderPosNav } from './js/posNav.js?v=20261007k';
-import { branchButtonStyle } from './js/branchColors.js?v=20261007k';
-import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007k';
-import { initBranchOps, getInitialRange } from './js/branchOps.js?v=20261007k';
-import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007k';
-import { initPosTab } from './js/posTab.js?v=20261007k';
-import { initLayawayTab } from './js/layawayTab.js?v=20261007k';
-import { initScrapTab } from './js/scrapTab.js?v=20261007k';
-import { initSubastaTab } from './js/subastaTab.js?v=20261007k';
+import { initShell, toast, esc } from './js/shell.js?v=20261007l';
+import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007l';
+import { renderPosNav } from './js/posNav.js?v=20261007l';
+import { branchButtonStyle } from './js/branchColors.js?v=20261007l';
+import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007l';
+import { initBranchOps, getInitialRange } from './js/branchOps.js?v=20261007l';
+import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007l';
+import { initPosTab } from './js/posTab.js?v=20261007l';
+import { initLayawayTab } from './js/layawayTab.js?v=20261007l';
+import { initScrapTab } from './js/scrapTab.js?v=20261007l';
+import { initSubastaTab } from './js/subastaTab.js?v=20261007l';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 

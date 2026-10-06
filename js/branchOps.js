@@ -5,8 +5,8 @@
 // keep their own search/filters; this module owns only the date range (pushed to them
 // through onRangeChange) and the at-a-glance picture. Layaway deadlines/overdue and pending
 // approvals deliberately ignore the date range -- they describe what needs action today.
-import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007k';
-import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261007k';
+import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007l';
+import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261007l';
 
 const STORE_KEY = 'km-branch-ops-v1';
 

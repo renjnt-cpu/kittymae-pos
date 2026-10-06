@@ -17,14 +17,14 @@ import {
   listLayawayForfeitRequests, requestLayawayForfeit, approveLayawayForfeitStage1, approveLayawayForfeitFinal, rejectLayawayForfeit,
   cancelLayawayForfeitRequest, getLayawayReminderQueue, markLayawayContacted, setLayawayAltContact, listLayawayChangeLog,
   logBranchErrorCorrection, listActiveEmployees, getProductNames,
-} from './api.js?v=20261007k';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007k';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20261007k';
-import { daysBetween, manilaToday } from './opsDates.js?v=20261007k';
-import { getOpsConfig, layawayDeadline } from './branchOpsConfig.js?v=20261007k';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007k';
-import { layawayInfo, statusChipHtml, progressHtml, paidOf, daysText, ACTIVE_STATUSES } from './layawayStatus.js?v=20261007k';
-import { openCustomerHistory } from './customerHistory.js?v=20261007k';
+} from './api.js?v=20261007l';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007l';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20261007l';
+import { daysBetween, manilaToday } from './opsDates.js?v=20261007l';
+import { getOpsConfig, layawayDeadline } from './branchOpsConfig.js?v=20261007l';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007l';
+import { layawayInfo, statusChipHtml, progressHtml, paidOf, daysText, ACTIVE_STATUSES } from './layawayStatus.js?v=20261007l';
+import { openCustomerHistory } from './customerHistory.js?v=20261007l';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one

@@ -574,6 +574,7 @@ details.lw-approval.has-pending, details.lw-remind.has-pending { border:1px soli
 .sc-payrow-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; font-size:12px; }
 .sc-pay-line { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; padding:7px 0; border-bottom:1px solid #f1f1f1; font-size:12.5px; }
 .sc-pay-line:last-of-type { border-bottom:none; }
+.sc-pay-actions { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex:0 0 auto; }
 .sc-table { width:100%; border-collapse:collapse; }
 .sc-table td.nw, .sc-table th.nw { white-space:nowrap; }
 .sc-table td { vertical-align:top; }

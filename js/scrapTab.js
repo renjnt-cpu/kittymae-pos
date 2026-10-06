@@ -14,20 +14,20 @@
 //     logged), and deleting goes through a request that a supervisor and then Admin approve.
 // The drawer pattern, filters and cards are the ones Layaway already uses.
 import {
-  listScrapEntries, getScrapCashBalances, getScrapOpsReport, createScrapEntryV2, addScrapPayment, updateScrapEntry,
+  listScrapEntries, getScrapCashBalances, getScrapOpsReport, createScrapEntryV2, addScrapPayment, updateScrapEntry, updateScrapPayment,
   uploadScrapAttachment, uploadScrapPaymentProof, getScrapAttachmentUrl, convertScrapToSubasta,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges,
-} from './api.js?v=20261007k';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007k';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261007k';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007k';
-import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007k';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007k';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007k';
-import { attachCustomerPicker } from './customerPicker.js?v=20261007k';
-import { manilaToday } from './opsDates.js?v=20261007k';
-import { friendlyError } from './shell.js?v=20261007k';
+} from './api.js?v=20261007l';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007l';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261007l';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007l';
+import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007l';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007l';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007l';
+import { attachCustomerPicker } from './customerPicker.js?v=20261007l';
+import { manilaToday } from './opsDates.js?v=20261007l';
+import { friendlyError } from './shell.js?v=20261007l';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 18): Scrap sortable by Date/Metal-Purity/Customer/Type/Weight/Amount.
 const SC_SORT_FIELDS = [
@@ -72,6 +72,7 @@ const FIELD_LABELS = {
   entry_date: 'Date', purchase_time: 'Time', kind: 'Type', metal_type: 'Metal', karat: 'Purity', weight_grams: 'Weight (g)', price_per_gram: 'Price / gram',
   gross_amount: 'Gross amount', adjustment_amount: 'Adjustment', adjustment_reason: 'Adjustment reason', total_amount: 'Final amount',
   customer_name: 'Customer', contact_number: 'Contact', customer_address: 'Address', source_type: 'Source type', source: 'Source note', notes: 'Notes',
+  payment_method: 'Method', amount: 'Amount', reference_number: 'Reference', paid_at: 'Date paid',
 };
 
 // Same write-access group as this page's own canWriteHere() before the upgrade (62_position_managers_refund_scrap_subasta.sql);
@@ -503,7 +504,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       const [ents, cash, reqs] = await Promise.all([
         listScrapEntries(getBranchId()),
         getScrapCashBalances().catch(() => cashBalances),
-        listBranchRecordRequests('scrap_entries').catch(() => []),
+        listBranchRecordRequests(['scrap_entries', 'scrap_payments']).catch(() => []),
       ]);
       entries = ents.map(decorate);
       cashBalances = cash;
@@ -751,28 +752,36 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       const mine = q.requested_by === employee.id;
       const awaitingFinal = q.status === 'Supervisor Approved';
       const pays = Array.isArray(s.payments) ? s.payments : [];
+      const isPay = q.record_table === 'scrap_payments';
+      const verb = isPay ? 'remove' : 'delete';
       const buttons = [];
       if (q.status === 'Pending' && isSupervisorUp && (isAdmin || !mine)) {
         buttons.push('<button class="btn small" data-act="sup-approve" data-id="' + q.id + '">Approve</button>');
-        if (isAdmin) buttons.push('<button class="btn small danger" data-act="admin-approve" data-id="' + q.id + '">Approve &amp; delete</button>');
+        if (isAdmin) buttons.push('<button class="btn small danger" data-act="admin-approve" data-id="' + q.id + '">Approve &amp; ' + verb + '</button>');
       }
-      if (awaitingFinal && isAdmin) buttons.push('<button class="btn small danger" data-act="final-approve" data-id="' + q.id + '">Final approval — delete</button>');
+      if (awaitingFinal && isAdmin) buttons.push('<button class="btn small danger" data-act="final-approve" data-id="' + q.id + '">Final approval — ' + verb + '</button>');
       if (isSupervisorUp && (q.status === 'Pending' || isAdmin)) buttons.push('<button class="btn small secondary" data-act="reject" data-id="' + q.id + '">Reject</button>');
       if (mine || isAdmin) buttons.push('<button class="btn small secondary" data-act="withdraw" data-id="' + q.id + '">Withdraw</button>');
       return approvalCardHtml(esc, {
-        type: 'Delete scrap entry', order: s.order, customer: s.customer, item: [s.metal, s.purity, s.grams != null ? grams(s.grams) : ''].filter(Boolean).join(' '),
+        type: isPay ? 'Remove scrap payment' : 'Delete scrap entry', order: s.order, customer: s.customer,
+        item: isPay ? [s.method, s.reference ? '#' + s.reference : ''].filter(Boolean).join(' ') : [s.metal, s.purity, s.grams != null ? grams(s.grams) : ''].filter(Boolean).join(' '),
         amount: s.amount, requester: q.requester && q.requester.full_name, requestedAt: q.requested_at, reason: q.reason,
-        detail: (q.error_type ? 'Kind of mistake: <b>' + esc(q.error_type) + '</b>' : '') + (pays.length ? (q.error_type ? ' · ' : '') + pays.length + ' payment line' + (pays.length === 1 ? '' : 's') + ' (' + money(pays.reduce((t, p) => t + Number(p.amount || 0), 0)) + ') would be removed with it' : ''),
+        detail: (q.error_type ? 'Kind of mistake: <b>' + esc(q.error_type) + '</b>' : '') +
+          (isPay ? (q.error_type ? ' · ' : '') + 'paid ' + fmtDate(s.paid_at) + (s.entry_amount != null ? ' · the purchase is ' + money(s.entry_amount) : '')
+            : (pays.length ? (q.error_type ? ' · ' : '') + pays.length + ' payment line' + (pays.length === 1 ? '' : 's') + ' (' + money(pays.reduce((t, p) => t + Number(p.amount || 0), 0)) + ') would be removed with it' : '')),
         supervisor: q.supervisor && q.supervisor.full_name, awaitingFinal,
         actions: buttons.join('') || '<span class="muted" style="font-size:12px;">' + (awaitingFinal ? 'Waiting for Admin.' : 'Waiting for a supervisor.') + '</span>',
       });
     }).join('');
     box.querySelectorAll('[data-act]').forEach((btn) => btn.addEventListener('click', async () => {
       const id = Number(btn.dataset.id), act = btn.dataset.act;
+      const isPay = (requests.find((x) => x.id === id) || {}).record_table === 'scrap_payments';
       if (act === 'sup-approve') return runAction(() => approveBranchRecordStage1(id), 'Approved — now waiting for Admin.');
       if (act === 'admin-approve' || act === 'final-approve') {
-        if (!await confirmDialog({ title: 'Delete this scrap entry?', message: 'The entry and its payment lines are removed. What was removed stays in the audit trail.', confirmLabel: 'Delete entry', danger: true })) return;
-        return runAction(async () => { if (act === 'admin-approve') await approveBranchRecordStage1(id); await approveBranchRecordFinal(id); }, 'Entry deleted.');
+        if (!await confirmDialog(isPay
+          ? { title: 'Remove this payment line?', message: 'The purchase goes back to owing that amount. What was removed stays in the audit trail.', confirmLabel: 'Remove payment', danger: true }
+          : { title: 'Delete this scrap entry?', message: 'The entry and its payment lines are removed. What was removed stays in the audit trail.', confirmLabel: 'Delete entry', danger: true })) return;
+        return runAction(async () => { if (act === 'admin-approve') await approveBranchRecordStage1(id); await approveBranchRecordFinal(id); }, isPay ? 'Payment removed.' : 'Entry deleted.');
       }
       if (act === 'reject') {
         const out = await reasonDialog({ title: 'Reject this delete request?', message: 'Optional: tell the person why.', label: 'Reason', required: false, confirmLabel: 'Reject', danger: true });
@@ -824,7 +833,11 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
 
   function renderDetailBody(r) {
     const st = r._st, pays = r.scrap_payments || [];
-    const pending = requests.find((q) => q.record_id === String(r.id));
+    const pending = requests.find((q) => q.record_table === 'scrap_entries' && q.record_id === String(r.id));
+    const payRequest = (p) => requests.find((q) => q.record_table === 'scrap_payments' && q.record_id === String(p.id));
+    // A payment line can be corrected by the same people who can correct the entry (and, until proof is attached, whoever recorded it)
+    const canEditPay = (p) => !r.converted_to_subasta_item_id && canActOnBranch(r.branch_id) &&
+      (has('scrap.edit') || ((has('role.admin_assistant') || has('role.sales_executive')) && p.recorded_by === employee.id && !p.attachment_path));
     const kv = (k, v) => '<div class="drawer-kv"><span>' + k + '</span><b>' + v + '</b></div>';
     const transferNote = isTransferKind(r.kind) && r.counterpart_branch_id != null ? ' ' + (r.kind === 'Transferred Out' ? 'to ' : 'from ') + esc(branchName(r.counterpart_branch_id)) : '';
 
@@ -863,11 +876,20 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
 
     if (r._money) {
       h += '<div class="drawer-section"><h4>Payments</h4>' +
-        (pays.length ? pays.map((p) => '<div class="sc-pay-line"><div><b>' + money(p.amount) + '</b> · ' + esc(p.payment_method) +
-            '<div class="muted" style="font-size:11px;">' + fmtDate(p.paid_at) + (p.reference_number ? ' · ref ' + esc(p.reference_number) : '') + ' · by ' + esc((p.recorder && p.recorder.full_name) || '—') + '</div></div>' +
-          '<div style="text-align:right;">' + (p.attachment_path
+        (pays.length ? pays.map((p) => {
+          const preq = payRequest(p);
+          return '<div class="sc-pay-line"><div><b>' + money(p.amount) + '</b> · ' + esc(p.payment_method) +
+            '<div class="muted" style="font-size:11px;">' + fmtDate(p.paid_at) + (p.reference_number ? ' · ref ' + esc(p.reference_number) : '') + ' · by ' + esc((p.recorder && p.recorder.full_name) || '—') + '</div>' +
+            (preq ? '<div class="lw-pending-flag" style="font-size:11px;">Removal requested — ' + (preq.status === 'Supervisor Approved' ? 'waiting for Admin' : 'waiting for a supervisor') + '</div>' : '') + '</div>' +
+          '<div class="sc-pay-actions">' + (p.attachment_path
               ? '<button type="button" class="btn small secondary" data-act="view-proof" data-path="' + esc(p.attachment_path) + '">View proof</button>'
-              : (canAddHere() ? '<button type="button" class="btn small secondary" data-act="attach-proof" data-id="' + p.id + '">Attach proof</button>' : '<span class="muted" style="font-size:11px;">no proof</span>')) + '</div></div>').join('')
+              : (canAddHere() ? '<button type="button" class="btn small secondary" data-act="attach-proof" data-id="' + p.id + '">Attach proof</button>' : '<span class="muted" style="font-size:11px;">no proof</span>')) +
+            (canEditPay(p) ? '<button type="button" class="btn small secondary" data-act="correct-payment" data-id="' + p.id + '">Correct</button>' : '') +
+            (!r.converted_to_subasta_item_id && canActOnBranch(r.branch_id) && !preq
+              ? (isAdmin ? '<button type="button" class="btn small secondary" data-act="remove-payment" data-id="' + p.id + '">Remove…</button>'
+                         : '<button type="button" class="btn small secondary" data-act="request-remove-payment" data-id="' + p.id + '">Request removal</button>') : '') +
+          '</div></div>';
+        }).join('')
           : '<p class="muted">No payment recorded yet.</p>') +
         '<div class="drawer-kv"><span>Paid</span><b>' + money(st.paid) + '</b></div><div class="drawer-kv"><span>Balance</span><b>' + money(st.balance) + '</b></div>' +
         (st.balance > 0.005 && canAddHere() && canActOnBranch(r.branch_id)
@@ -948,6 +970,52 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     }));
     on('[data-act="withdraw-req"]', (el) => runAction(() => cancelBranchRecordAction(Number(el.dataset.id)), 'Request withdrawn.'));
     on('[data-act="edit"]', () => openEdit(r));
+
+    // Correcting one payment line: new values + the reason and kind of mistake, all logged.
+    on('[data-act="correct-payment"]', async (el) => {
+      const p = (r.scrap_payments || []).find((x) => x.id === Number(el.dataset.id));
+      if (!p) return;
+      const out = await reasonDialog({
+        title: 'Correct this payment', message: 'Change only what was wrong. The old and new values are recorded with your name and the reason.',
+        label: 'Reason', confirmLabel: 'Save correction', errorTypes: ERROR_TYPES, errorLabel: 'What went wrong?', initialErrorType: 'Wrong Payment',
+        extraFieldsHtml:
+          '<div class="field"><label for="dlg-pmethod">Method</label><select id="dlg-pmethod">' +
+            PAYMENT_METHODS.concat(PAYMENT_METHODS.includes(p.payment_method) ? [] : [p.payment_method]).map((m) => '<option' + (m === p.payment_method ? ' selected' : '') + '>' + esc(m) + '</option>').join('') + '</select></div>' +
+          '<div class="field"><label for="dlg-pamount">Amount (₱)</label><input type="number" id="dlg-pamount" step="0.01" min="0" inputmode="decimal" value="' + esc(p.amount) + '"></div>' +
+          '<div class="field"><label for="dlg-pdate">Date sent / paid</label><input type="date" id="dlg-pdate" value="' + esc(String(p.paid_at || '').slice(0, 10)) + '" min="' + esc(r.entry_date) + '" max="' + today() + '"></div>' +
+          '<div class="field"><label for="dlg-pref">Reference number</label><input type="text" id="dlg-pref" value="' + esc(p.reference_number || '') + '"></div>',
+        readExtra: (form) => {
+          const amount = Number(form.querySelector('#dlg-pamount').value);
+          const paidAt = form.querySelector('#dlg-pdate').value;
+          if (!(amount > 0)) return { error: 'The payment must be more than ₱0.' };
+          if (!paidAt) return { error: 'Enter the date the payment was sent.' };
+          if (paidAt > today()) return { error: 'The payment date cannot be in the future.' };
+          if (paidAt < r.entry_date) return { error: 'The payment date cannot be before the purchase date.' };
+          if (r._paid - Number(p.amount) + amount > Number(r.total_amount || 0) + 0.01) return { error: 'The payments would add up to more than the final amount (' + money(r.total_amount) + ').' };
+          return { method: form.querySelector('#dlg-pmethod').value, amount: r2(amount), paidAt, reference: form.querySelector('#dlg-pref').value.trim() };
+        },
+      });
+      if (!out) return;
+      const x = out.extra, patch = {};
+      if (x.method !== p.payment_method) patch.payment_method = x.method;
+      if (x.amount !== Number(p.amount)) patch.amount = x.amount;
+      if (x.paidAt !== String(p.paid_at || '').slice(0, 10)) patch.paid_at = x.paidAt;
+      if (x.reference !== (p.reference_number || '')) patch.reference_number = x.reference || null;
+      if (!Object.keys(patch).length) { notify('Nothing was changed.', true); return; }
+      await runAction(async () => { await updateScrapPayment(p.id, patch, out.reason, out.errorType); }, 'Payment corrected.');
+    });
+    on('[data-act="request-remove-payment"]', async (el) => {
+      const out = await reasonDialog({ title: 'Request removal of this payment line?', message: 'A supervisor and then Admin must approve it. Nothing is removed until then.', label: 'Reason',
+        confirmLabel: 'Send request', errorTypes: ERROR_TYPES, errorLabel: 'What went wrong?', initialErrorType: 'Wrong Payment', danger: true });
+      if (!out) return;
+      await runAction(() => requestBranchRecordAction('scrap_payments', Number(el.dataset.id), 'Delete', out.reason, out.errorType), 'Removal request sent.');
+    });
+    on('[data-act="remove-payment"]', async (el) => {
+      const out = await reasonDialog({ title: 'Remove this payment line?', message: 'The purchase goes back to owing that amount. The reason and what was removed stay in the audit trail.', label: 'Reason',
+        confirmLabel: 'Remove payment', errorTypes: ERROR_TYPES, errorLabel: 'What went wrong?', initialErrorType: 'Wrong Payment', danger: true });
+      if (!out) return;
+      await runAction(() => adminApplyBranchRecordAction('scrap_payments', Number(el.dataset.id), 'Delete', out.reason, out.errorType), 'Payment removed.');
+    });
 
     on('[data-act="request-delete"]', async () => {
       const out = await reasonDialog({ title: 'Request deletion of this scrap entry?', message: 'A supervisor and then Admin must approve it. Nothing is removed until then.', label: 'Reason',

@@ -72,8 +72,9 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', cancel
 /** Asks for a written reason (and, when `errorTypes` is given, what kind of mistake it was).
  * message is plain text. Resolves { reason, errorType } or null when cancelled. */
 export function reasonDialog({ title, message, label = 'Reason', required = true, placeholder = '', confirmLabel = 'Submit',
-  cancelLabel = 'Cancel', errorTypes = null, errorLabel = 'What went wrong?', danger = false, initialReason = '', initialErrorType = null }) {
-  const body =
+  cancelLabel = 'Cancel', errorTypes = null, errorLabel = 'What went wrong?', danger = false, initialReason = '', initialErrorType = null,
+  extraFieldsHtml = '', readExtra = null }) {
+  const body = extraFieldsHtml +
     (errorTypes && errorTypes.length
       ? '<div class="field"><label for="dlg-errtype">' + escHtml(errorLabel) + '</label><select id="dlg-errtype">' +
           errorTypes.map((t) => '<option' + (t === initialErrorType ? ' selected' : '') + '>' + escHtml(t) + '</option>').join('') + '</select></div>'
@@ -83,10 +84,13 @@ export function reasonDialog({ title, message, label = 'Reason', required = true
   const back = build({ title, messageHtml: message ? escHtml(message).replace(/\n/g, '<br>') : '', bodyHtml: body, confirmLabel, cancelLabel, danger });
   back.querySelector('#dlg-reason').value = initialReason;
   return run(back, (form) => {
+    // Extra fields (e.g. the corrected values of a payment) are read and checked first; readExtra returns { error } or the values.
+    const extra = readExtra ? readExtra(form) : null;
+    if (extra && extra.error) return { error: extra.error };
     const reason = form.querySelector('#dlg-reason').value.trim();
     if (required && !reason) return { error: 'Please write a reason.' };
     const typeEl = form.querySelector('#dlg-errtype');
-    return { reason, errorType: typeEl ? typeEl.value : null };
+    return { reason, errorType: typeEl ? typeEl.value : null, extra };
   });
 }
 
