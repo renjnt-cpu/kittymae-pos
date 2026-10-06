@@ -94,6 +94,56 @@ export function reasonDialog({ title, message, label = 'Reason', required = true
   });
 }
 
+/** A ready-made message the person reads and copies (nothing is ever sent from here), with an optional main action.
+ * Resolves 'action' (the main button), 'close' (Close) or null (Esc / click outside). onCopy(text) -> Promise<boolean> does the
+ * copying; the dialog stays open and says "Copied" so the person can still press the main action afterwards. */
+export function messageDialog({ title, introHtml = '', text, copyLabel = 'Copy message', actionLabel = '', closeLabel = 'Close', onCopy }) {
+  if (open) open.close(null);
+  return new Promise((resolve) => {
+    const prevFocus = document.activeElement;
+    const back = document.createElement('div');
+    back.className = 'dlg-backdrop';
+    back.innerHTML =
+      '<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-title">' +
+        '<h3 id="dlg-title"></h3><div class="dlg-msg"></div>' +
+        '<div class="field"><label for="dlg-text">Message</label><textarea id="dlg-text" rows="6" readonly></textarea></div>' +
+        '<div class="dlg-copy-note muted" role="status"></div>' +
+        '<div class="dlg-actions"><button type="button" class="btn" data-dlg-copy></button><button type="button" class="btn secondary" data-dlg-action></button><button type="button" class="btn secondary" data-dlg-close></button></div>' +
+      '</div>';
+    back.querySelector('#dlg-title').textContent = title || '';
+    const msg = back.querySelector('.dlg-msg');
+    if (introHtml) msg.innerHTML = introHtml; else msg.hidden = true;
+    const ta = back.querySelector('#dlg-text');
+    ta.value = text || '';
+    const note = back.querySelector('.dlg-copy-note');
+    const act = back.querySelector('[data-dlg-action]');
+    if (actionLabel) act.textContent = actionLabel; else act.hidden = true;
+    back.querySelector('[data-dlg-copy]').textContent = copyLabel;
+    back.querySelector('[data-dlg-close]').textContent = closeLabel;
+    function close(value) {
+      document.removeEventListener('keydown', onKey, true);
+      back.remove();
+      open = null;
+      if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch (e) { /* element gone */ } }
+      resolve(value);
+    }
+    function onKey(ev) { if (ev.key === 'Escape') { ev.stopPropagation(); close(null); } }
+    document.addEventListener('keydown', onKey, true);
+    back.addEventListener('mousedown', (ev) => { if (ev.target === back) close(null); });
+    back.querySelector('[data-dlg-close]').addEventListener('click', () => close('close'));
+    act.addEventListener('click', () => close('action'));
+    back.querySelector('[data-dlg-copy]').addEventListener('click', async () => {
+      let ok = false;
+      try { ok = onCopy ? await onCopy(ta.value) : false; } catch (e) { ok = false; }
+      if (ok) note.textContent = 'Copied ✓ — paste it into Messenger / SMS' + (actionLabel ? ', then press "' + actionLabel + '" once you have sent it.' : '.');
+      else { ta.removeAttribute('readonly'); ta.focus(); ta.select(); note.textContent = 'Your browser did not allow copying automatically — the text is selected, press Ctrl+C.'; }
+    });
+    open = { close };
+    document.body.appendChild(back);
+    back.querySelector('[data-dlg-copy]').focus();
+  });
+}
+
 /** The error types a correction can be filed under (matches log_branch_error_correction()). */
 export const ERROR_TYPES = ['Wrong Payment', 'Wrong SKU', 'Wrong Amount', 'Wrong Branch', 'Wrong Date', 'Wrong Purity',
   'Wrong Weight', 'Incorrect Layaway Item', 'Wrong Customer', 'Other'];

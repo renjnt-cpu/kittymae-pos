@@ -2,11 +2,11 @@
 // header{}/nav{}/nav a{} rules -- same structure as the main ERP's shell.js
 // (colored header bar, pill-shaped nav links below), just this site's own pastel
 // blue palette and 4-page link set instead of the ERP's full nav.
-import { esc } from './shell.js?v=20261007m';
-import { signOut } from './auth.js?v=20261007m';
-import { initActivityFeed } from './activityFeed.js?v=20261007m';
-import { showBirthdayBanner } from './birthdayBanner.js?v=20261007m';
-import { initAdminChat } from './adminChat.js?v=20261007m';
+import { esc } from './shell.js?v=20261007n';
+import { signOut } from './auth.js?v=20261007n';
+import { initActivityFeed } from './activityFeed.js?v=20261007n';
+import { showBirthdayBanner } from './birthdayBanner.js?v=20261007n';
+import { initAdminChat } from './adminChat.js?v=20261007n';
 
 // Where a clicked activity notification opens its record (spec 321) -- keyed by the
 // event's record_table. Pages this app doesn't have link across to the ERP.
@@ -24,10 +24,13 @@ const ACTIVITY_LINKS = {
 };
 
 export function renderPosNav(employee, activeHref) {
+  // POS -> Branch Dashboard (analytics: pick the dates, review, click what needs action) and Branches (the working desk: select a branch,
+  // search, choose POS / Layaway / Scrap / Subasta, work) lead the list (Ren, 2026-10-07).
   const links = [
+    { href: 'branch-dashboard.html', label: 'Branch Dashboard' },
+    { href: 'branches.html', label: 'Branches' },
     { href: 'index.html', label: 'Look Up a SKU' },
     { href: 'products.html', label: 'SKU Catalog' },
-    { href: 'branches.html', label: 'Branches' },
     { href: 'movement.html', label: 'Record Movement' },
     { href: 'capital.html', label: 'Branch Capital' },
   ];

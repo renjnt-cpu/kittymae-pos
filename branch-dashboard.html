@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Branch Dashboard — Kittymae POS</title>
+<link rel="stylesheet" href="css/styles.css?v=20261007n">
+</head>
+<body>
+<main>
+  <div id="br-msg"></div>
+  <div id="dash-root"></div>
+</main>
+
+<script type="module">
+// POS -> Branch Dashboard (Ren's second Branches spec, 2026-10-07): the analytics half. Pick the branch and the dates, review the
+// performance (summary cards, comparison between branches, what needs attention) and click whatever needs action -- every card, flag,
+// branch name and Needs Attention item opens the Branches page (the working desk) on the right branch, module, view and dates. The figures
+// are the ones the Branches page used to open with (js/branchOps.js, the server reports branch_ops_summary / branch_ops_attention); nothing
+// is calculated twice. The date range and the branch are remembered in this browser and shared with the Branches page, so what is clicked
+// here is what is found there.
+import { initShell, esc } from './js/shell.js?v=20261007n';
+import { getBranches, getViewableBranchIds } from './js/api.js?v=20261007n';
+import { renderPosNav } from './js/posNav.js?v=20261007n';
+import { branchButtonStyle } from './js/branchColors.js?v=20261007n';
+import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007n';
+import { initBranchOps } from './js/branchOps.js?v=20261007n';
+import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007n';
+import { loadBranchPref, saveBranchPref } from './js/opsPrefs.js?v=20261007n';
+
+const employee = await initShell();
+if (employee) {
+  renderPosNav(employee, 'branch-dashboard.html');
+  await loadOpsConfig();
+  // Every active branch -- branchButtonStyle() indexes into this full list; what this employee may SEE is visibleBranches below.
+  const branches = await getBranches();
+  let viewable;
+  try { viewable = new Set(await getViewableBranchIds()); } catch (err) { viewable = new Set(branches.map((b) => b.id)); }
+  const visibleBranches = branches.filter((b) => viewable.has(b.id));
+  if (!visibleBranches.length) {
+    document.getElementById('dash-root').innerHTML =
+      '<div class="empty-state"><div class="empty-state-msg">You are not assigned to a branch yet, so there is nothing to show here. Ask an Admin to assign you a branch.</div></div>';
+  } else {
+    mountDashboard(visibleBranches, branches);
+  }
+}
+
+function mountDashboard(visibleBranches, branches) {
+  const root = document.getElementById('dash-root');
+  const canSee = (id) => visibleBranches.some((b) => b.id === id);
+  const pick = (id) => (id != null && canSee(id) ? id : null);
+  // The branch looked at last (the Branches page remembers it too); otherwise the employee's own; otherwise the first one they may see.
+  let selected = pick(loadBranchPref()) ?? pick(employee.branch_id) ?? visibleBranches[0].id;
+  const multi = visibleBranches.length > 1;
+
+  root.innerHTML =
+    (multi ? '<div class="card dash-pick"><div class="dash-pick-h"><b>Branch</b><span class="muted">“Current Branch” figures use this one; the comparison below shows them all.</span></div>' +
+      '<div class="ops-bar-branches" id="dash-branches" role="group" aria-label="Branch"></div></div>' : '') +
+    '<div id="dash-ops"></div>';
+
+  function renderBranches() {
+    const box = document.getElementById('dash-branches');
+    if (!box) return;
+    box.innerHTML = visibleBranches.map((b) =>
+      '<button type="button" class="btn" style="' + branchButtonStyle(b.id, branches, b.id === selected) + '" data-id="' + b.id + '" aria-pressed="' + (b.id === selected) + '">' + esc(b.name) + '</button>').join('');
+    box.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', () => { selected = Number(btn.dataset.id); saveBranchPref(selected); renderBranches(); ops.setBranch(); }));
+  }
+
+  /** Opens the Branches page (the working desk) on a branch, and optionally a module and a view of it. */
+  function go({ branch, tab, view }) {
+    saveBranchPref(branch);
+    const q = new URLSearchParams();
+    q.set('branch', String(branch));
+    if (tab) q.set('tab', tab);
+    if (view) q.set('view', view);
+    window.location.href = 'branches.html?' + q.toString();
+  }
+
+  let ops = null;
+  try {
+    ops = initBranchOps({
+      root: document.getElementById('dash-ops'), esc, branches, visibleBranchIds: visibleBranches.map((b) => b.id),
+      getBranchId: () => selected,
+      // Make a branch the "current" one (a Needs Attention item for another branch does this first, then opens its module).
+      selectBranch: (id) => { if (!canSee(id)) return; selected = id; saveBranchPref(id); renderBranches(); },
+      // A card / flag / Needs Attention item: that module (and view) of the current branch on the Branches page.
+      showTab: (tab, view) => go({ branch: selected, tab, view }),
+      // A branch name in the comparison table: that branch's Branches page.
+      openBranch: (id) => go({ branch: id }),
+      // Admin only (set_branch_ops_setting() checks it again server-side): deadline rule, reminder schedule, branch visibility.
+      onOpenSettings: employee.role === 'Admin'
+        ? () => openOpsSettings({ esc, onSaved: async (keys) => {
+          // Switching branch visibility changes which branches this very page may show -- start fresh.
+          if (keys && keys.includes('branch_view_enforced')) { setTimeout(() => window.location.reload(), 700); return; }
+          await ops.refresh();
+        } })
+        : undefined,
+    });
+  } catch (err) {
+    console.error('Branch Dashboard failed to start', err);
+    document.getElementById('dash-ops').innerHTML = '<div class="msg error">The dashboard could not be loaded. (' + esc(err.message || err) + ')</div>';
+  }
+  renderBranches();
+}
+</script>
+</body>
+</html>

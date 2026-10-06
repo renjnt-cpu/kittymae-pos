@@ -18,18 +18,18 @@ import {
   uploadScrapAttachment, uploadScrapPaymentProof, getScrapAttachmentUrl, convertScrapToSubasta,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges,
-} from './api.js?v=20261007m';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007m';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261007m';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007m';
-import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007m';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007m';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007m';
-import { attachCustomerPicker } from './customerPicker.js?v=20261007m';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007m';
-import { GOLD_PURITIES, SILVER_PURITIES } from './metals.js?v=20261007m';
-import { manilaToday } from './opsDates.js?v=20261007m';
-import { friendlyError } from './shell.js?v=20261007m';
+} from './api.js?v=20261007n';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007n';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261007n';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007n';
+import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007n';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007n';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007n';
+import { attachCustomerPicker } from './customerPicker.js?v=20261007n';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007n';
+import { GOLD_PURITIES, SILVER_PURITIES } from './metals.js?v=20261007n';
+import { manilaToday } from './opsDates.js?v=20261007n';
+import { friendlyError } from './shell.js?v=20261007n';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 18): Scrap sortable by Date/Metal-Purity/Customer/Type/Weight/Amount.
 const SC_SORT_FIELDS = [

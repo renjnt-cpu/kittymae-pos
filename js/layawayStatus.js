@@ -10,8 +10,8 @@
 //   NEARING DEADLINE  deadline within the "nearing" window (default 15 days)
 //   PARTIALLY PAID    something paid, balance owed, deadline not close
 //   ON HOLD           nothing paid yet
-import { getOpsConfig, layawayDeadline } from './branchOpsConfig.js?v=20261007m';
-import { daysBetween, manilaToday } from './opsDates.js?v=20261007m';
+import { getOpsConfig, layawayDeadline } from './branchOpsConfig.js?v=20261007n';
+import { daysBetween, manilaToday } from './opsDates.js?v=20261007n';
 
 /** Colour family per status -- green done/paid, blue active, yellow nearing, red overdue/lost, grey cancelled. */
 export const STATUS_TONE = {
@@ -21,6 +21,14 @@ export const STATUS_TONE = {
 export const ACTIVE_STATUSES = ['ON HOLD', 'PARTIALLY PAID', 'PAID IN FULL', 'NEARING DEADLINE', 'OVERDUE', 'FORFEITURE DUE'];
 
 export const paidOf = (h) => (h.layaway_payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+
+/** Colour of the "days left" text (Ren, 2026-10-07): green healthy (15+ days), yellow 7-14, orange 1-6, red due today or overdue. */
+export function daysToneOf(days) {
+  if (days <= 0) return 'red';
+  if (days <= 6) return 'orange';
+  if (days <= 14) return 'yellow';
+  return 'green';
+}
 
 /** "45 days left" / "Due today" / "OVERDUE 2 DAYS" -- only meaningful while the layaway is still On Hold. */
 export function daysText(days) {
@@ -58,8 +66,9 @@ export function layawayInfo(h, { openForfeitRequest = false } = {}) {
   return {
     key, tone, paid, total, remaining, pct, deadline, days, active,
     daysText: active && !paidInFull ? daysText(days) : '',
-    // Row tint in lists: only the two things that need action
-    rowTone: key === 'OVERDUE' || key === 'FORFEITURE DUE' ? 'red' : key === 'NEARING DEADLINE' ? 'yellow' : '',
+    daysTone: active && !paidInFull ? daysToneOf(days) : '',
+    // Row tint in lists: only the things that need action (red overdue, orange within 6 days, yellow nearing)
+    rowTone: key === 'OVERDUE' || key === 'FORFEITURE DUE' ? 'red' : (active && !paidInFull && days >= 0 && days <= 6) ? 'orange' : key === 'NEARING DEADLINE' ? 'yellow' : '',
     overdue: active && !paidInFull && days < 0,
   };
 }

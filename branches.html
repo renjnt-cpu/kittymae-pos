@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261007m">
+<link rel="stylesheet" href="css/styles.css?v=20261007n">
 </head>
 <body>
 <main>
@@ -13,25 +13,24 @@
 </main>
 
 <script type="module">
-// Branches page: the Branch Operations Summary (one global date range, summary cards,
-// per-branch comparison, Needs Attention -- js/branchOps.js), a branch picker, and four
-// per-branch modules (POS, Layaway, Scrap, Subasta), each its own self-contained tab
-// module mounted into its own root -- this page only owns the branch selection, the tab
-// bar, the forfeited-layaway warning, and the activity-feed deep links. Online Orders used
-// to live here too -- moved to its own ERP-only page (Ren, 2026-09-24: "remove online order
-// in all branch in the POS move online order in the ERP only make it in one module...
-// under sales").
-import { initShell, toast, esc } from './js/shell.js?v=20261007m';
-import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007m';
-import { renderPosNav } from './js/posNav.js?v=20261007m';
-import { branchButtonStyle } from './js/branchColors.js?v=20261007m';
-import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007m';
-import { initBranchOps, getInitialRange } from './js/branchOps.js?v=20261007m';
-import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007m';
-import { initPosTab } from './js/posTab.js?v=20261007m';
-import { initLayawayTab } from './js/layawayTab.js?v=20261007m';
-import { initScrapTab } from './js/scrapTab.js?v=20261007m';
-import { initSubastaTab } from './js/subastaTab.js?v=20261007m';
+// Branches page = the working desk (Ren's second Branches spec, 2026-10-07): pick the branch, search, pick the dates, pick the module
+// (POS Walk In & COD / Layaway / Scrap / Subasta), work. The controls live in one sticky bar (js/opsBar.js); a single compact row
+// (js/opsStrip.js) shows how the branch is doing; the analytics -- the Branch Operations Summary, the comparison between branches,
+// the full Needs Attention list -- moved to POS -> Branch Dashboard. Each module is still its own self-contained tab module mounted into
+// its own root -- this page only owns the branch selection, the sticky bar, the forfeited-layaway warning, the deep links and the
+// activity-feed links. Online Orders used to live here too -- moved to its own ERP-only page (Ren, 2026-09-24).
+import { initShell, toast, esc } from './js/shell.js?v=20261007n';
+import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007n';
+import { renderPosNav } from './js/posNav.js?v=20261007n';
+import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007n';
+import { getInitialRange, loadBranchPref, saveBranchPref } from './js/opsPrefs.js?v=20261007n';
+import { initOpsBar } from './js/opsBar.js?v=20261007n';
+import { initOpsStrip } from './js/opsStrip.js?v=20261007n';
+import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007n';
+import { initPosTab } from './js/posTab.js?v=20261007n';
+import { initLayawayTab } from './js/layawayTab.js?v=20261007n';
+import { initScrapTab } from './js/scrapTab.js?v=20261007n';
+import { initSubastaTab } from './js/subastaTab.js?v=20261007n';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
@@ -55,57 +54,47 @@ if (employee) {
 
 async function mountBranches(visibleBranches, branches) {
   const root = document.getElementById('branches-root');
-  // Branches are the primary lens here -- always exactly one selected. Anyone with a
-  // fixed branch_id starts on their own branch; company-wide employees (branch_id null)
-  // start on the first branch they may see.
-  let selectedBranch = visibleBranches.some((b) => b.id === employee.branch_id) ? employee.branch_id : visibleBranches[0].id;
+  const deepLink = new URLSearchParams(window.location.search);
+  // Branches are the primary lens here -- always exactly one selected. A link from the Branch Dashboard names the branch; otherwise the one
+  // looked at last; otherwise the employee's own branch; company-wide employees (branch_id null) start on the first branch they may see.
+  const canSee = (id) => visibleBranches.some((b) => b.id === id);
+  const pick = (id) => (id != null && canSee(id) ? id : null);
+  let selectedBranch = pick(Number(deepLink.get('branch')) || null) ?? pick(loadBranchPref()) ?? pick(employee.branch_id) ?? visibleBranches[0].id;
   const branchName = (id) => (branches.find((b) => b.id === id) || {}).name || '';
 
-  // Each module reports its own filtered count for the tab bar (MASTER UI rule 20).
-  let posCount = 0, pos = null;
-  let layawayCount = 0, layaway = null;
-  let scrapCount = 0, scrap = null;
-  let subastaCount = 0, subasta = null;
-  let ops = null;
-  let activeSubTab = 'pos';
-  // Declared up here (not beside renderScrapSubTabs/showSubTab below) so it exists
-  // before the sub-tab pills render and become clickable -- an early click would
-  // otherwise hit showSubTab() while this is still in its temporal dead zone.
-  const SUB_TABS = ['pos', 'layaway', 'scrap', 'subasta'];
-  // The global date range (set in the Branch Operations Summary). Read from the same saved
-  // preference the summary starts with, so each tab's very first render already uses it.
+  // The modules, in the order of the bar: POS first (the main day-to-day action), then Layaway, Scrap, Subasta. All four stay mounted so
+  // switching never loses a filter or an open drawer; each tab's count follows that module's own filters.
+  const TABS = [
+    { key: 'pos', label: 'POS Walk In & COD', short: 'POS', dot: '#2e7d32', action: '+ New Sale', newBtn: 'pos-new-btn', search: 'pos-f-search', placeholder: 'Search sale, order, customer, SKU, item, reference, admin…' },
+    { key: 'layaway', label: 'Layaway', dot: '#c2185b', action: '+ New Layaway', newBtn: 'lw-new-btn', search: 'lw-f-search', placeholder: 'Search customer, contact, order, SKU, item, payment reference…' },
+    { key: 'scrap', label: 'Scrap', dot: '#b06a1f', action: '+ New Scrap', newBtn: 'sc-new-btn', search: 'sc-f-search', placeholder: 'Search customer, metal, purity, reference, recorded by…' },
+    { key: 'subasta', label: 'Subasta', dot: '#7c3aa8', action: '+ New Subasta', newBtn: 'sb-new-btn', search: 'sb-f-search', placeholder: 'Search item, SKU, pawner, pawn reference, buyer, reference…' },
+  ];
+  const SUB_TABS = TABS.map((t) => t.key);
+  const counts = { pos: 0, layaway: 0, scrap: 0, subasta: 0 };
+  const mods = { pos: null, layaway: null, scrap: null, subasta: null };
+  let activeSubTab = SUB_TABS.includes(deepLink.get('tab')) ? deepLink.get('tab') : 'pos';
+  // The global date range (set in the bar). Read from the same saved preference the Branch Dashboard uses, so each tab's very first render
+  // already uses it.
   let range = getInitialRange();
-  // Each tab's own From/To inputs, driven by the global range (declared up here for the same
-  // reason as SUB_TABS: the summary announces the range as soon as it mounts).
+  // Each tab's own From/To inputs, driven by the global range (declared up here: the bar announces the range as soon as it mounts).
   const RANGE_INPUTS = [['pos-f-from', 'pos-f-to'], ['sc-f-from', 'sc-f-to'], ['sb-f-from', 'sb-f-to'], ['mm-from', 'mm-to'], ['mm-pay-f-from', 'mm-pay-f-to']];
+  let bar = null, strip = null;
 
   root.innerHTML =
-    // Branch Operations Summary (Ren, 2026-10-07) -- mounted below once the tabs exist.
-    '<div id="branch-ops-root"></div>' +
-    // Forfeited-layaway warning for the selected branch (Ren, 2026-09-21, section 2)
-    // -- parked inside the Global Activity panel's pinned slot once the feed mounts
-    // (spec 312/326); hidden until refreshForfeitedNotice() finds something.
+    '<div id="ops-bar-root"></div>' +
+    '<div id="ops-strip-root"></div>' +
+    // Forfeited-layaway warning for the selected branch (Ren, 2026-09-21, section 2) -- parked inside the Global Activity panel's pinned slot
+    // once the feed mounts (spec 312/326); hidden until refreshForfeitedNotice() finds something.
     '<div id="pos-forfeited-notice" class="act-pinned-warning" style="display:none;"></div>' +
-    // Each tab (POS/Layaway/Scrap/Subasta) relocates its own Search/date-range card
-    // into #tab-filters-slot (same appendChild-relocation pattern already used for
-    // the forfeited notice above, into the Activity feed's pinned slot) -- left of
-    // Branch on desktop, below it on mobile (Ren, 2026-09-24). showSubTab() below
-    // shows/hides whichever relocated card matches the active tab.
-    '<div class="branch-filter-row">' +
-      '<div class="card branch-card">' +
-        '<h3>Branch</h3>' +
-        '<div id="branch-buttons" style="display:flex;gap:8px;flex-wrap:wrap;"></div>' +
-      '</div>' +
-      '<div id="tab-filters-slot" class="branch-filter-slot"></div>' +
-    '</div>' +
-    '<div id="scrap-sub-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 14px;"></div>' +
-
+    // Each tab relocates its own secondary filters (status, metal, sort ...) into #tab-filters-slot; showSubTab() shows the one that matches
+    // the active tab. (Search and the date range are the bar's.)
+    '<div id="tab-filters-slot" class="branch-filter-slot"></div>' +
     '<div id="tab-panel-pos">' +
       '<h2>POS Walk In &amp; COD <span class="muted" id="pos-branch-label" style="font-weight:normal;"></span></h2>' +
       '<div id="pos-root"></div>' +
     '</div>' +
     '<div id="tab-panel-layaway" style="display:none;">' +
-      '<h2>Layaway <span class="muted" id="layaway-branch-label" style="font-weight:normal;"></span></h2>' +
       '<div id="layaway-root"></div>' +
     '</div>' +
     '<div id="tab-panel-scrap" style="display:none;">' +
@@ -117,67 +106,57 @@ async function mountBranches(visibleBranches, branches) {
       '<div id="subasta-root"></div>' +
     '</div>';
 
-  renderBranchButtons();
-  renderScrapSubTabs();
-
   const common = {
     esc, toast, msgId: 'br-msg', getBranchId: () => selectedBranch, employee,
-    getRange: () => range, requestRange: (preset) => { if (ops) ops.setPreset(preset); },
+    getRange: () => range, requestRange: (preset) => { if (bar) bar.setPreset(preset); },
   };
-  pos = await initPosTab({ root: document.getElementById('pos-root'), ...common, branches, onCountUpdate: (count) => { posCount = count; renderScrapSubTabs(); } });
-  layaway = await initLayawayTab({ root: document.getElementById('layaway-root'), ...common, branches, onCountUpdate: (count) => { layawayCount = count; renderScrapSubTabs(); } });
-  scrap = await initScrapTab({ root: document.getElementById('scrap-root'), ...common, branches, onCountUpdate: (count) => { scrapCount = count; renderScrapSubTabs(); } });
-  subasta = await initSubastaTab({ root: document.getElementById('subasta-root'), ...common, branches, onCountUpdate: (count) => { subastaCount = count; renderScrapSubTabs(); } });
+  const counted = (key) => (count) => { counts[key] = count; if (bar) { bar.renderTabs(); bar.renderAction(); } };
+  mods.pos = await initPosTab({ root: document.getElementById('pos-root'), ...common, branches, onCountUpdate: counted('pos') });
+  mods.layaway = await initLayawayTab({ root: document.getElementById('layaway-root'), ...common, branches, onCountUpdate: counted('layaway') });
+  mods.scrap = await initScrapTab({ root: document.getElementById('scrap-root'), ...common, branches, onCountUpdate: counted('scrap') });
+  mods.subasta = await initSubastaTab({ root: document.getElementById('subasta-root'), ...common, branches, onCountUpdate: counted('subasta') });
   await refreshForfeitedNotice();
-  // Someone forfeiting a hold (or Admin reopening one) from the Layaway tab should
-  // update the warning without needing a branch switch to refresh it.
+  // Someone forfeiting a hold (or Admin reopening one) from the Layaway tab should update the warning without needing a branch switch to refresh it.
   subscribeToChanges('layaway_holds', refreshForfeitedNotice);
 
-  // The summary is mounted last and wrapped so that, whatever happens inside it, the four
-  // working tabs above are already up and untouched.
+  // The bar owns the one set of controls: the modules' own "+ New ..." buttons and Search boxes stay in the page (their code and the
+  // empty-state shortcuts still use them) but are not shown -- the bar's Search and action button drive them.
+  TABS.forEach((t) => {
+    document.getElementById(t.newBtn)?.classList.add('km-proxied');
+    document.getElementById(t.search)?.closest('.field')?.classList.add('km-proxied');
+  });
+
+  // The compact summary row and the bar are mounted last and wrapped so that, whatever happens inside them, the four working tabs above are
+  // already up and untouched.
   try {
-    ops = initBranchOps({
-      root: document.getElementById('branch-ops-root'), esc, branches,
-      visibleBranchIds: visibleBranches.map((b) => b.id),
-      getBranchId: () => selectedBranch, selectBranch, showTab: openTab,
-      onRangeChange: (r) => { range = r; applyRangeToTabs(r); },
-      onData: renderScrapSubTabs,
+    strip = initOpsStrip({
+      root: document.getElementById('ops-strip-root'), esc, branches, getBranchId: () => selectedBranch, getRange: () => range, showTab: openTab,
+      onData: () => { if (bar) bar.renderTabs(); },
       // Admin only (set_branch_ops_setting() checks it again server-side): deadline rule, reminder schedule, branch visibility.
       onOpenSettings: employee.role === 'Admin'
         ? () => openOpsSettings({ esc, onSaved: async (keys) => {
           // Switching branch visibility changes which branches this very page may show -- start fresh.
           if (keys && keys.includes('branch_view_enforced')) { setTimeout(() => window.location.reload(), 700); return; }
-          await Promise.all([layaway?.reload(), scrap?.reload(), subasta?.reload(), ops ? ops.refresh() : null]);
+          await Promise.all([mods.layaway?.reload(), mods.scrap?.reload(), mods.subasta?.reload(), strip ? strip.refresh() : null]);
         } })
         : undefined,
     });
   } catch (err) {
-    console.error('Branch Operations Summary failed to start', err);
-    document.getElementById('branch-ops-root').innerHTML = '<div class="msg error">The summary could not be loaded -- the tabs below still work. (' + esc(err.message || err) + ')</div>';
+    console.error('Branch summary row failed to start', err);
+    document.getElementById('ops-strip-root').innerHTML = '';
   }
+  bar = initOpsBar({
+    root: document.getElementById('ops-bar-root'), esc, branches, visibleBranches, getBranchId: () => selectedBranch, onBranch: selectBranch,
+    tabs: TABS, getTab: () => activeSubTab, onTab: showSubTab,
+    tabInfo: (key) => ({ count: counts[key], urgent: (strip ? strip.getUrgent(selectedBranch) : {})[key] || null }),
+    actionInfo: (key) => { const t = TABS.find((x) => x.key === key); const b = document.getElementById(t.newBtn); return { label: t.action, disabled: !b || b.disabled }; },
+    onAction: (key) => { const b = document.getElementById(TABS.find((x) => x.key === key).newBtn); if (b && !b.disabled) b.click(); },
+    // The search text goes to the module on show -- its own (hidden) search box does the filtering, exactly as if it had been typed there.
+    onSearch: (key, text) => { const el = document.getElementById(TABS.find((x) => x.key === key).search); if (el) { el.value = text; el.dispatchEvent(new Event('input', { bubbles: true })); } },
+    onRange: (r) => { range = r; applyRangeToTabs(r); if (strip) strip.refresh(); bar.renderTabs(); },
+  });
+  showSubTab(activeSubTab);
 
-  // ---- tab bar: POS first (the main day-to-day action), then Layaway, Scrap,
-  // Subasta. All four stay mounted so switching never loses a filter or an open
-  // drawer; each pill's count follows that module's own active filters, and a red/amber
-  // badge flags what needs action in the selected branch ("Layaway 34 · 3 overdue"). ----
-  function renderScrapSubTabs() {
-    const urgent = ops ? ops.getUrgent(selectedBranch) : {};
-    const pill = (key, label, dot, count) => {
-      const active = activeSubTab === key;
-      const u = urgent[key];
-      return '<button type="button" data-tab="' + key + '" style="cursor:pointer;font:inherit;padding:8px 16px;border-radius:20px;display:inline-flex;align-items:center;gap:7px;' +
-        (active ? 'background:var(--rose);border:1px solid var(--rose);color:var(--ink);font-weight:600;' : 'background:#fff;border:1px solid #ddd;color:#555;') + '">' +
-        '<span style="width:8px;height:8px;border-radius:50%;background:' + dot + ';display:inline-block;"></span>' + esc(label) +
-        '<span style="background:' + (active ? 'rgba(255,255,255,0.65)' : '#f0f0f0') + ';border-radius:10px;padding:1px 7px;font-size:11px;">' + count + '</span>' +
-        (u ? '<span class="tab-urgent tone-' + u.tone + '">' + esc(u.text) + '</span>' : '') +
-      '</button>';
-    };
-    const box = document.getElementById('scrap-sub-tabs');
-    box.innerHTML = pill('pos', 'POS Walk In & COD', '#2e7d32', posCount) +
-      pill('layaway', 'Layaway', '#c2185b', layawayCount) +
-      pill('scrap', 'Scrap', '#b06a1f', scrapCount) + pill('subasta', 'Subasta', '#7c3aa8', subastaCount);
-    box.querySelectorAll('[data-tab]').forEach((btn) => btn.addEventListener('click', () => showSubTab(btn.dataset.tab)));
-  }
   function showSubTab(key) {
     if (!SUB_TABS.includes(key)) return;
     activeSubTab = key;
@@ -185,24 +164,22 @@ async function mountBranches(visibleBranches, branches) {
     document.querySelectorAll('#tab-filters-slot [data-filter-tab]').forEach((el) => {
       el.style.display = el.dataset.filterTab === activeSubTab ? '' : 'none';
     });
-    renderScrapSubTabs();
+    if (bar) { bar.renderTabs(); bar.renderAction(); bar.syncSearch(); }
   }
-  // A summary card / Needs Attention item: switch to the tab, then let the tab scroll to or
-  // filter down to what was clicked (each tab decides what a "view" means; one without
-  // applyView just opens).
+  // A summary row / Needs Attention chip / Branch Dashboard link: switch to the tab, then let the tab scroll to or filter down to what was
+  // clicked (each tab decides what a "view" means; one without applyView just opens).
   function openTab(key, view) {
-    // Views about what is still open today (a ₱0 sale, an uncollected COD, a pending pickup, a scrap
-    // purchase not fully paid) have to look across all dates, not just the selected range.
-    if (['zero', 'cod', 'pickup', 'unpaid'].includes(view) && ops && ops.getRange().preset !== 'all') ops.setPreset('all');
+    // Views about what is still open today (a ₱0 sale, an uncollected COD, a pending pickup, a purchase or sale not fully paid) have to look
+    // across all dates, not just the selected range.
+    if (['zero', 'cod', 'pickup', 'unpaid'].includes(view) && bar && bar.getRange().preset !== 'all') bar.setPreset('all');
     showSubTab(key);
-    const mod = { pos, layaway, scrap, subasta }[key];
+    const mod = mods[key];
     if (view && mod && mod.applyView) mod.applyView(view);
     else document.getElementById('tab-panel-' + key)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  // The global date range drives every tab's own From/To (those inputs are hidden -- the
-  // range lives in the summary). One 'change' event per pair makes the tab re-render;
-  // "All Time" leaves them open-ended.
+  // The global date range drives every tab's own From/To (those inputs are hidden -- the range lives in the bar). One 'change' event per pair
+  // makes the tab re-render; "All Time" leaves them open-ended.
   function applyRangeToTabs(r) {
     const from = r.preset === 'all' ? '' : r.from;
     const to = r.preset === 'all' ? '' : r.to;
@@ -215,13 +192,22 @@ async function mountBranches(visibleBranches, branches) {
   }
 
   async function selectBranch(id) {
-    if (id === selectedBranch || !visibleBranches.some((b) => b.id === id)) return;
+    if (id === selectedBranch || !canSee(id)) return;
     selectedBranch = id;
-    renderBranchButtons();
-    if (ops) ops.setBranch();
-    renderScrapSubTabs();
-    await Promise.all([pos?.reload(), layaway?.reload(), scrap?.reload(), subasta?.reload(), refreshForfeitedNotice()]);
+    saveBranchPref(id);
+    renderBranchLabels();
+    if (bar) { bar.renderBranches(); bar.renderTabs(); }
+    if (strip) { strip.render(); strip.refresh(); }
+    await Promise.all([mods.pos?.reload(), mods.layaway?.reload(), mods.scrap?.reload(), mods.subasta?.reload(), refreshForfeitedNotice()]);
+    if (bar) bar.renderAction();
   }
+  function renderBranchLabels() {
+    const label = ' — ' + branchName(selectedBranch);
+    document.getElementById('pos-branch-label').textContent = label;
+    document.getElementById('scrap-branch-label').textContent = label;
+    document.getElementById('sub-branch-label').textContent = label;
+  }
+  renderBranchLabels();
 
   // ---- Global Activity feed integration (spec 312/321) ----
   // (a) The Forfeited notice moves into the feed panel's pinned slot so there's one
@@ -242,39 +228,23 @@ async function mountBranches(visibleBranches, branches) {
     if (mod && mod.openDetail(id) !== false) return;
     try {
       const b = await getRecordBranch(table, id);
-      if (b != null && b !== selectedBranch && visibleBranches.some((v) => v.id === b)) {
+      if (b != null && b !== selectedBranch && canSee(b)) {
         await selectBranch(b);
         mod.openDetail(id);
       }
     } catch (err) { /* not found / not visible: nothing to open */ }
   }
   const openers = {
-    pos_sale: (id) => openRecord('pos', pos, 'pos_sale', id),
-    layaway_holds: (id) => openRecord('layaway', layaway, 'layaway_holds', Number(id)),
-    scrap_entries: (id) => openRecord('scrap', scrap, 'scrap_entries', Number(id)),
-    subasta_items: (id) => openRecord('subasta', subasta, 'subasta_items', Number(id)),
+    pos_sale: (id) => openRecord('pos', mods.pos, 'pos_sale', id),
+    layaway_holds: (id) => openRecord('layaway', mods.layaway, 'layaway_holds', Number(id)),
+    scrap_entries: (id) => openRecord('scrap', mods.scrap, 'scrap_entries', Number(id)),
+    subasta_items: (id) => openRecord('subasta', mods.subasta, 'subasta_items', Number(id)),
   };
   window.__kmOpenRecord = (table, id) => { if (!openers[table]) return false; openers[table](id); return true; };
-  const deepLink = new URLSearchParams(window.location.search);
   const tabToTable = { pos: 'pos_sale', layaway: 'layaway_holds', scrap: 'scrap_entries', subasta: 'subasta_items' };
-  if (deepLink.get('tab')) showSubTab(deepLink.get('tab'));
+  // ?branch=&tab=&view= -- how a Branch Dashboard card opens the exact place (branch + module + view); ?tab=&open= -- an activity notification.
+  if (deepLink.get('tab') && SUB_TABS.includes(deepLink.get('tab'))) openTab(deepLink.get('tab'), deepLink.get('view'));
   if (deepLink.get('open') && tabToTable[deepLink.get('tab')]) openers[tabToTable[deepLink.get('tab')]](deepLink.get('open'));
-
-  function renderBranchButtons() {
-    const box = document.getElementById('branch-buttons');
-    // Only the branches this employee may see (viewable_branch_ids(): own branch + any
-    // assigned ones, or everything for company-wide roles); each module still decides on
-    // its own whether the signed-in employee may add/edit for the selected branch.
-    box.innerHTML = visibleBranches.map((b) =>
-      '<button type="button" class="btn" style="' + branchButtonStyle(b.id, branches, b.id === selectedBranch) + '" data-id="' + b.id + '">' + esc(b.name) + '</button>'
-    ).join('');
-    box.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', () => selectBranch(Number(btn.dataset.id))));
-    const label = ' — ' + branchName(selectedBranch);
-    document.getElementById('pos-branch-label').textContent = label;
-    document.getElementById('layaway-branch-label').textContent = label;
-    document.getElementById('scrap-branch-label').textContent = label;
-    document.getElementById('sub-branch-label').textContent = label;
-  }
 
   // Ren, 2026-09-21, section 2: "If a layaway transaction has already been marked as
   // FORFEITED, show a small notification/note inside the POS ... should NOT block
