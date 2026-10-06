@@ -2,8 +2,8 @@
 // chosen in the bar, how busy each module is -- "PACIFIC MALL · POS 33 sales · Layaway 34 active · 3 overdue · Scrap 27 entries · Subasta 8 listed" --
 // plus the few things that need action. The full analytics (cards, comparison between branches, the whole Needs Attention list) live on
 // POS -> Branch Dashboard. Same server reports (branch_ops_summary / branch_ops_attention), so the numbers are the dashboard's.
-import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007o';
-import { ATTENTION_KINDS, urgentFrom, money, num } from './opsAttention.js?v=20261007o';
+import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007p';
+import { ATTENTION_KINDS, urgentFrom, money, num } from './opsAttention.js?v=20261007p';
 
 /** Options: root, esc, branches (all active), getBranchId(), getRange() -> { from, to, label }, showTab(tab, view), onData() (the module pills re-draw their badges).
  * Returns { refresh, render, getUrgent(branchId) }. Never throws into the page. */

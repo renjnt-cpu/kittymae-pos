@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261007o">
+<link rel="stylesheet" href="css/styles.css?v=20261007p">
 </head>
 <body>
 <main>
@@ -19,18 +19,18 @@
 // the full Needs Attention list -- moved to POS -> Branch Dashboard. Each module is still its own self-contained tab module mounted into
 // its own root -- this page only owns the branch selection, the sticky bar, the forfeited-layaway warning, the deep links and the
 // activity-feed links. Online Orders used to live here too -- moved to its own ERP-only page (Ren, 2026-09-24).
-import { initShell, toast, esc } from './js/shell.js?v=20261007o';
-import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007o';
-import { renderPosNav } from './js/posNav.js?v=20261007o';
-import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007o';
-import { getInitialRange, loadBranchPref, saveBranchPref } from './js/opsPrefs.js?v=20261007o';
-import { initOpsBar } from './js/opsBar.js?v=20261007o';
-import { initOpsStrip } from './js/opsStrip.js?v=20261007o';
-import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007o';
-import { initPosTab } from './js/posTab.js?v=20261007o';
-import { initLayawayTab } from './js/layawayTab.js?v=20261007o';
-import { initScrapTab } from './js/scrapTab.js?v=20261007o';
-import { initSubastaTab } from './js/subastaTab.js?v=20261007o';
+import { initShell, toast, esc } from './js/shell.js?v=20261007p';
+import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007p';
+import { renderPosNav } from './js/posNav.js?v=20261007p';
+import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007p';
+import { getInitialRange, loadBranchPref, saveBranchPref } from './js/opsPrefs.js?v=20261007p';
+import { initOpsBar } from './js/opsBar.js?v=20261007p';
+import { initOpsStrip } from './js/opsStrip.js?v=20261007p';
+import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007p';
+import { initPosTab } from './js/posTab.js?v=20261007p';
+import { initLayawayTab } from './js/layawayTab.js?v=20261007p';
+import { initScrapTab } from './js/scrapTab.js?v=20261007p';
+import { initSubastaTab } from './js/subastaTab.js?v=20261007p';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
