@@ -18,16 +18,18 @@ import {
   uploadScrapAttachment, uploadScrapPaymentProof, getScrapAttachmentUrl, convertScrapToSubasta,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges,
-} from './api.js?v=20261007l';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007l';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261007l';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007l';
-import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007l';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007l';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007l';
-import { attachCustomerPicker } from './customerPicker.js?v=20261007l';
-import { manilaToday } from './opsDates.js?v=20261007l';
-import { friendlyError } from './shell.js?v=20261007l';
+} from './api.js?v=20261007m';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007m';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261007m';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007m';
+import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007m';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007m';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007m';
+import { attachCustomerPicker } from './customerPicker.js?v=20261007m';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007m';
+import { GOLD_PURITIES, SILVER_PURITIES } from './metals.js?v=20261007m';
+import { manilaToday } from './opsDates.js?v=20261007m';
+import { friendlyError } from './shell.js?v=20261007m';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 18): Scrap sortable by Date/Metal-Purity/Customer/Type/Weight/Amount.
 const SC_SORT_FIELDS = [
@@ -61,8 +63,6 @@ const KINDS = ['Bought from Customer', 'Transferred In', 'Transferred Out', 'Ref
 const KIND_TONE = { 'Bought from Customer': 'green', 'Transferred In': 'blue', 'Transferred Out': 'yellow', 'Refiner / Other': 'gray' };
 const KIND_SHORT = { 'Bought from Customer': 'Bought', 'Transferred In': 'Transfer in', 'Transferred Out': 'Transfer out', 'Refiner / Other': 'Refiner / other' };
 const SOURCE_TYPES = ['Walk-In', 'Returning Customer', 'Referral', 'Other'];
-const GOLD_PURITIES = ['10K', '14K', '16K', '18K', '21K', '22K', '24K'];
-const SILVER_PURITIES = ['999', '925', '800'];
 const PURITY_BUCKETS = [...GOLD_PURITIES, 'Other'];
 const isMoneyKind = (k) => k === 'Bought from Customer' || k === 'Refiner / Other';
 const isTransferKind = (k) => k === 'Transferred In' || k === 'Transferred Out';
@@ -229,22 +229,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
           '</div>' +
           '<div class="drawer-section" data-sec="money">' +
             '<h4>Payment</h4>' +
-            '<div class="lw-note-box" id="sc-pay-summary" style="margin-bottom:8px;"></div>' +
-            [0, 1, 2].map((i) =>
-              '<div class="sc-payrow" data-i="' + i + '"' + (i ? ' hidden' : '') + '>' +
-                '<div class="sc-payrow-head"><b>Payment ' + (i + 1) + '</b><span class="muted">recorded by ' + esc(employee.full_name || 'you') + '</span></div>' +
-                '<div class="sc-row2">' +
-                  '<div class="field"><label>Method</label><select name="payMethod' + i + '">' + PAYMENT_METHODS.map((m) => '<option>' + m + '</option>').join('') + '</select></div>' +
-                  '<div class="field"><label>Amount (₱)</label><input type="number" name="payAmount' + i + '" step="0.01" min="0" inputmode="decimal"></div>' +
-                '</div>' +
-                '<div class="sc-row2">' +
-                  '<div class="field"><label>Date sent / paid</label><input type="date" name="payDate' + i + '"></div>' +
-                  '<div class="field"><label>Reference number</label><input type="text" name="payRef' + i + '"></div>' +
-                '</div>' +
-                '<div class="field"><label>Proof of payment</label><input type="file" name="payProof' + i + '" accept="image/*,.pdf"></div>' +
-              '</div>').join('') +
-            '<button type="button" class="btn small secondary" id="sc-add-payrow">+ Add another payment</button>' +
-            '<p class="muted" style="font-size:11px;margin:6px 0 0;">Leave the amount blank to record the purchase as unpaid and pay it later (e.g. a customer paid by bank transfer the next day).</p>' +
+            '<div id="sc-pay-box">' + paymentRowsHtml({ recorder: employee.full_name || 'you', hint: 'Leave the amount blank to record the purchase as unpaid and pay it later (e.g. a customer paid by bank transfer the next day).' }) + '</div>' +
           '</div>' +
           '<div class="drawer-section">' +
             '<h4>Notes &amp; photo</h4>' +
@@ -319,21 +304,13 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
   // ---------------------------------------------------------------------------------------------
   const form = $('sc-form');
   const today = () => manilaToday();
-  function payRows() { return [0, 1, 2].map((i) => form.querySelector('.sc-payrow[data-i="' + i + '"]')); }
-
-  function paySummary() {
-    const box = $('sc-pay-summary');
-    if (!isMoneyKind(fe(form, 'kind').value)) { box.textContent = ''; return; }
-    const { final } = calcAmountsQuiet();
-    let paying = 0;
-    payRows().forEach((row, i) => { if (!row.hidden) paying += Number(fe(form, 'payAmount' + i).value) || 0; });
-    const st = paymentStatusOf(final, paying);
-    box.innerHTML = final > 0
-      ? 'Final amount <b>' + money(final) + '</b> · paying now <b>' + money(paying) + '</b> · balance <b>' + money(Math.max(final - paying, 0)) + '</b> → ' +
-          (paying > final + 0.01 ? '<span class="badge st-red">MORE THAN THE FINAL AMOUNT</span>' : paymentChipHtml(st))
-      : 'Enter the weight and price to see what is owed.';
-  }
-  function calcAmountsQuiet() { return calcAmounts(form); }
+  // The payment rows are the shared component (js/paymentRows.js): what is due is the final amount of a money entry
+  // (nothing is due on a transfer), and no payment may be dated before the purchase.
+  const pay = mountPaymentRows($('sc-pay-box'), {
+    getDue: () => (isMoneyKind(fe(form, 'kind').value) ? Number(fe(form, 'final').value) || 0 : 0),
+    getMinDate: () => fe(form, 'entryDate').value || '', minDateLabel: 'purchase date', dueLabel: 'Final amount',
+    emptyText: 'Enter the weight and price to see what is owed.',
+  });
 
   function applyKind() {
     const kind = fe(form, 'kind').value;
@@ -347,7 +324,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     const here = getBranchId();
     sel.innerHTML = '<option value="">— choose branch —</option>' + (branches || []).filter((b) => b.id !== here)
       .map((b) => '<option value="' + b.id + '">' + esc(b.name) + '</option>').join('');
-    paySummary();
+    pay.sync();
   }
   function showFormError(message, el) {
     const box = $('sc-form-err');
@@ -363,33 +340,18 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     $('sc-form-branch').value = branchName(getBranchId());
     setPurity(form, 'Gold', '18K');
     fe(form, 'gross').readOnly = false;
-    payRows().forEach((row, i) => {
-      row.hidden = i > 0;
-      fe(form, 'payDate' + i).value = today(); fe(form, 'payDate' + i).max = today();
-      delete fe(form, 'payAmount' + i).dataset.touched;
-    });
-    $('sc-add-payrow').hidden = false;
     // Transfers are a supervisor's job (the database checks it too): hide the types this person cannot record.
     fe(form, 'kind').innerHTML = KINDS.filter((k) => !isTransferKind(k) || canTransfer()).map((k) => '<option>' + k + '</option>').join('');
     calcAmounts(form);
+    pay.reset();
     applyKind();
   }
 
   wirePurity(form);
-  wireAmounts(form, () => {
-    // Until someone types in it, the first payment follows the final amount (most purchases are paid in full on the spot).
-    const a0 = fe(form, 'payAmount0');
-    if (!a0.dataset.touched && isMoneyKind(fe(form, 'kind').value)) { const f = Number(fe(form, 'final').value) || 0; a0.value = f > 0 ? f.toFixed(2) : ''; }
-    paySummary();
-  });
-  fe(form, 'kind').addEventListener('change', () => { applyKind(); const a = calcAmounts(form); const a0 = fe(form, 'payAmount0'); if (!a0.dataset.touched) a0.value = isMoneyKind(fe(form, 'kind').value) && a.final > 0 ? a.final.toFixed(2) : ''; paySummary(); });
-  [0, 1, 2].forEach((i) => fe(form, 'payAmount' + i).addEventListener('input', () => { fe(form, 'payAmount' + i).dataset.touched = '1'; paySummary(); }));
-  $('sc-add-payrow').addEventListener('click', () => {
-    const next = payRows().find((row) => row.hidden);
-    if (next) { next.hidden = false; const i = Number(next.dataset.i); if (!fe(form, 'payAmount' + i).value) fe(form, 'payAmount' + i).focus(); }
-    if (!payRows().some((row) => row.hidden)) $('sc-add-payrow').hidden = true;
-    paySummary();
-  });
+  // Until someone types in it, the first payment follows the final amount (most purchases are paid in full on the spot).
+  wireAmounts(form, () => pay.sync());
+  fe(form, 'kind').addEventListener('change', () => { calcAmounts(form); applyKind(); });
+  fe(form, 'entryDate').addEventListener('change', () => pay.sync());
   attachCustomerPicker({ nameInput: fe(form, 'customer'), contactInput: fe(form, 'contact'), addressInput: fe(form, 'address') });
 
   const openFormDrawer = () => { resetForm(); $('sc-form-backdrop').classList.add('open'); $('sc-form-drawer').classList.add('open'); };
@@ -423,20 +385,9 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       if (kind === 'Bought from Customer' && !fe(form, 'customer').value.trim() && !fe(form, 'sourceType').value && !fe(form, 'source').value.trim()) {
         return void fail('Enter the customer name (or choose where this came from).', fe(form, 'customer'));
       }
-      let sum = 0;
-      for (let i = 0; i < 3; i++) {
-        if (payRows()[i].hidden) continue;
-        const raw = fe(form, 'payAmount' + i).value;
-        if (raw === '') continue;
-        const amount = Number(raw);
-        if (!(amount > 0)) return void fail('A payment must be more than ₱0.', fe(form, 'payAmount' + i));
-        const paidAt = fe(form, 'payDate' + i).value || today();
-        if (paidAt > today()) return void fail('A payment date cannot be in the future.', fe(form, 'payDate' + i));
-        if (paidAt < entryDate) return void fail('A payment date cannot be before the purchase date.', fe(form, 'payDate' + i));
-        sum += amount;
-        payments.push({ method: fe(form, 'payMethod' + i).value, amount: r2(amount), reference: fe(form, 'payRef' + i).value.trim(), paidAt, file: fe(form, 'payProof' + i).files[0] || null });
-      }
-      if (sum > a.final + 0.01) return void fail('The payments (' + money(sum) + ') add up to more than the final amount (' + money(a.final) + ').', fe(form, 'payAmount0'));
+      const got = pay.read();
+      if (got.error) return void fail(got.error, got.el);
+      payments = got.payments;
     }
 
     const btn = $('sc-form-submit');

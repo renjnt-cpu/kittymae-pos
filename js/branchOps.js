@@ -5,8 +5,8 @@
 // keep their own search/filters; this module owns only the date range (pushed to them
 // through onRangeChange) and the at-a-glance picture. Layaway deadlines/overdue and pending
 // approvals deliberately ignore the date range -- they describe what needs action today.
-import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007l';
-import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261007l';
+import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007m';
+import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261007m';
 
 const STORE_KEY = 'km-branch-ops-v1';
 
@@ -52,6 +52,9 @@ export const ATTENTION_KINDS = {
   layaway_lacking:          { rank: 10, tone: 'info', tab: 'layaway', view: 'lacking',  text: (n) => plural(n, 'layaway item') + ' waiting for stock' },
   scrap_unpaid:             { rank: 3, tone: 'bad',  tab: 'scrap',   view: 'unpaid',    text: (n, a) => plural(n, 'scrap purchase') + ' not fully paid' + (a ? ' — ' + money(a) + ' owed to customers' : '') },
   pending_scrap_request:    { rank: 4, tone: 'warn', tab: 'scrap',   view: 'requests',  text: (n, a) => plural(n, 'scrap delete request') + ' awaiting approval' + (a ? ' — ' + money(a) : '') },
+  subasta_unpaid:           { rank: 3, tone: 'bad',  tab: 'subasta', view: 'unpaid',    text: (n, a) => plural(n, 'sold Subasta item') + ' not fully paid' + (a ? ' — ' + money(a) + ' still owed by buyers' : '') },
+  pending_subasta_request:  { rank: 4, tone: 'warn', tab: 'subasta', view: 'requests',  text: (n, a) => plural(n, 'Subasta delete request') + ' awaiting approval' + (a ? ' — ' + money(a) : '') },
+  subasta_eligible:         { rank: 9, tone: 'info', tab: 'subasta', view: 'eligible',  text: (n) => plural(n, 'Subasta item') + ' eligible for auction but not listed yet' },
 };
 
 function loadPrefs() {
@@ -181,8 +184,12 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
       card({ label: 'Scrap Purchased', value: money(scr.purchased), sub: plural(scr.entries || 0, 'entry', 'entries'), tab: 'scrap', view: scr.unpaid_entries ? 'unpaid' : '', tone: scr.unpaid_entries ? 'bad' : '',
         extra: scr.unpaid_entries ? '<span class="ops-flag">' + money(scr.unpaid_balance) + ' unpaid · ' + plural(scr.unpaid_entries, 'purchase') + '</span>' : '' }),
       card({ label: 'Scrap Grams', value: grams(scr.grams), sub: scr.grams ? 'avg ' + money(avgGram) + ' per gram' : 'none bought in this range', tab: 'scrap' }),
-      card({ label: 'Subasta Listed', value: num(sub.listed_now), tag: 'right now', sub: num(sub.pending_now) + ' pending', tab: 'subasta' }),
-      card({ label: 'Subasta Sold', value: num(sub.sold), sub: sub.sold ? money(sub.sales) + ' in sales' : 'none sold in this range', tab: 'subasta' }),
+      card({ label: 'Subasta Listed', value: num(sub.listed_now), tag: 'right now', sub: num(sub.pending_now) + ' pending' + (sub.hold_now ? ' · ' + num(sub.hold_now) + ' on hold' : ''), tab: 'subasta',
+        view: sub.eligible_now ? 'eligible' : '', tone: sub.eligible_now ? 'warn' : '',
+        extra: sub.eligible_now ? '<span class="ops-flag warn">' + plural(sub.eligible_now, 'item') + ' eligible to list</span>' : '' }),
+      card({ label: 'Subasta Sold', value: num(sub.sold), sub: sub.sold ? money(sub.sales) + ' in sales' : 'none sold in this range', tab: 'subasta',
+        view: sub.unpaid_entries ? 'unpaid' : '', tone: sub.unpaid_entries ? 'bad' : '',
+        extra: sub.unpaid_entries ? '<span class="ops-flag">' + money(sub.unpaid_balance) + ' unpaid · ' + plural(sub.unpaid_entries, 'sold item') + '</span>' : '' }),
       card({ label: 'Total Branch Cash Received', value: money(rec.total), sub: topMethods || 'nothing received in this range', tab: 'pos' }),
       card({ label: 'Pending Approvals', value: num(pen.total), tag: 'right now', tab: 'layaway', view: 'approvals', tone: pen.total ? 'warn' : '',
         sub: penParts.length ? penParts.join(' · ') : 'nothing waiting' }),
@@ -304,7 +311,7 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
   subscribeToChanges([
     'sales_inventory_movements', 'sale_payments', 'layaway_holds', 'layaway_payments', 'scrap_entries', 'subasta_items',
     'layaway_forfeit_date_requests', 'layaway_item_change_requests', 'layaway_payment_deletion_requests', 'layaway_hold_deletion_requests',
-    'layaway_forfeit_requests', 'layaway_reminders', 'scrap_payments', 'branch_record_requests',
+    'layaway_forfeit_requests', 'layaway_reminders', 'scrap_payments', 'subasta_payments', 'branch_record_requests',
   ], () => { clearTimeout(timer); timer = setTimeout(refresh, 1500); });
 
   renderAll();
@@ -330,6 +337,9 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
       if (n('cod_pending')) out.pos = { text: n('cod_pending') + ' COD', tone: 'warn' };
       if (n('scrap_unpaid')) out.scrap = { text: n('scrap_unpaid') + ' unpaid', tone: 'bad' };
       else if (n('pending_scrap_request')) out.scrap = { text: n('pending_scrap_request') + ' to approve', tone: 'warn' };
+      if (n('subasta_unpaid')) out.subasta = { text: n('subasta_unpaid') + ' unpaid', tone: 'bad' };
+      else if (n('pending_subasta_request')) out.subasta = { text: n('pending_subasta_request') + ' to approve', tone: 'warn' };
+      else if (n('subasta_eligible')) out.subasta = { text: n('subasta_eligible') + ' to list', tone: 'warn' };
       return out;
     },
   };

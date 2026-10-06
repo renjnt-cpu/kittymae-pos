@@ -6,7 +6,10 @@
 // person can pick -- keep it in sync with the identical file in kittymae-inventory-v2
 // (no shared asset pipeline between the two GitHub Pages repos, so each app keeps
 // its own copy, same as every other shared-but-duplicated file in this codebase).
-export const PAYMENT_METHODS = ['Cash', 'Terminal', 'Store Sales Cash', 'GCash', 'Bank Transfer', 'Other'];
+// "Maya" was added 2026-10-07 (the Sales & Profit Dashboard already groups it as its own method). There is deliberately no
+// separate "Card": "Terminal" is the card terminal and the dashboard reports it as Credit/Debit Card, so a second card
+// label would split one method into two buckets.
+export const PAYMENT_METHODS = ['Cash', 'Terminal', 'Store Sales Cash', 'GCash', 'Maya', 'Bank Transfer', 'Other'];
 
 // COD (Cash on Delivery) is POS-specific (Ren's spec section 185: "Add COD as POS
 // payment method") -- it doesn't apply to a Layaway installment or a Scrap buy, so

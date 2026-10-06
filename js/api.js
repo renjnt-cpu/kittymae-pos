@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20261007l';
-import { localDateStr } from './uiKit.js?v=20261007l';
+import { supabase } from './supabaseClient.js?v=20261007m';
+import { localDateStr } from './uiKit.js?v=20261007m';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -579,76 +579,131 @@ export async function removeBillAttachment(billId, path) {
   if (error) throw new Error(error.message);
 }
 
-// ---- Subasta (auction of unredeemed pawned items) — per branch, Admin/Manager see
-// everything, Branch Supervisor sees/manages only their own branch (RLS-enforced). ----
+// ---- Subasta (auction of unredeemed pawned items) -- per branch. Upgraded 2026-10-07: every change now goes through a
+// database function (migration 178) that checks the rules (what may be listed / sold / held, payments against the sale price),
+// who may do it, and writes the audit trail -- the screen never inserts, edits or deletes the tables directly any more. ----
 
-/** branchId narrows the query server-side -- branches.html only ever shows one
- * branch at a time, so fetching every branch's full history on every load/switch
- * (and re-filtering it client-side) got slower as the table grew for no reason. */
+/** branchId narrows the query server-side -- branches.html only ever shows one branch at a time, so fetching every
+ * branch's full history on every load/switch (and re-filtering it client-side) got slower as the table grew for no reason.
+ * No `branches(name)` embed on purpose: the page already knows the branch names, and a bare embed breaks (HTTP 300) the
+ * moment a second link between the two tables exists. */
 export async function listSubastaItems(branchId) {
   let query = supabase.from('subasta_items')
-    .select('*, branches(name), subasta_payments(*)')
-    .order('auction_eligible_date', { ascending: true, nullsFirst: false })
+    .select('*, subasta_payments(*)')
+    .order('pawn_date', { ascending: false, nullsFirst: false })
+    .order('id', { ascending: false })
     .limit(LEDGER_ROW_CAP);
   if (branchId != null) query = query.eq('branch_id', branchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return attachEmployeeNames(data, { creator: 'created_by' });
-}
-
-/** One payment method label for quick display/search -- the individual rows in
- * payments are still the source of truth (sums, cash-only balances, etc.). */
-function summarizePaymentMethod(payments) {
-  if (!payments || !payments.length) return null;
-  const methods = [...new Set(payments.map((p) => p.method))];
-  return methods.length === 1 ? methods[0] : 'Multiple';
-}
-
-/** Returns the new item's id so the Subasta drawer can switch straight to its
- * details after saving (Ren's spec 273). */
-export async function createSubastaItem({ branchId, sku, itemDescription, weightGrams, pawnReference, pawnDate, auctionEligibleDate, notes }) {
-  const empId = await currentEmployeeId();
-  const { data, error } = await supabase.from('subasta_items').insert({
-    branch_id: branchId, sku: sku || null, item_description: itemDescription,
-    weight_grams: weightGrams || null, pawn_reference: pawnReference || null, pawn_date: pawnDate || null,
-    auction_eligible_date: auctionEligibleDate || null, notes: notes || null,
-    created_by: empId,
-  }).select('id').single();
-  if (error) throw new Error(error.message);
-  return data.id;
-}
-
-/** payments (optional [{method, amount}]) lets a sale be split across methods -- when
- * given, it replaces any existing rows for this item and salePrice is recomputed as
- * their sum rather than trusting a separately-typed figure. */
-export async function updateSubastaItem(id, { branchId, sku, itemDescription, weightGrams, pawnReference, pawnDate, auctionEligibleDate, status, saleDate, salePrice, buyerName, notes, payments }) {
-  const effectiveSalePrice = payments && payments.length ? payments.reduce((s, p) => s + Number(p.amount || 0), 0) : (salePrice || null);
-  const { error } = await supabase.from('subasta_items').update({
-    branch_id: branchId, sku: sku || null, item_description: itemDescription,
-    weight_grams: weightGrams || null, pawn_reference: pawnReference || null, pawn_date: pawnDate || null,
-    auction_eligible_date: auctionEligibleDate || null, status,
-    sale_date: saleDate || null, sale_price: effectiveSalePrice, buyer_name: buyerName || null,
-    payment_method: payments && payments.length ? summarizePaymentMethod(payments) : null,
-    notes: notes || null, updated_at: new Date().toISOString(),
-  }).eq('id', id);
-  if (error) throw new Error(error.message);
-
-  if (payments) {
-    const { error: delErr } = await supabase.from('subasta_payments').delete().eq('subasta_item_id', id);
-    if (delErr) throw new Error(delErr.message);
-    if (payments.length) {
-      const rows = payments.filter((p) => p.amount > 0).map((p) => ({ subasta_item_id: id, payment_method: p.method, amount: p.amount }));
-      if (rows.length) {
-        const { error: insErr } = await supabase.from('subasta_payments').insert(rows);
-        if (insErr) throw new Error(insErr.message);
-      }
-    }
+  // One name lookup for everyone who touched these rows (recorded, last edited, sold, each payment line).
+  const ids = new Set();
+  data.forEach((r) => {
+    [r.created_by, r.updated_by, r.processed_by].forEach((id) => { if (id) ids.add(id); });
+    (r.subasta_payments || []).forEach((p) => { if (p.recorded_by) ids.add(p.recorded_by); });
+  });
+  let by = {};
+  if (ids.size) {
+    const { data: names, error: nameErr } = await supabase.rpc('get_employee_names', { ids: Array.from(ids) });
+    if (nameErr) throw new Error(nameErr.message);
+    by = Object.fromEntries((names || []).map((e) => [e.id, e.full_name]));
   }
+  const nm = (id) => (id && by[id] ? { full_name: by[id] } : null);
+  data.forEach((r) => {
+    r.creator = nm(r.created_by); r.updater = nm(r.updated_by); r.processor = nm(r.processed_by);
+    r.subasta_payments = (r.subasta_payments || []).map((p) => Object.assign(p, { recorder: nm(p.recorded_by) }))
+      .sort((a, b) => String(a.paid_at || '').localeCompare(String(b.paid_at || '')) || a.id - b.id);
+  });
+  return data;
 }
 
-export async function deleteSubastaItem(id) {
-  const { error } = await supabase.from('subasta_items').delete().eq('id', id);
+/** Adds an item (always starts Pending). o: { branchId, sku, itemDescription, category, metal, purity, weight, pawnerName,
+ * pawnerContact, pawnReference, originalSource, pawnDate, principal, auctionEligibleDate, notes }. Returns the new item's id
+ * so the drawer can switch straight to its details after saving. */
+export async function createSubastaItem(o) {
+  const { data, error } = await supabase.rpc('create_subasta_item', {
+    p_branch_id: o.branchId, p_sku: o.sku || null, p_item_description: o.itemDescription, p_category: o.category || null,
+    p_metal: o.metal || null, p_purity: o.purity || null, p_weight: o.weight ?? null, p_pawner_name: o.pawnerName || null,
+    p_pawner_contact: o.pawnerContact || null, p_pawn_reference: o.pawnReference || null, p_original_source: o.originalSource || null,
+    p_pawn_date: o.pawnDate || null, p_principal: o.principal ?? null, p_auction_eligible_date: o.auctionEligibleDate || null, p_notes: o.notes || null,
+  });
   if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Corrects an item: `patch` holds only the changed fields (column names) plus the reason and the kind of mistake; the old and
+ * new values land in the audit trail and the error-correction log (update_subasta_item). */
+export async function updateSubastaItem(id, patch, reason, errorType) {
+  const { error } = await supabase.rpc('update_subasta_item', { p_id: id, p_patch: patch, p_reason: reason, p_error_type: errorType });
+  if (error) throw new Error(error.message);
+}
+
+/** action: list | unlist | hold | release | withdraw | cancel | reopen (Admin). `reason` is required for hold / withdraw / cancel /
+ * reopen and for listing before the auction eligible date; `date` is the listed date (defaults to today). */
+export async function setSubastaStatus(id, action, reason, date) {
+  const { error } = await supabase.rpc('set_subasta_status', { p_id: id, p_action: action, p_reason: reason || null, p_date: date || null });
+  if (error) throw new Error(error.message);
+}
+
+/** Marks an item sold and saves its payment lines in ONE call. o: { id, saleDate, salePrice, buyerName, buyerContact,
+ * payments: [{ method, amount, reference, paidAt, notes }], allowPartial }. Returns { itemId, paymentIds } -- the ids line up
+ * with `payments`, so proofs picked in the same form can be uploaded and linked right after. */
+export async function markSubastaSold(o) {
+  const { data, error } = await supabase.rpc('mark_subasta_sold', {
+    p_id: o.id, p_sale_date: o.saleDate || null, p_sale_price: o.salePrice, p_buyer_name: o.buyerName, p_buyer_contact: o.buyerContact || null,
+    p_payments: (o.payments || []).map((p) => ({ method: p.method, amount: p.amount, reference: p.reference || null, paid_at: p.paidAt || null, notes: p.notes || null })),
+    p_allow_partial: !!o.allowPartial,
+  });
+  if (error) throw new Error(error.message);
+  return { itemId: data.item_id, paymentIds: data.payment_ids || [] };
+}
+
+/** One more payment on a sold item (checked against the balance on the server). Returns the payment id. */
+export async function addSubastaPayment(itemId, { method, amount, reference, paidAt, notes }) {
+  const { data, error } = await supabase.rpc('add_subasta_payment', {
+    p_item_id: itemId, p_method: method, p_amount: amount, p_reference: reference || null, p_paid_at: paidAt || null, p_notes: notes || null,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Corrects one payment (method / amount / date / reference): reason + kind of mistake required, old/new values logged. */
+export async function updateSubastaPayment(paymentId, patch, reason, errorType) {
+  const { error } = await supabase.rpc('update_subasta_payment', { p_payment_id: paymentId, p_patch: patch, p_reason: reason, p_error_type: errorType });
+  if (error) throw new Error(error.message);
+}
+
+/** Server-side figures for the Subasta tab (subasta_ops_report): totals, by status, unsold, unpaid, and what sold / was added /
+ * listed / paid in the date range. branchIds omitted = every branch the caller may see. */
+export async function getSubastaOpsReport(from, to, branchIds) {
+  const args = { p_from: from, p_to: to };
+  if (branchIds) args.p_branch_ids = branchIds;
+  const { data, error } = await supabase.rpc('subasta_ops_report', args);
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Everything one pawner has pawned (matched by name or phone number). Needs the "open a pawner's history" permission. */
+export async function getSubastaPawnerHistory(name, contact) {
+  const { data, error } = await supabase.rpc('subasta_pawner_history', { p_name: name || null, p_contact: contact || null });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Proof of payment for one Subasta payment. Path is "<branch_id>/<item_id>/..." so branch-scoped storage access matches the table's. */
+export async function uploadSubastaPaymentProof(branchId, itemId, paymentId, file) {
+  const path = branchId + '/' + itemId + '/pay' + paymentId + '_' + Date.now() + '_' + safeFileName(file.name);
+  const { error: upErr } = await supabase.storage.from('subasta-attachments').upload(path, file, { upsert: true });
+  if (upErr) throw new Error(upErr.message);
+  const { error: updErr } = await supabase.rpc('set_subasta_payment_proof', { p_payment_id: paymentId, p_path: path });
+  if (updErr) throw new Error(updErr.message);
+  return path;
+}
+
+export async function getSubastaAttachmentUrl(path) {
+  const { data, error } = await supabase.storage.from('subasta-attachments').createSignedUrl(path, 300);
+  if (error) throw new Error(error.message);
+  return data.signedUrl;
 }
 
 // ---- Scrap (scrap gold/silver bought in or sold on) — per branch, same access pattern

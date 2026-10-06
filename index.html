@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261007l">
+<link rel="stylesheet" href="css/styles.css?v=20261007m">
 </head>
 <body>
 <main>
@@ -22,12 +22,12 @@
 </main>
 
 <script type="module">
-import { initShell, esc, toast } from './js/shell.js?v=20261007l';
-import { getBranches, getInventory, subscribeToChanges } from './js/api.js?v=20261007l';
-import { renderPosNav } from './js/posNav.js?v=20261007l';
-import { branchButtonStyle } from './js/branchColors.js?v=20261007l';
-import { supabase } from './js/supabaseClient.js?v=20261007l';
-import { openSkuMovement } from './js/skuMovement.js?v=20261007l';
+import { initShell, esc, toast } from './js/shell.js?v=20261007m';
+import { getBranches, getInventory, subscribeToChanges } from './js/api.js?v=20261007m';
+import { renderPosNav } from './js/posNav.js?v=20261007m';
+import { branchButtonStyle } from './js/branchColors.js?v=20261007m';
+import { supabase } from './js/supabaseClient.js?v=20261007m';
+import { openSkuMovement } from './js/skuMovement.js?v=20261007m';
 
 // "History" on a stock row: the read-only movement history of that SKU (transfers, sales, adjustments ... with stock before / after).
 // Transfer IDs link to the main ERP's Transfers page, which is where transfers are managed.

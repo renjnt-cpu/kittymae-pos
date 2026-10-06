@@ -590,3 +590,9 @@ tr[data-row-id]:hover td { background:#fafafa; }
   .sc-row2 { grid-template-columns:1fr; }
   .pager { justify-content:center; }
 }
+
+/* ---- Subasta upgrade (Ren, 2026-10-07): the same form/drawer look as Scrap, plus a tick-box line ---- */
+#sb-form [hidden], #sb-detail-body [hidden], #sb-edit-form [hidden], #sb-sold-form [hidden] { display:none !important; }
+.sb-check { display:flex; align-items:center; gap:8px; font-size:13px; margin-top:8px; cursor:pointer; }
+.sb-check input { width:auto; min-width:0; flex:0 0 auto; margin:0; }
+.sc-payrow-head .act-link { margin-left:auto; }

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261007l">
+<link rel="stylesheet" href="css/styles.css?v=20261007m">
 </head>
 <body>
 <main>
@@ -21,17 +21,17 @@
 // to live here too -- moved to its own ERP-only page (Ren, 2026-09-24: "remove online order
 // in all branch in the POS move online order in the ERP only make it in one module...
 // under sales").
-import { initShell, toast, esc } from './js/shell.js?v=20261007l';
-import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007l';
-import { renderPosNav } from './js/posNav.js?v=20261007l';
-import { branchButtonStyle } from './js/branchColors.js?v=20261007l';
-import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007l';
-import { initBranchOps, getInitialRange } from './js/branchOps.js?v=20261007l';
-import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007l';
-import { initPosTab } from './js/posTab.js?v=20261007l';
-import { initLayawayTab } from './js/layawayTab.js?v=20261007l';
-import { initScrapTab } from './js/scrapTab.js?v=20261007l';
-import { initSubastaTab } from './js/subastaTab.js?v=20261007l';
+import { initShell, toast, esc } from './js/shell.js?v=20261007m';
+import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007m';
+import { renderPosNav } from './js/posNav.js?v=20261007m';
+import { branchButtonStyle } from './js/branchColors.js?v=20261007m';
+import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007m';
+import { initBranchOps, getInitialRange } from './js/branchOps.js?v=20261007m';
+import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007m';
+import { initPosTab } from './js/posTab.js?v=20261007m';
+import { initLayawayTab } from './js/layawayTab.js?v=20261007m';
+import { initScrapTab } from './js/scrapTab.js?v=20261007m';
+import { initSubastaTab } from './js/subastaTab.js?v=20261007m';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
@@ -77,7 +77,7 @@ async function mountBranches(visibleBranches, branches) {
   let range = getInitialRange();
   // Each tab's own From/To inputs, driven by the global range (declared up here for the same
   // reason as SUB_TABS: the summary announces the range as soon as it mounts).
-  const RANGE_INPUTS = [['pos-f-from', 'pos-f-to'], ['sc-f-from', 'sc-f-to'], ['mm-from', 'mm-to'], ['mm-pay-f-from', 'mm-pay-f-to']];
+  const RANGE_INPUTS = [['pos-f-from', 'pos-f-to'], ['sc-f-from', 'sc-f-to'], ['sb-f-from', 'sb-f-to'], ['mm-from', 'mm-to'], ['mm-pay-f-from', 'mm-pay-f-to']];
 
   root.innerHTML =
     // Branch Operations Summary (Ren, 2026-10-07) -- mounted below once the tabs exist.
