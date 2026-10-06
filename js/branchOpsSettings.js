@@ -1,10 +1,11 @@
 // Branch Operations settings drawer (Admin only -- set_branch_ops_setting() enforces that
 // server-side too). The layaway deadline rule, the "nearing" window and the reminder schedule
 // every report and tab on the Branches page shares live here. Opened from the Branch Operations
-// Summary header. (The switch that limits each employee to their own branch is deliberately not
-// offered here until the table-level restrictions that back it are in place.)
-import { setBranchOpsSetting } from './api.js?v=20261007h';
-import { loadOpsConfig, getOpsConfig } from './branchOpsConfig.js?v=20261007h';
+// Summary header. Includes the switch that limits each employee to their own branch(es) -- backed by
+// the database (migration 170), not just by hiding buttons.
+import { setBranchOpsSetting } from './api.js?v=20261007i';
+import { loadOpsConfig, getOpsConfig } from './branchOpsConfig.js?v=20261007i';
+import { confirmDialog } from './dialogs.js?v=20261007i';
 
 let mounted = false;
 function mount() {
@@ -45,7 +46,10 @@ export function openOpsSettings({ esc, onSaved }) {
       '<div class="field"><label for="bos-template">Message template</label><textarea id="bos-template" rows="5">' + esc(cfg.reminderTemplate) + '</textarea>' +
         '<span class="muted">Placeholders: [Customer Name] [Order] [Balance] [Date]. Reminders are copied and sent by a person -- never automatically.</span></div>' +
     '</div>' +
-'';
+    '<div class="drawer-section"><h4>Branch visibility</h4>' +
+      '<label class="pos-check"><input type="checkbox" id="bos-enforce"' + (cfg.viewEnforced ? ' checked' : '') + '> Limit each employee to their own branch(es)</label>' +
+      '<p class="muted" style="margin:6px 0 0;">When on, this is enforced by the database itself: only Admin/Manager, Sales Admin Associates, supervisors with company-wide access and people granted "Branches — See every branch" can read other branches\x27 layaways, scrap, Subasta and POS records; everyone else sees only the branch they belong to.</p>' +
+    '</div>';
 
   form.onsubmit = async (ev) => {
     ev.preventDefault();
@@ -60,13 +64,24 @@ export function openOpsSettings({ esc, onSaved }) {
     push('layaway_reminder_stages', stages, JSON.stringify(stages) === JSON.stringify(cfg.reminderStages));
     push('layaway_reminder_repeat_days', num('bos-repeat'), num('bos-repeat') === cfg.reminderRepeatDays);
     push('layaway_reminder_template', document.getElementById('bos-template').value.trim(), document.getElementById('bos-template').value.trim() === cfg.reminderTemplate);
+    const enforce = document.getElementById('bos-enforce').checked;
+    if (enforce !== cfg.viewEnforced) {
+      const ok = await confirmDialog({
+        title: enforce ? 'Limit employees to their own branch?' : 'Let everyone see every branch again?',
+        message: enforce ? 'From now on people only see the branch(es) they belong to -- in the lists, in the summary and in the database. Admin/Manager and company-wide roles are not affected.'
+          : 'Branch restrictions are switched off: everyone with access to the Branches page sees every branch again.',
+        confirmLabel: enforce ? 'Turn on' : 'Turn off',
+      });
+      if (!ok) return;
+      push('branch_view_enforced', enforce, false);
+    }
     if (!changes.length) { msg.innerHTML = '<div class="msg ok">Nothing changed.</div>'; return; }
     btn.disabled = true;
     try {
       for (const [key, value] of changes) await setBranchOpsSetting(key, value);
       await loadOpsConfig();
       msg.innerHTML = '<div class="msg ok">Saved.</div>';
-      if (onSaved) await onSaved();
+      if (onSaved) await onSaved(changes.map((c) => c[0]));
       setTimeout(() => { document.getElementById('bos-backdrop').classList.remove('open'); document.getElementById('bos-drawer').classList.remove('open'); }, 600);
     } catch (err) {
       msg.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';

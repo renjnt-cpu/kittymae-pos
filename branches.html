@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261007h">
+<link rel="stylesheet" href="css/styles.css?v=20261007i">
 </head>
 <body>
 <main>
@@ -21,17 +21,17 @@
 // to live here too -- moved to its own ERP-only page (Ren, 2026-09-24: "remove online order
 // in all branch in the POS move online order in the ERP only make it in one module...
 // under sales").
-import { initShell, toast, esc } from './js/shell.js?v=20261007h';
-import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007h';
-import { renderPosNav } from './js/posNav.js?v=20261007h';
-import { branchButtonStyle } from './js/branchColors.js?v=20261007h';
-import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007h';
-import { initBranchOps, getInitialRange } from './js/branchOps.js?v=20261007h';
-import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007h';
-import { initPosTab } from './js/posTab.js?v=20261007h';
-import { initLayawayTab } from './js/layawayTab.js?v=20261007h';
-import { initScrapTab } from './js/scrapTab.js?v=20261007h';
-import { initSubastaTab } from './js/subastaTab.js?v=20261007h';
+import { initShell, toast, esc } from './js/shell.js?v=20261007i';
+import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007i';
+import { renderPosNav } from './js/posNav.js?v=20261007i';
+import { branchButtonStyle } from './js/branchColors.js?v=20261007i';
+import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007i';
+import { initBranchOps, getInitialRange } from './js/branchOps.js?v=20261007i';
+import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007i';
+import { initPosTab } from './js/posTab.js?v=20261007i';
+import { initLayawayTab } from './js/layawayTab.js?v=20261007i';
+import { initScrapTab } from './js/scrapTab.js?v=20261007i';
+import { initSubastaTab } from './js/subastaTab.js?v=20261007i';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
@@ -144,7 +144,11 @@ async function mountBranches(visibleBranches, branches) {
       onData: renderScrapSubTabs,
       // Admin only (set_branch_ops_setting() checks it again server-side): deadline rule, reminder schedule, branch visibility.
       onOpenSettings: employee.role === 'Admin'
-        ? () => openOpsSettings({ esc, onSaved: async () => { await Promise.all([layaway?.reload(), scrap?.reload(), subasta?.reload(), ops ? ops.refresh() : null]); renderBranchButtons(); } })
+        ? () => openOpsSettings({ esc, onSaved: async (keys) => {
+          // Switching branch visibility changes which branches this very page may show -- start fresh.
+          if (keys && keys.includes('branch_view_enforced')) { setTimeout(() => window.location.reload(), 700); return; }
+          await Promise.all([layaway?.reload(), scrap?.reload(), subasta?.reload(), ops ? ops.refresh() : null]);
+        } })
         : undefined,
     });
   } catch (err) {
