@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20261007t';
-import { localDateStr } from './uiKit.js?v=20261007t';
+import { supabase } from './supabaseClient.js?v=20261007u';
+import { localDateStr } from './uiKit.js?v=20261007u';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -794,7 +794,7 @@ export async function listScrapEntries(branchId) {
   // migration 171) that made a bare `branches(name)` "ambiguous" for a while; naming the relationship also gave this
   // request a fresh URL, so a browser that cached that error response does not replay it.
   let query = supabase.from('scrap_entries')
-    .select('*, branches!scrap_entries_branch_id_fkey(name), scrap_payments(*)')
+    .select('*, branches!scrap_entries_branch_id_fkey(name), scrap_payments(*), scrap_entry_lines(*)')
     .order('entry_date', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(LEDGER_ROW_CAP);
@@ -851,6 +851,24 @@ export async function createScrapEntryV2(o) {
     p_metal: o.metal, p_karat: o.purity, p_weight: o.weight, p_price_per_gram: o.pricePerGram ?? null,
     p_gross: o.gross ?? null, p_adjustment: o.adjustment || 0, p_adjustment_reason: o.adjustmentReason || null,
     p_final: o.final ?? 0, p_customer_name: o.customerName || null, p_contact: o.contact || null, p_address: o.address || null,
+    p_source_type: o.sourceType || null, p_source: o.source || null, p_notes: o.notes || null,
+    p_payments: (o.payments || []).map((p) => ({ method: p.method, amount: p.amount, reference: p.reference || null, paid_at: p.paidAt || null, notes: p.notes || null })),
+    p_counterpart_branch: o.counterpartBranch ?? null,
+  });
+  if (error) throw new Error(error.message);
+  return { entryId: data.entry_id, paymentIds: data.payment_ids || [] };
+}
+
+/** Saves a scrap entry with ONE OR MORE metal / purity / weight lines and its payment lines in one database call (create_scrap_entry_v3,
+ * migration 193). o: { branchId, entryDate, entryTime, kind, lines: [{ metal, karat, weight, price_per_gram, gross }], adjustment,
+ * adjustmentReason, final, customerName, contact, address, sourceType, source, notes, counterpartBranch, payments: [{ method, amount,
+ * reference, paidAt, notes }] }. Returns { entryId, paymentIds } like createScrapEntryV2. */
+export async function createScrapEntryV3(o) {
+  const { data, error } = await supabase.rpc('create_scrap_entry_v3', {
+    p_branch_id: o.branchId, p_entry_date: o.entryDate || null, p_entry_time: o.entryTime || null, p_kind: o.kind,
+    p_lines: (o.lines || []).map((l) => ({ metal: l.metal, karat: l.karat, weight: l.weight, price_per_gram: l.price_per_gram ?? null, gross: l.gross ?? null })),
+    p_adjustment: o.adjustment || 0, p_adjustment_reason: o.adjustmentReason || null, p_final: o.final ?? 0,
+    p_customer_name: o.customerName || null, p_contact: o.contact || null, p_address: o.address || null,
     p_source_type: o.sourceType || null, p_source: o.source || null, p_notes: o.notes || null,
     p_payments: (o.payments || []).map((p) => ({ method: p.method, amount: p.amount, reference: p.reference || null, paid_at: p.paidAt || null, notes: p.notes || null })),
     p_counterpart_branch: o.counterpartBranch ?? null,

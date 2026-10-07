@@ -19,18 +19,18 @@ import {
   updateSubastaPayment, uploadSubastaPaymentProof, getSubastaAttachmentUrl, getSubastaPawnerHistory, searchProducts,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges,
-} from './api.js?v=20261007t';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007t';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, flagInvalid } from './uiKit.js?v=20261007t';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007t';
-import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007t';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007t';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007t';
-import { attachCustomerPicker } from './customerPicker.js?v=20261007t';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007t';
-import { METALS, purityFields } from './metals.js?v=20261007t';
-import { manilaToday, manilaDateStr, daysBetween } from './opsDates.js?v=20261007t';
-import { friendlyError } from './shell.js?v=20261007t';
+} from './api.js?v=20261007u';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007u';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, flagInvalid } from './uiKit.js?v=20261007u';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007u';
+import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007u';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007u';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007u';
+import { attachCustomerPicker } from './customerPicker.js?v=20261007u';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007u';
+import { METALS, purityFields } from './metals.js?v=20261007u';
+import { manilaToday, manilaDateStr, daysBetween } from './opsDates.js?v=20261007u';
+import { friendlyError } from './shell.js?v=20261007u';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 19): Subasta sortable by Pawn Date / Item / SKU / Weight / Sale Price / Status.
 const SB_SORT_FIELDS = [

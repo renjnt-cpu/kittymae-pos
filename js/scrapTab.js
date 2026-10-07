@@ -4,8 +4,9 @@
 //   * summary tiles, the purity breakdown, "grams by branch" and the weight-on-hand roll-forward all come
 //     from the server (scrap_ops_report) for the global date range -- they never depend on how many rows
 //     this tab happened to load;
-//   * New Scrap: type (bought / transferred in / transferred out / refiner-other), metal, purity,
-//     weight, price per gram -> gross -> adjustment -> final amount, customer picked from people already
+//   * New Scrap: type (bought / transferred in / transferred out / refiner-other), one or MORE metal / purity / weight /
+//     price-per-gram lines (2026-10-07, js/scrapLines.js -- 18K and 16K in one transaction) -> gross -> adjustment ->
+//     final amount, customer picked from people already
 //     on file, up to three payment lines (method, amount, date sent, reference, proof) saved together with
 //     the entry in one database call, and UNPAID / PARTIALLY PAID / PAID worked out from the payment lines;
 //   * Scrap Payments view: every payment line (with the running balance) and every purchase still owing;
@@ -14,22 +15,23 @@
 //     logged), and deleting goes through a request that a supervisor and then Admin approve.
 // The drawer pattern, filters and cards are the ones Layaway already uses.
 import {
-  listScrapEntries, getScrapCashBalances, getScrapOpsReport, createScrapEntryV2, addScrapPayment, updateScrapEntry, updateScrapPayment,
+  listScrapEntries, getScrapCashBalances, getScrapOpsReport, createScrapEntryV3, addScrapPayment, updateScrapEntry, updateScrapPayment,
   uploadScrapAttachment, uploadScrapPaymentProof, getScrapAttachmentUrl, convertScrapToSubasta,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges,
-} from './api.js?v=20261007t';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007t';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261007t';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007t';
-import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007t';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007t';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007t';
-import { attachCustomerPicker } from './customerPicker.js?v=20261007t';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007t';
-import { GOLD_PURITIES, SILVER_PURITIES } from './metals.js?v=20261007t';
-import { manilaToday } from './opsDates.js?v=20261007t';
-import { friendlyError } from './shell.js?v=20261007t';
+} from './api.js?v=20261007u';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007u';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261007u';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007u';
+import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007u';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007u';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007u';
+import { attachCustomerPicker } from './customerPicker.js?v=20261007u';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007u';
+import { GOLD_PURITIES } from './metals.js?v=20261007u';
+import { linesOf, linesLabel, normLines, mountScrapLines } from './scrapLines.js?v=20261007u';
+import { manilaToday } from './opsDates.js?v=20261007u';
+import { friendlyError } from './shell.js?v=20261007u';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 18): Scrap sortable by Date/Metal-Purity/Customer/Type/Weight/Amount.
 const SC_SORT_FIELDS = [
@@ -38,7 +40,7 @@ const SC_SORT_FIELDS = [
 ];
 const SC_SORT_COMPARATORS = {
   entry_date: (a, b) => String(a.entry_date + ' ' + (a.purchase_time || '')).localeCompare(String(b.entry_date + ' ' + (b.purchase_time || ''))) || a.id - b.id,
-  metal_type: (a, b) => byText('metal_type')(a, b) || byText('karat')(a, b),
+  metal_type: (a, b) => String(a._label || '').localeCompare(String(b._label || '')),
   customer_name: byText('customer_name'), kind: byText('kind'), weight_grams: byNumber('weight_grams'), total_amount: byNumber('total_amount'),
   _balance: (a, b) => a._st.balance - b._st.balance,
 };
@@ -72,18 +74,12 @@ const FIELD_LABELS = {
   entry_date: 'Date', purchase_time: 'Time', kind: 'Type', metal_type: 'Metal', karat: 'Purity', weight_grams: 'Weight (g)', price_per_gram: 'Price / gram',
   gross_amount: 'Gross amount', adjustment_amount: 'Adjustment', adjustment_reason: 'Adjustment reason', total_amount: 'Final amount',
   customer_name: 'Customer', contact_number: 'Contact', customer_address: 'Address', source_type: 'Source type', source: 'Source note', notes: 'Notes',
-  payment_method: 'Method', amount: 'Amount', reference_number: 'Reference', paid_at: 'Date paid',
+  payment_method: 'Method', amount: 'Amount', reference_number: 'Reference', paid_at: 'Date paid', lines: 'Metal lines',
 };
 
 // Same write-access group as this page's own canWriteHere() before the upgrade (62_position_managers_refund_scrap_subasta.sql);
 // still decides who may convert a purchase to Subasta (convert_scrap_to_subasta checks the same people).
 const POSITION_MANAGERS = ['Operations Supervisor', 'Inventory Supervisor', 'Admin Assistant'];
-
-function purityOptionsHtml(metal, selected) {
-  const list = metal === 'Gold' ? GOLD_PURITIES : metal === 'Silver' ? SILVER_PURITIES : [];
-  return list.map((p) => '<option' + (p === selected ? ' selected' : '') + '>' + p + '</option>').join('') +
-    '<option value="Custom"' + (selected && !list.includes(selected) ? ' selected' : '') + '>Custom…</option>';
-}
 
 /** Mounts the Scrap tab into `root` (an empty container this owns entirely), scoped to `getBranchId()` at call
  * time. `esc`/`toast` are the page's own shell.js helpers; `msgId` is the id of the page's toast container;
@@ -112,8 +108,10 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
   const canTransfer = () => has('system.manager_or_admin') || has('role.position_manager') || has('scrap.edit');
   const canEdit = (r) => !r.converted_to_subasta_item_id && canActOnBranch(r.branch_id) &&
     (has('scrap.edit') || ((has('role.admin_assistant') || has('role.sales_executive')) && r.created_by === employee.id && !r.attachment_path));
-  const canConvert = (r) => r.kind === 'Bought from Customer' && !r.converted_to_subasta_item_id &&
+  const mayConvert = (r) => r.kind === 'Bought from Customer' && !r.converted_to_subasta_item_id &&
     (['Admin', 'Manager'].includes(employee.role) || (employee.role === 'Branch Supervisor' && r.branch_id === employee.branch_id) || POSITION_MANAGERS.includes(employee.position));
+  // A Subasta item holds one metal and purity, so a purchase with several metal lines cannot be converted (convert_scrap_to_subasta says so too).
+  const canConvert = (r) => mayConvert(r) && (r._lines || []).length <= 1;
   const canSeeScrapCash = () => ['Admin', 'Manager'].includes(employee.role) || employee.position === 'Sales Admin Associate' ||
     (employee.role === 'Branch Supervisor' && getBranchId() === employee.branch_id);
 
@@ -200,19 +198,12 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
           '</div>' +
           '<div class="drawer-section">' +
             '<h4>Metal &amp; weight</h4>' +
-            '<div class="sc-row2">' +
-              '<div class="field"><label>Metal *</label><select name="metal"><option>Gold</option><option>Silver</option><option>Other</option></select></div>' +
-              '<div class="field"><label>Purity *</label><select name="purity"></select></div>' +
-            '</div>' +
-            '<div class="field" data-purity-other hidden><label>Custom purity *</label><input type="text" name="purityOther" placeholder="e.g. 20K"></div>' +
-            '<div class="field"><label>Weight (grams) *</label><input type="number" name="weight" step="0.001" min="0" inputmode="decimal"></div>' +
+            '<p class="muted" style="margin:0 0 8px;font-size:12px;">One line for each metal and purity in this transaction — add another line when the customer sold more than one purity.</p>' +
+            '<div id="sc-lines-box"></div>' +
           '</div>' +
           '<div class="drawer-section" data-sec="money">' +
             '<h4>Price</h4>' +
-            '<div class="sc-row2">' +
-              '<div class="field"><label>Price per gram (₱)</label><input type="number" name="ppg" step="0.01" min="0" inputmode="decimal"></div>' +
-              '<div class="field"><label>Gross amount (₱)</label><input type="number" name="gross" step="0.01" min="0" inputmode="decimal" placeholder="weight × price"></div>' +
-            '</div>' +
+            '<div class="field"><label>Gross amount (₱) — all lines</label><input type="number" name="gross" readonly tabindex="-1" placeholder="the amounts of the lines added up"></div>' +
             '<div class="field"><label>Adjustment (₱) — minus for a deduction</label><input type="number" name="adjustment" step="0.01" inputmode="decimal" placeholder="0.00"></div>' +
             '<div class="field" data-adj-reason hidden><label>Reason for the adjustment *</label><input type="text" name="adjReason" placeholder="e.g. assay deduction"></div>' +
             '<div class="field"><label>Final amount (₱)</label><input type="number" name="final" readonly tabindex="-1" placeholder="gross + adjustment"></div>' +
@@ -259,44 +250,23 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
   }
 
   // ---------------------------------------------------------------------------------------------
-  // The pieces the New Scrap form and the Edit form share: purity list that follows the metal, the
-  // weight × price → gross → adjustment → final arithmetic.
+  // The pieces the New Scrap form and the Edit form share: the metal / purity / weight lines (js/scrapLines.js), and the arithmetic
+  // line amounts → gross → adjustment → final.
   // ---------------------------------------------------------------------------------------------
   const fe = (form, name) => form.elements[name];
 
-  function setPurity(form, metal, selected) {
-    const sel = fe(form, 'purity');
-    sel.innerHTML = purityOptionsHtml(metal, selected);
-    const other = form.querySelector('[data-purity-other]');
-    const isCustom = sel.value === 'Custom';
-    other.hidden = !isCustom;
-    if (isCustom && selected && selected !== 'Custom') fe(form, 'purityOther').value = selected;
-  }
-  function wirePurity(form) {
-    fe(form, 'metal').addEventListener('change', () => { setPurity(form, fe(form, 'metal').value, ''); fe(form, 'purityOther').value = ''; });
-    fe(form, 'purity').addEventListener('change', () => { form.querySelector('[data-purity-other]').hidden = fe(form, 'purity').value !== 'Custom'; });
-  }
-  const readPurity = (form) => (fe(form, 'purity').value === 'Custom' ? fe(form, 'purityOther').value.trim() : fe(form, 'purity').value);
-
-  /** weight × price per gram fills the gross amount (locked while both are set); otherwise the gross is typed.
-   * final = gross + adjustment. Returns the numbers so callers do not re-parse the inputs. */
-  function calcAmounts(form) {
-    const w = Number(fe(form, 'weight').value) || 0, p = Number(fe(form, 'ppg').value) || 0;
-    const auto = w > 0 && p > 0;
-    if (auto) fe(form, 'gross').value = r2(w * p).toFixed(2);
-    fe(form, 'gross').readOnly = auto;
+  /** The amounts of the metal lines (each weight × price per gram, or typed) add up to the gross amount, which is locked;
+   * final = gross + adjustment. `ed` is the form's lines editor. Returns the numbers so callers do not re-parse the inputs. */
+  function calcAmounts(form, ed) {
+    const t = ed.totals();
+    fe(form, 'gross').value = t.any ? t.gross.toFixed(2) : '';
     const adj = Number(fe(form, 'adjustment').value) || 0;
-    const grossStr = fe(form, 'gross').value;
-    const gross = Number(grossStr) || 0;
-    const any = grossStr !== '' || adj !== 0;
-    const final = any ? r2(gross + adj) : 0;
+    const any = t.any || adj !== 0;
+    const final = any ? r2(t.gross + adj) : 0;
     fe(form, 'final').value = any ? final.toFixed(2) : '';
     const reasonWrap = form.querySelector('[data-adj-reason]');
     if (reasonWrap) reasonWrap.hidden = !adj;
-    return { gross, adj, final, hasGross: grossStr !== '' };
-  }
-  function wireAmounts(form, after) {
-    ['weight', 'ppg', 'gross', 'adjustment'].forEach((n) => fe(form, n).addEventListener('input', () => { const a = calcAmounts(form); if (after) after(a); }));
+    return { gross: t.gross, adj, final, hasGross: t.any, weight: t.weight };
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -311,10 +281,16 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     getMinDate: () => fe(form, 'entryDate').value || '', minDateLabel: 'purchase date', dueLabel: 'Final amount',
     emptyText: 'Enter the weight and price to see what is owed.',
   });
+  // The metal lines: one per metal / purity (a transfer has the same lines but no prices).
+  const newLines = mountScrapLines($('sc-lines-box'), {
+    esc, getMoney: () => isMoneyKind(fe(form, 'kind').value),
+    onChange: () => { calcAmounts(form, newLines); pay.sync(); },
+  });
 
   function applyKind() {
     const kind = fe(form, 'kind').value;
     const money_ = isMoneyKind(kind), transfer = isTransferKind(kind);
+    newLines.sync();
     form.querySelectorAll('[data-sec="money"]').forEach((el) => { el.hidden = !money_; });
     form.querySelectorAll('[data-sec="transfer"]').forEach((el) => { el.hidden = !transfer; });
     $('sc-cust-title').textContent = kind === 'Refiner / Other' ? 'Refiner / buyer' : 'Customer';
@@ -338,19 +314,17 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     fe(form, 'entryDate').value = today(); fe(form, 'entryDate').max = today();
     fe(form, 'entryTime').value = manilaNowHM();
     $('sc-form-branch').value = branchName(getBranchId());
-    setPurity(form, 'Gold', '18K');
-    fe(form, 'gross').readOnly = false;
+    newLines.load(null);
     // Transfers are a supervisor's job (the database checks it too): hide the types this person cannot record.
     fe(form, 'kind').innerHTML = KINDS.filter((k) => !isTransferKind(k) || canTransfer()).map((k) => '<option>' + k + '</option>').join('');
-    calcAmounts(form);
+    calcAmounts(form, newLines);
     pay.reset();
     applyKind();
   }
 
-  wirePurity(form);
   // Until someone types in it, the first payment follows the final amount (most purchases are paid in full on the spot).
-  wireAmounts(form, () => pay.sync());
-  fe(form, 'kind').addEventListener('change', () => { calcAmounts(form); applyKind(); });
+  fe(form, 'adjustment').addEventListener('input', () => { calcAmounts(form, newLines); pay.sync(); });
+  fe(form, 'kind').addEventListener('change', () => { calcAmounts(form, newLines); applyKind(); });
   fe(form, 'entryDate').addEventListener('change', () => pay.sync());
   attachCustomerPicker({ nameInput: fe(form, 'customer'), contactInput: fe(form, 'contact'), addressInput: fe(form, 'address') });
 
@@ -365,14 +339,12 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     ev.preventDefault();
     $('sc-form-err').hidden = true;
     const kind = fe(form, 'kind').value, money_ = isMoneyKind(kind), transfer = isTransferKind(kind);
-    const purity = readPurity(form);
-    const weight = Number(fe(form, 'weight').value);
-    const a = calcAmounts(form);
+    const a = calcAmounts(form, newLines);
     const entryDate = fe(form, 'entryDate').value || today();
     const fail = (msg, el) => { showFormError(msg, el); return false; };
 
-    if (!(weight > 0)) return void fail('Enter the weight in grams (more than 0).', fe(form, 'weight'));
-    if (!purity) return void fail('Choose the purity (or type a custom one).', fe(form, fe(form, 'purity').value === 'Custom' ? 'purityOther' : 'purity'));
+    const got0 = newLines.read();
+    if (got0.error) return void fail(got0.error, got0.el);
     if (entryDate > today()) return void fail('The date cannot be in the future.', fe(form, 'entryDate'));
     let payments = [];
     let counterpart = null;
@@ -380,7 +352,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       counterpart = Number(fe(form, 'otherBranch').value) || null;
       if (!counterpart) return void fail('Choose the other branch for this transfer.', fe(form, 'otherBranch'));
     } else {
-      if (a.final <= 0) return void fail('Enter the amount: a price per gram, or the gross amount.', fe(form, a.hasGross ? 'adjustment' : 'ppg'));
+      if (a.final <= 0) return void fail('Enter the amount: a price per gram, or the amount, on every line.', fe(form, 'adjustment'));
       if (a.adj && !fe(form, 'adjReason').value.trim()) return void fail('Give a reason for the price adjustment.', fe(form, 'adjReason'));
       if (kind === 'Bought from Customer' && !fe(form, 'customer').value.trim() && !fe(form, 'sourceType').value && !fe(form, 'source').value.trim()) {
         return void fail('Enter the customer name (or choose where this came from).', fe(form, 'customer'));
@@ -393,9 +365,8 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     const btn = $('sc-form-submit');
     btn.disabled = true;
     try {
-      const saved = await createScrapEntryV2({
-        branchId: getBranchId(), entryDate, entryTime: fe(form, 'entryTime').value || null, kind, metal: fe(form, 'metal').value, purity, weight,
-        pricePerGram: transfer ? null : (Number(fe(form, 'ppg').value) || null), gross: transfer ? null : a.gross, adjustment: transfer ? 0 : a.adj,
+      const saved = await createScrapEntryV3({
+        branchId: getBranchId(), entryDate, entryTime: fe(form, 'entryTime').value || null, kind, lines: got0.lines, adjustment: transfer ? 0 : a.adj,
         adjustmentReason: a.adj ? fe(form, 'adjReason').value.trim() : null, final: transfer ? 0 : a.final,
         customerName: transfer ? null : fe(form, 'customer').value.trim(), contact: transfer ? null : fe(form, 'contact').value.trim(),
         address: transfer ? null : fe(form, 'address').value.trim(), sourceType: transfer ? null : fe(form, 'sourceType').value,
@@ -427,8 +398,11 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
   function decorate(r) {
     r._paid = (r.scrap_payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
     r._money = isMoneyKind(r.kind);
+    r._lines = linesOf(r);
+    r._label = linesLabel(r._lines);
     r._st = r._money ? paymentStatusOf(r.total_amount, r._paid) : paymentStatusOf(0, 0);
-    r._hay = [r.id, '#' + r.id, r.customer_name, r.contact_number, r.customer_address, r.source, r.source_type, r.notes, r.metal_type, r.karat, r.kind,
+    r._hay = [r.id, '#' + r.id, r.customer_name, r.contact_number, r.customer_address, r.source, r.source_type, r.notes, r.metal_type, r.karat, r._label,
+      ...r._lines.map((l) => (l.metal_type || '') + ' ' + (l.karat || '')), r.kind,
       r.payment_method, r.entry_date, r.weight_grams, r.total_amount, r.creator && r.creator.full_name,
       ...(r.scrap_payments || []).map((p) => (p.reference_number || '') + ' ' + p.payment_method)].filter((x) => x != null).join(' ').toLowerCase();
     return r;
@@ -554,7 +528,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     };
   }
   function matchesNonDate(r, f) {
-    if (f.metal !== 'all' && r.metal_type !== f.metal) return false;
+    if (f.metal !== 'all' && !r._lines.some((l) => l.metal_type === f.metal)) return false;
     if (f.kind !== 'all' && r.kind !== f.kind) return false;
     if (f.pay !== 'all') {
       const k = r._st.key;
@@ -625,10 +599,14 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       info.rows.map((r) => '<tr data-row-id="' + r.id + '">' +
         '<td data-label="Date" class="nw">' + fmtDate(r.entry_date) + (r.purchase_time ? '<div class="muted" style="font-size:10.5px;">' + fmtTime(r.purchase_time) + '</div>' : '') + '</td>' +
         '<td data-label="Customer">' + esc(personOf(r)) + '</td>' +
-        '<td data-label="Metal/Purity" class="nw">' + esc(r.metal_type) + ' ' + esc(r.karat || '') + '</td>' +
+        '<td data-label="Metal/Purity" class="nw">' + (r._lines.length > 1
+          ? '<div class="sc-ml">' + r._lines.map((l) => '<div>' + esc(((l.metal_type || '') + ' ' + (l.karat || '')).trim()) + ' <span class="muted">' + gramsPlain(l.weight_grams) + ' g</span></div>').join('') + '</div>'
+          : esc(((r._lines[0].metal_type || '') + ' ' + (r._lines[0].karat || '')).trim())) + '</td>' +
         '<td data-label="Type" class="nw">' + kindBadge(r.kind) + '</td>' +
         '<td data-label="Weight" class="nw">' + grams(r.weight_grams) + '</td>' +
-        '<td data-label="Price/Gram" class="nw">' + (r._money ? money(r.price_per_gram) : '—') + '</td>' +
+        '<td data-label="Price/Gram" class="nw">' + (!r._money ? '—' : (r._lines.length > 1
+          ? '<span class="muted">avg </span>' + (Number(r.gross_amount) > 0 && Number(r.weight_grams) > 0 ? money(r2(Number(r.gross_amount) / Number(r.weight_grams))) : '—')
+          : money(r.price_per_gram))) + '</td>' +
         '<td data-label="Amount" class="nw">' + (r._money ? money(r.total_amount) : '—') +
           (Number(r.adjustment_amount) ? '<div class="muted" style="font-size:10px;">adj. ' + money(r.adjustment_amount) + '</div>' : '') +
           (r.converted_to_subasta_item_id ? '<div style="font-size:10px;"><span class="badge ok" style="font-size:9px;">→ Subasta #' + r.converted_to_subasta_item_id + '</span></div>' : '') + '</td>' +
@@ -761,7 +739,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     const r = entries.find((x) => x.id === id);
     if (!r) return false; // not in the loaded branch -- the host may switch branch and retry
     openId = id; editingId = null;
-    $('sc-detail-title').textContent = r.kind + ' — ' + r.metal_type + ' ' + (r.karat || '');
+    $('sc-detail-title').textContent = r.kind + ' — ' + r._label;
     const body = $('sc-detail-body');
     body.innerHTML = renderDetailBody(r);
     wireDetailBody(body, r);
@@ -802,10 +780,10 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       kv('Type', kindBadge(r.kind) + transferNote) +
       kv('Date', fmtDate(r.entry_date) + (r.purchase_time ? ' · ' + fmtTime(r.purchase_time) : '')) +
       kv('Branch', esc(branchName(r.branch_id))) +
-      kv('Metal / Purity', esc(r.metal_type) + ' ' + esc(r.karat || '—')) +
-      kv('Weight', grams(r.weight_grams)) +
+      kv('Metal / Purity', esc(r._label || '—')) +
+      kv(r._lines.length > 1 ? 'Total weight' : 'Weight', grams(r.weight_grams)) +
       (r._money
-        ? kv('Price / gram', money(r.price_per_gram)) + kv('Gross amount', money(r.gross_amount)) +
+        ? (r._lines.length > 1 ? '' : kv('Price / gram', money(r.price_per_gram))) + kv('Gross amount', money(r.gross_amount)) +
           (Number(r.adjustment_amount) ? kv('Adjustment', money(r.adjustment_amount) + (r.adjustment_reason ? ' <span class="muted">(' + esc(r.adjustment_reason) + ')</span>' : '')) : '') +
           kv('Final amount', money(r.total_amount)) + kv('Payment', paymentChipHtml(st))
         : '') +
@@ -814,6 +792,17 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       (r.updated_by ? kv('Last edited', fmtDateTime(r.updated_at) + (r.updater ? ' · ' + esc(r.updater.full_name) : '')) : '') +
       (r.converted_to_subasta_item_id ? kv('Converted', '<span class="badge ok">→ Subasta #' + r.converted_to_subasta_item_id + '</span>') : '') +
     '</div>';
+
+    // A transaction with several metals / purities: one row per line (its share of the final amount is shown, so the grams and the money agree).
+    if (r._lines.length > 1) {
+      h += '<div class="drawer-section"><h4>Metal &amp; weight</h4>' +
+        '<div class="table-scroll table-mini"><table class="ops-table sc-lines-table"><thead><tr><th>Metal</th><th>Purity</th><th>Weight</th>' + (r._money ? '<th>₱ / gram</th><th>Amount</th>' : '') + '</tr></thead><tbody>' +
+        r._lines.map((l) => '<tr><td data-label="Metal">' + esc(l.metal_type) + '</td><td data-label="Purity">' + esc(l.karat || '—') + '</td><td data-label="Weight">' + grams(l.weight_grams) + '</td>' +
+          (r._money ? '<td data-label="₱ / gram">' + (l.price_per_gram != null ? money(l.price_per_gram) : '—') + '</td><td data-label="Amount">' + money(l.amount) + '</td>' : '') + '</tr>').join('') +
+        '</tbody><tfoot><tr><td colspan="2"><b>Total</b></td><td><b>' + grams(r.weight_grams) + '</b></td>' + (r._money ? '<td></td><td><b>' + money(r.total_amount) + '</b></td>' : '') + '</tr></tfoot></table></div>' +
+        (r._money ? '<p class="muted" style="font-size:11px;margin:6px 0 0;">Each line\'s amount is its share of the final amount (gross ' + money(r.gross_amount) + (Number(r.adjustment_amount) ? ', adjustment ' + money(r.adjustment_amount) : '') + ').</p>' : '') +
+      '</div>';
+    }
 
     if (r._money) {
       h += '<div class="drawer-section"><h4>' + (r.kind === 'Refiner / Other' ? 'Refiner / buyer' : 'Customer') + '</h4>' +
@@ -861,6 +850,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       (!r.attachment_path && canAddHere() ? '<button type="button" class="btn small secondary" data-act="attach-photo">Attach photo</button>' : '') +
       (canEdit(r) ? '<button type="button" class="btn small secondary" data-act="edit">Edit</button>' : '') +
       (canConvert(r) ? '<button type="button" class="btn small secondary" data-act="convert-toggle">Convert to Subasta</button>' : '') +
+      (mayConvert(r) && !canConvert(r) ? '<span class="muted" style="font-size:11px;align-self:center;">Several metals / purities — cannot be converted to Subasta.</span>' : '') +
       (!r.converted_to_subasta_item_id && canActOnBranch(r.branch_id) && !pending
         ? (isAdmin ? '<button type="button" class="btn small danger" data-act="delete">Delete…</button>' : '<button type="button" class="btn small secondary" data-act="request-delete">Request Delete</button>') : '') +
       '</div>' +
@@ -1041,15 +1031,14 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
           (transfer ? '' : '<div class="field"><label>Type</label><select name="kind"><option' + (r.kind === 'Bought from Customer' ? ' selected' : '') + '>Bought from Customer</option><option' + (r.kind === 'Refiner / Other' ? ' selected' : '') + '>Refiner / Other</option></select></div>') +
         '</div>' +
         '<div class="drawer-section"><h4>Metal &amp; weight</h4>' +
-          '<div class="sc-row2"><div class="field"><label>Metal</label><select name="metal"' + (r.transfer_group ? ' disabled' : '') + '>' + ['Gold', 'Silver', 'Other'].map((m) => '<option' + (m === r.metal_type ? ' selected' : '') + '>' + m + '</option>').join('') + '</select></div>' +
-          '<div class="field"><label>Purity</label><select name="purity"' + (r.transfer_group ? ' disabled' : '') + '></select></div></div>' +
-          '<div class="field" data-purity-other hidden><label>Custom purity</label><input type="text" name="purityOther"></div>' +
-          '<div class="field"><label>Weight (grams)</label><input type="number" name="weight" step="0.001" min="0" value="' + v(r.weight_grams) + '"' + (r.transfer_group ? ' disabled' : '') + '></div>' +
+          (r.transfer_group
+            ? '<p class="muted" style="margin:0 0 6px;font-size:12px;">A transfer\'s metal and weight cannot be changed here — ask for its deletion and enter it again.</p>' +
+              r._lines.map((l) => '<div class="drawer-kv"><span>' + esc(((l.metal_type || '') + ' ' + (l.karat || '')).trim()) + '</span><b>' + grams(l.weight_grams) + '</b></div>').join('')
+            : '<div id="sc-edit-lines-box"></div>') +
         '</div>' +
         (transfer ? '' :
         '<div class="drawer-section"><h4>Price</h4>' +
-          '<div class="sc-row2"><div class="field"><label>Price per gram (₱)</label><input type="number" name="ppg" step="0.01" min="0" value="' + v(r.price_per_gram) + '"></div>' +
-          '<div class="field"><label>Gross amount (₱)</label><input type="number" name="gross" step="0.01" min="0" value="' + v(r.gross_amount) + '"></div></div>' +
+          '<div class="field"><label>Gross amount (₱) — all lines</label><input type="number" name="gross" readonly tabindex="-1" value="' + v(r.gross_amount) + '"></div>' +
           '<div class="field"><label>Adjustment (₱) — minus for a deduction</label><input type="number" name="adjustment" step="0.01" value="' + (Number(r.adjustment_amount) ? v(r.adjustment_amount) : '') + '"></div>' +
           '<div class="field" data-adj-reason hidden><label>Reason for the adjustment *</label><input type="text" name="adjReason" value="' + v(r.adjustment_reason) + '"></div>' +
           '<div class="field"><label>Final amount (₱)</label><input type="number" name="final" readonly tabindex="-1" value="' + v(r.total_amount) + '"></div>' +
@@ -1066,16 +1055,15 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
         '<div style="display:flex;gap:8px;"><button class="btn" type="submit">Save correction</button><button class="btn secondary" type="button" data-act="cancel-edit">Cancel</button></div>' +
       '</form>';
     const ef = $('sc-edit-form');
-    const known = [...GOLD_PURITIES, ...SILVER_PURITIES];
-    setPurity(ef, r.metal_type, r.karat || '');
-    if (r.karat && !known.includes(r.karat)) fe(ef, 'purityOther').value = r.karat;
-    ef.querySelector('[data-purity-other]').hidden = fe(ef, 'purity').value !== 'Custom';
-    wirePurity(ef);
+    // The same lines editor as New Scrap, filled with this entry's lines (a transfer's lines are shown, not editable).
+    let edLines = null;
+    if (!r.transfer_group) {
+      edLines = mountScrapLines($('sc-edit-lines-box'), { esc, getMoney: () => !transfer, onChange: () => { if (!transfer) calcAmounts(ef, edLines); } });
+      edLines.load(r._lines);
+    }
     if (!transfer) {
-      const w0 = Number(r.weight_grams) || 0, p0 = Number(r.price_per_gram) || 0;
-      fe(ef, 'gross').readOnly = w0 > 0 && p0 > 0;
       ef.querySelector('[data-adj-reason]').hidden = !Number(r.adjustment_amount);
-      wireAmounts(ef);
+      fe(ef, 'adjustment').addEventListener('input', () => calcAmounts(ef, edLines));
       attachCustomerPicker({ nameInput: fe(ef, 'customer'), contactInput: fe(ef, 'contact'), addressInput: fe(ef, 'address') });
     }
     ef.querySelector('[data-act="cancel-edit"]').addEventListener('click', () => { editingId = null; openDetail(r.id); });
@@ -1094,22 +1082,24 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       const t = fe(ef, 'entryTime').value;
       if (t && t !== String(r.purchase_time || '').slice(0, 5)) patch.purchase_time = t;
       if (!transfer && fe(ef, 'kind').value !== r.kind) patch.kind = fe(ef, 'kind').value;
-      if (!r.transfer_group) {
-        if (fe(ef, 'metal').value !== r.metal_type) patch.metal_type = fe(ef, 'metal').value;
-        const purity = readPurity(ef);
-        if (!purity) return fail('Choose the purity.', fe(ef, 'purity'));
-        if (purity !== (r.karat || '')) patch.karat = purity;
-        const w = Number(fe(ef, 'weight').value);
-        if (!(w > 0)) return fail('Weight must be more than 0 grams.', fe(ef, 'weight'));
-        setNum('weight_grams', w, r.weight_grams);
+      // The metal lines are sent only when something in them changed; the entry's weight, price and gross then follow from them on the server.
+      let lineChange = null;
+      if (edLines) {
+        const got = edLines.read();
+        if (got.error) return fail(got.error, got.el);
+        const was = normLines(r._lines);
+        const now = normLines(got.lines.map((l) => ({ metal_type: l.metal, karat: l.karat, weight_grams: l.weight, price_per_gram: l.price_per_gram, gross_amount: l.gross })));
+        if (JSON.stringify(was) !== JSON.stringify(now)) {
+          patch.lines = got.lines;
+          lineChange = was.length !== now.length || was.some((x, i) => x.metal !== now[i].metal || x.karat !== now[i].karat) ? 'Wrong Purity'
+            : was.some((x, i) => x.weight !== now[i].weight) ? 'Wrong Weight' : 'Wrong Amount';
+        }
       }
       if (!transfer) {
-        const a = calcAmounts(ef);
-        if (a.final <= 0) return fail('Enter the amount.', fe(ef, 'gross'));
+        const a = calcAmounts(ef, edLines);
+        if (a.final <= 0) return fail('Enter the amount.', fe(ef, 'adjustment'));
         if (a.final < r._paid - 0.01) return fail('The final amount cannot be less than what is already paid (' + money(r._paid) + ').', fe(ef, 'adjustment'));
         if (a.adj && !str('adjReason')) return fail('Give a reason for the price adjustment.', fe(ef, 'adjReason'));
-        setNum('price_per_gram', num('ppg'), r.price_per_gram);
-        setNum('gross_amount', a.gross, r.gross_amount);
         setNum('adjustment_amount', a.adj, r.adjustment_amount);
         setNum('total_amount', a.final, r.total_amount);
         if ((a.adj ? str('adjReason') : '') !== String(r.adjustment_reason || '')) patch.adjustment_reason = a.adj ? str('adjReason') : null;
@@ -1122,7 +1112,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       setStr('notes', 'notes', r.notes);
       const keys = Object.keys(patch);
       if (!keys.length) return fail('Nothing was changed.');
-      const guess = patch.karat ? 'Wrong Purity' : patch.weight_grams ? 'Wrong Weight' : (patch.total_amount != null || patch.price_per_gram !== undefined || patch.gross_amount != null || patch.adjustment_amount != null) ? 'Wrong Amount'
+      const guess = lineChange ? lineChange : (patch.total_amount != null || patch.adjustment_amount != null) ? 'Wrong Amount'
         : patch.entry_date ? 'Wrong Date' : (patch.customer_name !== undefined || patch.contact_number !== undefined) ? 'Wrong Customer' : 'Other';
       const out = await reasonDialog({ title: 'Save this correction?', message: 'Changing: ' + keys.map((k) => FIELD_LABELS[k] || k).join(', ') + '.\nIt is recorded with your name, the old and new values and the reason.',
         label: 'Reason', confirmLabel: 'Save correction', errorTypes: ERROR_TYPES, errorLabel: 'What went wrong?', initialErrorType: guess });

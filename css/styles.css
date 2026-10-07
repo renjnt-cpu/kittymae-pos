@@ -786,3 +786,15 @@ tr.lw-row-orange td { background:#fff4e8; }
 @media (max-width:760px) { .ops-bar-global { min-height:38px; padding:8px 11px; } .ops-gs-text { display:none; } .srch-filters .field { flex:1 1 44%; } }
 .ops-bar-global svg { vertical-align:-2px; }
 .cap-notice { margin:0 0 10px; padding:8px 12px; border-radius:10px; background:#fff4e0; border:1px solid #f0d29b; color:#7a4a00; font-size:12.5px; }
+
+/* Scrap: several metal / purity lines in one transaction (2026-10-07) */
+.sc-line { border:1px solid var(--rose-lt); background:var(--rose-bg); border-radius:10px; padding:10px 10px 6px; margin-bottom:10px; }
+.sc-line-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; font-size:12px; font-weight:700; color:var(--muted); }
+.sc-line-head[hidden] { display:none; }
+.sc-line-del { background:none; border:none; cursor:pointer; color:var(--muted); font-size:15px; line-height:1; padding:3px 7px; border-radius:6px; }
+.sc-line-del:hover { color:var(--warn); background:#fff; }
+.sc-lines-foot { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin:2px 0 4px; }
+.sc-lines-foot .muted b { color:var(--ink); font-variant-numeric:tabular-nums; }
+.sc-ml div + div { margin-top:2px; }
+.sc-ml .muted { font-size:10.5px; }
+.sc-lines-table td, .sc-lines-table th { white-space:nowrap; }
