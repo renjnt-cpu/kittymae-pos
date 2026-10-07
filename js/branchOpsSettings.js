@@ -3,9 +3,9 @@
 // every report and tab on the Branches page shares live here. Opened from the Branch Operations
 // Summary header. Includes the switch that limits each employee to their own branch(es) -- backed by
 // the database (migration 170), not just by hiding buttons.
-import { setBranchOpsSetting } from './api.js?v=20261007v';
-import { loadOpsConfig, getOpsConfig } from './branchOpsConfig.js?v=20261007v';
-import { confirmDialog } from './dialogs.js?v=20261007v';
+import { setBranchOpsSetting } from './api.js?v=20261007w';
+import { loadOpsConfig, getOpsConfig } from './branchOpsConfig.js?v=20261007w';
+import { confirmDialog } from './dialogs.js?v=20261007w';
 
 let mounted = false;
 function mount() {

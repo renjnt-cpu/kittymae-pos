@@ -16,22 +16,22 @@
 // The drawer pattern, filters and cards are the ones Layaway already uses.
 import {
   listScrapEntries, getScrapCashBalances, getScrapOpsReport, createScrapEntryV3, addScrapPayment, updateScrapEntry, updateScrapPayment,
-  uploadScrapAttachment, uploadScrapPaymentProof, getScrapAttachmentUrl, convertScrapToSubasta,
+  uploadScrapAttachment, uploadScrapPaymentProof, uploadScrapLinePhoto, getScrapLineIds, getScrapAttachmentUrl, convertScrapToSubasta,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges,
-} from './api.js?v=20261007v';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007v';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261007v';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007v';
-import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007v';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007v';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007v';
-import { attachCustomerPicker } from './customerPicker.js?v=20261007v';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007v';
-import { GOLD_PURITIES } from './metals.js?v=20261007v';
-import { linesOf, linesLabel, normLines, mountScrapLines } from './scrapLines.js?v=20261007v';
-import { manilaToday } from './opsDates.js?v=20261007v';
-import { friendlyError } from './shell.js?v=20261007v';
+} from './api.js?v=20261007w';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007w';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261007w';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007w';
+import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007w';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007w';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007w';
+import { attachCustomerPicker } from './customerPicker.js?v=20261007w';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007w';
+import { GOLD_PURITIES } from './metals.js?v=20261007w';
+import { linesOf, linesLabel, normLines, mountScrapLines } from './scrapLines.js?v=20261007w';
+import { manilaToday } from './opsDates.js?v=20261007w';
+import { friendlyError } from './shell.js?v=20261007w';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 18): Scrap sortable by Date/Metal-Purity/Customer/Type/Weight/Amount.
 const SC_SORT_FIELDS = [
@@ -106,8 +106,10 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       (employee.branch_id != null && employee.branch_id === getBranchId());
   }
   const canTransfer = () => has('system.manager_or_admin') || has('role.position_manager') || has('scrap.edit');
+  // The recorder can correct an entry only until a photo is attached -- the entry's own, or the photo of any of its metal lines (update_scrap_entry).
   const canEdit = (r) => !r.converted_to_subasta_item_id && canActOnBranch(r.branch_id) &&
-    (has('scrap.edit') || ((has('role.admin_assistant') || has('role.sales_executive')) && r.created_by === employee.id && !r.attachment_path));
+    (has('scrap.edit') || ((has('role.admin_assistant') || has('role.sales_executive')) && r.created_by === employee.id && !r.attachment_path &&
+      !(r._lines || []).some((l) => l.attachment_path)));
   // A purchase with several metal lines converts too: its lines become the Subasta item's lines (convert_scrap_to_subasta, migration 194).
   const canConvert = (r) => r.kind === 'Bought from Customer' && !r.converted_to_subasta_item_id &&
     (['Admin', 'Manager'].includes(employee.role) || (employee.role === 'Branch Supervisor' && r.branch_id === employee.branch_id) || POSITION_MANAGERS.includes(employee.position));
@@ -224,7 +226,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
           '<div class="drawer-section">' +
             '<h4>Notes &amp; photo</h4>' +
             '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
-            '<div class="field"><label>Photo</label><input type="file" name="attachment" accept="image/*"></div>' +
+            '<div class="field"><label>Photo of the whole purchase (optional)</label><input type="file" name="attachment" accept="image/*"></div>' +
           '</div>' +
         '</form>' +
       '</div>' +
@@ -282,7 +284,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
   });
   // The metal lines: one per metal / purity (a transfer has the same lines but no prices).
   const newLines = mountScrapLines($('sc-lines-box'), {
-    esc, getMoney: () => isMoneyKind(fe(form, 'kind').value),
+    esc, photos: true, getMoney: () => isMoneyKind(fe(form, 'kind').value),
     onChange: () => { calcAmounts(form, newLines); pay.sync(); },
   });
 
@@ -375,6 +377,17 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       const warnings = [];
       const photo = fe(form, 'attachment').files[0];
       if (photo) { try { await uploadScrapAttachment(getBranchId(), saved.entryId, photo); } catch (err) { warnings.push('the photo (' + (err.message || err) + ')'); } }
+      // The photo of each metal line: the entry's line ids come back in line order, so the file picked on line N goes to line N.
+      const linePhotos = got0.lines.map((l, i) => [i, l.photo]).filter(([, file]) => file);
+      if (linePhotos.length) {
+        try {
+          const lineIds = await getScrapLineIds(saved.entryId);
+          for (const [i, file] of linePhotos) {
+            try { await uploadScrapLinePhoto(getBranchId(), saved.entryId, lineIds[i], file); }
+            catch (err) { warnings.push('the photo of line ' + (i + 1) + ' (' + (err.message || err) + ')'); }
+          }
+        } catch (err) { warnings.push('the line photos (' + (err.message || err) + ')'); }
+      }
       for (let i = 0; i < payments.length; i++) {
         if (!payments[i].file) continue;
         try { await uploadScrapPaymentProof(getBranchId(), saved.entryId, saved.paymentIds[i], payments[i].file); }
@@ -792,13 +805,19 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       (r.converted_to_subasta_item_id ? kv('Converted', '<span class="badge ok">→ Subasta #' + r.converted_to_subasta_item_id + '</span>') : '') +
     '</div>';
 
-    // A transaction with several metals / purities: one row per line (its share of the final amount is shown, so the grams and the money agree).
-    if (r._lines.length > 1) {
+    // A transaction with several metals / purities (or any line with its own photo): one row per line, with its photo (its share of the final amount
+    // is shown, so the grams and the money agree). A line's photo is viewed or attached here, the way the entry's own photo is in Actions.
+    const linePhotoCell = (l) => (l.attachment_path
+      ? '<button type="button" class="btn small secondary" data-act="view-line-photo" data-path="' + esc(l.attachment_path) + '" style="padding:1px 8px;">View photo</button>'
+      : (canAddHere() && l.id != null ? '<button type="button" class="btn small secondary" data-act="attach-line-photo" data-id="' + l.id + '" style="padding:1px 8px;">Attach photo</button>'
+        : '<span class="muted" style="font-size:11px;">no photo</span>'));
+    if (r._lines.length > 1 || r._lines.some((l) => l.attachment_path)) {
       h += '<div class="drawer-section"><h4>Metal &amp; weight</h4>' +
-        '<div class="table-scroll table-mini"><table class="ops-table sc-lines-table"><thead><tr><th>Metal</th><th>Purity</th><th>Weight</th>' + (r._money ? '<th>₱ / gram</th><th>Amount</th>' : '') + '</tr></thead><tbody>' +
+        '<div class="table-scroll table-mini"><table class="ops-table sc-lines-table"><thead><tr><th>Metal</th><th>Purity</th><th>Weight</th>' + (r._money ? '<th>₱ / gram</th><th>Amount</th>' : '') + '<th>Photo</th></tr></thead><tbody>' +
         r._lines.map((l) => '<tr><td data-label="Metal">' + esc(l.metal_type) + '</td><td data-label="Purity">' + esc(l.karat || '—') + '</td><td data-label="Weight">' + grams(l.weight_grams) + '</td>' +
-          (r._money ? '<td data-label="₱ / gram">' + (l.price_per_gram != null ? money(l.price_per_gram) : '—') + '</td><td data-label="Amount">' + money(l.amount) + '</td>' : '') + '</tr>').join('') +
-        '</tbody><tfoot><tr><td colspan="2"><b>Total</b></td><td><b>' + grams(r.weight_grams) + '</b></td>' + (r._money ? '<td></td><td><b>' + money(r.total_amount) + '</b></td>' : '') + '</tr></tfoot></table></div>' +
+          (r._money ? '<td data-label="₱ / gram">' + (l.price_per_gram != null ? money(l.price_per_gram) : '—') + '</td><td data-label="Amount">' + money(l.amount) + '</td>' : '') +
+          '<td data-label="Photo">' + linePhotoCell(l) + '</td></tr>').join('') +
+        '</tbody><tfoot><tr><td colspan="2"><b>Total</b></td><td><b>' + grams(r.weight_grams) + '</b></td>' + (r._money ? '<td></td><td><b>' + money(r.total_amount) + '</b></td>' : '') + '<td></td></tr></tfoot></table></div>' +
         (r._money ? '<p class="muted" style="font-size:11px;margin:6px 0 0;">Each line\'s amount is its share of the final amount (gross ' + money(r.gross_amount) + (Number(r.adjustment_amount) ? ', adjustment ' + money(r.adjustment_amount) : '') + ').</p>' : '') +
       '</div>';
     }
@@ -901,6 +920,10 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     const open = async (path) => { try { window.open(await getScrapAttachmentUrl(path), '_blank'); } catch (err) { notify(String(err.message || err), true); } };
     on('[data-act="view-photo"]', (el) => open(el.dataset.path));
     on('[data-act="view-proof"]', (el) => open(el.dataset.path));
+    on('[data-act="view-line-photo"]', (el) => open(el.dataset.path));
+    on('[data-act="attach-line-photo"]', (el) => pickFile('image/*', async (file) => {
+      try { await uploadScrapLinePhoto(r.branch_id, r.id, Number(el.dataset.id), file); notify('Photo attached.', false); await load(); } catch (err) { notify(String(err.message || err), true); }
+    }));
     on('[data-act="attach-photo"]', () => pickFile('image/*', async (file) => {
       try { await uploadScrapAttachment(r.branch_id, r.id, file); notify('Photo attached.', false); await load(); } catch (err) { notify(String(err.message || err), true); }
     }));
@@ -1088,7 +1111,11 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
         const was = normLines(r._lines);
         const now = normLines(got.lines.map((l) => ({ metal_type: l.metal, karat: l.karat, weight_grams: l.weight, price_per_gram: l.price_per_gram, gross_amount: l.gross })));
         if (JSON.stringify(was) !== JSON.stringify(now)) {
-          patch.lines = got.lines;
+          // each saved line goes back with its id, so the database keeps it (and its photo); a line without an id is new; one not sent is removed
+          patch.lines = got.lines.map((l) => ({ id: l.id, metal: l.metal, karat: l.karat, weight: l.weight, price_per_gram: l.price_per_gram, gross: l.gross }));
+          const dropped = r._lines.filter((l) => l.attachment_path && !got.lines.some((g) => g.id === l.id));
+          if (dropped.length && !await confirmDialog({ title: 'Remove ' + (dropped.length === 1 ? 'a line that has a photo' : dropped.length + ' lines that have photos') + '?',
+            message: 'Taking a line out of this entry also takes its photo out of the entry (the file itself stays in storage).', confirmLabel: 'Remove the line', danger: true })) return;
           lineChange = was.length !== now.length || was.some((x, i) => x.metal !== now[i].metal || x.karat !== now[i].karat) ? 'Wrong Purity'
             : was.some((x, i) => x.weight !== now[i].weight) ? 'Wrong Weight' : 'Wrong Amount';
         }

@@ -5,7 +5,7 @@
 // The same editor serves a SUBASTA item (2026-10-07, "add the same for subasta items"; create_subasta_item_v2 / update_subasta_item, migration 194):
 // opts.metalBlank / opts.strict = false give it the item's own rules -- a line may start with no metal chosen, and purity and weight are required only
 // for gold and silver -- and the price fields are hidden (getMoney() false).
-import { purityOptionsHtml } from './metals.js?v=20261007v';
+import { purityOptionsHtml } from './metals.js?v=20261007w';
 
 const METALS = ['Gold', 'Silver', 'Other'];
 const MAX_LINES = 12;
@@ -46,11 +46,13 @@ export const normLines = (lines) => lines.map((l) => ({
 
 /** Mounts the lines editor into `box`. opts: { esc, getMoney() -> whether price / amount fields apply (false for a transfer or a Subasta item), onChange(),
  * metalBlank (a "— choose —" metal, the default for a new line), strict (default true: purity and weight are required on every line; false = only for
- * gold and silver) }. Returns { load(lines|null), read(), totals(), sync(), prefillFirst({ metal, purity, weight }) }. */
+ * gold and silver), photos (a photo box on every line -- the New Scrap form; read() then also returns each line's picked File) }.
+ * Returns { load(lines|null), read(), totals(), sync(), prefillFirst({ metal, purity, weight }) }. A line loaded with an `id` keeps it (read() returns it),
+ * so a correction can tell the database which lines it is keeping -- and keeping their photos. */
 export function mountScrapLines(box, opts) {
   const esc = (opts && opts.esc) || esc0;
   const money = () => (opts && opts.getMoney ? !!opts.getMoney() : true);
-  const blankMetal = !!(opts && opts.metalBlank), strict = !(opts && opts.strict === false);
+  const blankMetal = !!(opts && opts.metalBlank), strict = !(opts && opts.strict === false), withPhotos = !!(opts && opts.photos);
   const star = strict ? ' *' : '';
   const changed = () => { updateTotal(); if (opts && opts.onChange) opts.onChange(); };
 
@@ -74,6 +76,7 @@ export function mountScrapLines(box, opts) {
         '<div class="field"><label>Price per gram (₱)</label><input type="number" data-f="ppg" step="0.01" min="0" inputmode="decimal"></div>' +
         '<div class="field"><label>Amount (₱)</label><input type="number" data-f="gross" step="0.01" min="0" inputmode="decimal" placeholder="weight × price"></div>' +
       '</div>' +
+      (withPhotos ? '<div class="field"><label>Photo of this line (optional)</label><input type="file" data-f="photo" accept="image/*"></div>' : '') +
     '</div>';
   }
 
@@ -96,6 +99,7 @@ export function mountScrapLines(box, opts) {
     wrap.innerHTML = rowHtml(line);
     const row = wrap.firstElementChild;
     host.appendChild(row);
+    if (line && line.id != null) row.dataset.lineId = String(line.id); // a saved line: its id goes back with a correction so its photo is kept
     const metal = (line && (line.metal_type || line.metal)) || (blankMetal ? '' : 'Gold');
     f(row, 'metal').value = metal;
     setPurity(row, metal, line ? String(line.karat || '').trim() : '');
@@ -189,7 +193,8 @@ export function mountScrapLines(box, opts) {
         const ppg = f(row, 'ppg').value === '' ? null : Number(f(row, 'ppg').value);
         const gross = Number(f(row, 'gross').value);
         if (m && !(gross > 0)) return { error: 'Enter the amount' + on + ': a price per gram, or the amount.', el: f(row, ppg ? 'gross' : 'ppg') };
-        lines.push({ metal, karat: purity || null, weight: w, price_per_gram: m ? ppg : null, gross: m ? r2(gross) : null });
+        lines.push({ id: row.dataset.lineId ? Number(row.dataset.lineId) : undefined, metal, karat: purity || null, weight: w, price_per_gram: m ? ppg : null, gross: m ? r2(gross) : null,
+          photo: withPhotos && f(row, 'photo') ? (f(row, 'photo').files[0] || null) : null });
       }
       return { lines };
     },

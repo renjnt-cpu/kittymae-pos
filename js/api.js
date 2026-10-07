@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20261007v';
-import { localDateStr } from './uiKit.js?v=20261007v';
+import { supabase } from './supabaseClient.js?v=20261007w';
+import { localDateStr } from './uiKit.js?v=20261007w';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -963,6 +963,23 @@ export async function uploadScrapPaymentProof(branchId, scrapId, paymentId, file
   const { error: updErr } = await supabase.rpc('set_scrap_payment_proof', { p_payment_id: paymentId, p_path: path });
   if (updErr) throw new Error(updErr.message);
   return path;
+}
+
+/** Photo of ONE metal line of a scrap entry (migration 195), next to the entry's own photo: path "<branch_id>/<entry_id>/line<line_id>_...". */
+export async function uploadScrapLinePhoto(branchId, scrapId, lineId, file) {
+  const path = branchId + '/' + scrapId + '/line' + lineId + '_' + Date.now() + '_' + safeFileName(file.name);
+  const { error: upErr } = await supabase.storage.from('scrap-attachments').upload(path, file, { upsert: true });
+  if (upErr) throw new Error(upErr.message);
+  const { error: updErr } = await supabase.rpc('set_scrap_line_attachment', { p_line_id: lineId, p_path: path });
+  if (updErr) throw new Error(updErr.message);
+  return path;
+}
+
+/** The ids of an entry's metal lines in line order -- a just-saved entry's photos are linked to them (the create call returns the entry id only). */
+export async function getScrapLineIds(entryId) {
+  const { data, error } = await supabase.from('scrap_entry_lines').select('id, line_no').eq('entry_id', entryId).order('line_no');
+  if (error) throw new Error(error.message);
+  return (data || []).map((l) => l.id);
 }
 
 export async function getScrapAttachmentUrl(path) {

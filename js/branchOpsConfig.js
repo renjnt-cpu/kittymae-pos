@@ -2,8 +2,8 @@
 // the Branches page opens so every tab uses the same layaway deadline rule the database
 // reports use (layaway_deadline()). Falls back to the built-in defaults if the lookup
 // fails -- a settings hiccup must never stop the page from opening.
-import { getBranchOpsSettings } from './api.js?v=20261007v';
-import { addMonths } from './opsDates.js?v=20261007v';
+import { getBranchOpsSettings } from './api.js?v=20261007w';
+import { addMonths } from './opsDates.js?v=20261007w';
 
 export const OPS_DEFAULTS = {
   forfeitMonths: 2,
