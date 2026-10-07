@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261007r">
+<link rel="stylesheet" href="css/styles.css?v=20261007s">
 </head>
 <body>
 <main>
@@ -19,20 +19,20 @@
 // the full Needs Attention list -- moved to POS -> Branch Dashboard. Each module is still its own self-contained tab module mounted into
 // its own root -- this page only owns the branch selection, the sticky bar, the forfeited-layaway warning, the deep links and the
 // activity-feed links. Online Orders used to live here too -- moved to its own ERP-only page (Ren, 2026-09-24).
-import { initShell, toast, esc } from './js/shell.js?v=20261007r';
-import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007r';
-import { renderPosNav } from './js/posNav.js?v=20261007r';
-import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007r';
-import { getInitialRange, loadBranchPref, saveBranchPref } from './js/opsPrefs.js?v=20261007r';
-import { initOpsBar } from './js/opsBar.js?v=20261007r';
-import { initOpsStrip } from './js/opsStrip.js?v=20261007r';
-import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007r';
-import { initApprovalsInbox } from './js/branchInbox.js?v=20261007r';
-import { initGlobalSearch } from './js/branchSearch.js?v=20261007r';
-import { initPosTab } from './js/posTab.js?v=20261007r';
-import { initLayawayTab } from './js/layawayTab.js?v=20261007r';
-import { initScrapTab } from './js/scrapTab.js?v=20261007r';
-import { initSubastaTab } from './js/subastaTab.js?v=20261007r';
+import { initShell, toast, esc } from './js/shell.js?v=20261007s';
+import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007s';
+import { renderPosNav } from './js/posNav.js?v=20261007s';
+import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007s';
+import { getInitialRange, loadBranchPref, saveBranchPref } from './js/opsPrefs.js?v=20261007s';
+import { initOpsBar } from './js/opsBar.js?v=20261007s';
+import { initOpsStrip } from './js/opsStrip.js?v=20261007s';
+import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007s';
+import { initApprovalsInbox } from './js/branchInbox.js?v=20261007s';
+import { initGlobalSearch } from './js/branchSearch.js?v=20261007s';
+import { initPosTab } from './js/posTab.js?v=20261007s';
+import { initLayawayTab } from './js/layawayTab.js?v=20261007s';
+import { initScrapTab } from './js/scrapTab.js?v=20261007s';
+import { initSubastaTab } from './js/subastaTab.js?v=20261007s';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
@@ -82,6 +82,15 @@ async function mountBranches(visibleBranches, branches) {
   // Each tab's own From/To inputs, driven by the global range (declared up here: the bar announces the range as soon as it mounts).
   const RANGE_INPUTS = [['pos-f-from', 'pos-f-to'], ['sc-f-from', 'sc-f-to'], ['sb-f-from', 'sb-f-to'], ['mm-from', 'mm-to'], ['mm-pay-f-from', 'mm-pay-f-to']];
   let bar = null, strip = null, inbox = null, finder = null;
+  // A list that came back exactly as long as its row limit may be missing older records (api.js noteIfCapped): say so under the bar.
+  const capped = new Set();
+  const showCapped = () => {
+    let el = document.getElementById('br-capped');
+    if (!capped.size) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('div'); el.id = 'br-capped'; el.className = 'cap-notice'; el.setAttribute('role', 'status'); document.getElementById('ops-strip-root').after(el); }
+    el.textContent = 'Only the newest 1,000 ' + [...capped].join(' and ') + ' of this branch are loaded -- older ones are not listed here. Narrow the dates, or ask for paging to be switched on.';
+  };
+  document.addEventListener('km-list-capped', (ev) => { capped.add(ev.detail.what); showCapped(); });
 
   root.innerHTML =
     '<div id="ops-bar-root"></div>' +
@@ -218,6 +227,7 @@ async function mountBranches(visibleBranches, branches) {
   async function selectBranch(id) {
     if (id === selectedBranch || !canSee(id)) return;
     selectedBranch = id;
+    capped.clear(); showCapped(); // each list that is still capped for the new branch says so again as it loads
     saveBranchPref(id);
     renderBranchLabels();
     if (bar) { bar.renderBranches(); bar.renderTabs(); }

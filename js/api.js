@@ -2,13 +2,21 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20261007r';
-import { localDateStr } from './uiKit.js?v=20261007r';
+import { supabase } from './supabaseClient.js?v=20261007s';
+import { localDateStr } from './uiKit.js?v=20261007s';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
  * limit at all until 2026-09-23, which only gets slower as each table grows. */
 export const LEDGER_ROW_CAP = 1000;
+
+// A list that comes back exactly as long as its row limit may be missing older records. The Branches page listens for this and
+// says so, so nobody mistakes "the newest 1,000" for "everything" (no branch is near that today: the biggest list is 189 rows).
+function noteIfCapped(what, rows) {
+  if (rows && rows.length >= LEDGER_ROW_CAP && typeof document !== 'undefined') {
+    document.dispatchEvent(new CustomEvent('km-list-capped', { detail: { what, cap: LEDGER_ROW_CAP } }));
+  }
+}
 
 /** Resolves the signed-in employee's id for "created_by"/"paid_by"/etc attribution.
  * Goes through the current_employee() RPC (which joins employee_auth_links) rather
@@ -338,6 +346,7 @@ export async function listSales({ branchId, fromDate, toDate } = {}) {
   if (toDate) query = query.lte('sale_date', toDate + 'T23:59:59.999+08:00');
   const { data, error } = await query;
   if (error) throw new Error(error.message);
+  noteIfCapped('sale lines', data);
   return data;
 }
 
@@ -665,6 +674,7 @@ export async function listSubastaItems(branchId) {
   if (branchId != null) query = query.eq('branch_id', branchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
+  noteIfCapped('Subasta items', data);
   // One name lookup for everyone who touched these rows (recorded, last edited, sold, each payment line).
   const ids = new Set();
   data.forEach((r) => {
@@ -791,6 +801,7 @@ export async function listScrapEntries(branchId) {
   if (branchId != null) query = query.eq('branch_id', branchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
+  noteIfCapped('scrap entries', data);
   // One name lookup for everyone who touched these rows: who recorded each entry, who last edited it,
   // and who recorded each payment line (get_employee_names() works for every role, see attachEmployeeNames).
   const ids = new Set();
@@ -1414,6 +1425,7 @@ export async function listLayaways(branchId) {
   if (branchId != null) query = query.eq('branch_id', branchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
+  noteIfCapped('layaway items', data);
   const rows = await attachEmployeeNames(data, {
     creator: 'created_by', handler: 'handled_by',
     completer: 'completed_by', canceller: 'cancelled_by', forfeiter: 'forfeited_by',

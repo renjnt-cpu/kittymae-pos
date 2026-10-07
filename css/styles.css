@@ -785,3 +785,4 @@ tr.lw-row-orange td { background:#fff4e8; }
 .srch-sub { grid-column:1 / -1; font-size:11px; overflow-wrap:anywhere; }
 @media (max-width:760px) { .ops-bar-global { min-height:38px; padding:8px 11px; } .ops-gs-text { display:none; } .srch-filters .field { flex:1 1 44%; } }
 .ops-bar-global svg { vertical-align:-2px; }
+.cap-notice { margin:0 0 10px; padding:8px 12px; border-radius:10px; background:#fff4e0; border:1px solid #f0d29b; color:#7a4a00; font-size:12.5px; }

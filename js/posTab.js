@@ -21,17 +21,17 @@ import {
   listRefundReasons, listRefundsForOrder, createRefundRequest, logBranchErrorCorrection,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges, LEDGER_ROW_CAP,
-} from './api.js?v=20261007r';
-import { branchColor } from './branchColors.js?v=20261007r';
-import { POS_PAYMENT_METHODS, POS_REF_REQUIRED, POS_CASH_METHODS, posMethodLabel } from './paymentMethods.js?v=20261007r';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, flagInvalid } from './uiKit.js?v=20261007r';
-import { manilaDateStr, manilaToday } from './opsDates.js?v=20261007r';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007r';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007r';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007r';
-import { attachCustomerPicker } from './customerPicker.js?v=20261007r';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007r';
-import { friendlyError } from './shell.js?v=20261007r';
+} from './api.js?v=20261007s';
+import { branchColor } from './branchColors.js?v=20261007s';
+import { POS_PAYMENT_METHODS, POS_REF_REQUIRED, POS_CASH_METHODS, posMethodLabel } from './paymentMethods.js?v=20261007s';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, flagInvalid } from './uiKit.js?v=20261007s';
+import { manilaDateStr, manilaToday } from './opsDates.js?v=20261007s';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007s';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007s';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007s';
+import { attachCustomerPicker } from './customerPicker.js?v=20261007s';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007s';
+import { friendlyError } from './shell.js?v=20261007s';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 12): Sales Transactions sortable
 // across Date & Time/Order/Customer/SKU/Qty/Amount/Payment. The ledger is one row per

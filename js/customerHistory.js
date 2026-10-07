@@ -3,9 +3,9 @@
 // still owe. The data comes from layaway_customer_history() (matched by name or phone number,
 // limited to the branches the signed-in employee may see), so someone without access to a
 // branch never sees that branch's orders here. Mounted lazily, once, on document.body.
-import { getLayawayCustomerHistory, listActiveEmployees } from './api.js?v=20261007r';
-import { daysBetween, manilaToday } from './opsDates.js?v=20261007r';
-import { daysText } from './layawayStatus.js?v=20261007r';
+import { getLayawayCustomerHistory, listActiveEmployees } from './api.js?v=20261007s';
+import { daysBetween, manilaToday } from './opsDates.js?v=20261007s';
+import { daysText } from './layawayStatus.js?v=20261007s';
 
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
 const fmtDate = (s) => s ? new Date(String(s).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-PH', { dateStyle: 'medium' }) : '—';

@@ -2,11 +2,11 @@
 // header{}/nav{}/nav a{} rules -- same structure as the main ERP's shell.js
 // (colored header bar, pill-shaped nav links below), just this site's own pastel
 // blue palette and 4-page link set instead of the ERP's full nav.
-import { esc } from './shell.js?v=20261007r';
-import { signOut } from './auth.js?v=20261007r';
-import { initActivityFeed } from './activityFeed.js?v=20261007r';
-import { showBirthdayBanner } from './birthdayBanner.js?v=20261007r';
-import { initAdminChat } from './adminChat.js?v=20261007r';
+import { esc } from './shell.js?v=20261007s';
+import { signOut } from './auth.js?v=20261007s';
+import { initActivityFeed } from './activityFeed.js?v=20261007s';
+import { showBirthdayBanner } from './birthdayBanner.js?v=20261007s';
+import { initAdminChat } from './adminChat.js?v=20261007s';
 
 // Where a clicked activity notification opens its record (spec 321) -- keyed by the
 // event's record_table. Pages this app doesn't have link across to the ERP.
