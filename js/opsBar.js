@@ -3,14 +3,15 @@
 // -> one main action button that follows the module ("+ New Sale", "+ New Layaway", ...). It owns no data: it tells the page what was
 // chosen (branch, search text for the module on show, date range, module, action) and the page does the rest. Search is remembered per
 // module, so what was typed for Layaway never filters Scrap.
-import { RANGE_PRESETS } from './opsDates.js?v=20261007p';
-import { branchButtonStyle } from './branchColors.js?v=20261007p';
-import { loadPrefs, savedRange, resolveRange, saveRange } from './opsPrefs.js?v=20261007p';
+import { RANGE_PRESETS } from './opsDates.js?v=20261007r';
+import { branchButtonStyle } from './branchColors.js?v=20261007r';
+import { loadPrefs, savedRange, resolveRange, saveRange } from './opsPrefs.js?v=20261007r';
 
 /** Options: root (empty container), esc, branches (all active -- for colours), visibleBranches (what this person may see), getBranchId(),
  * onBranch(id), tabs [{ key, label, dot, placeholder }], getTab(), onTab(key), tabInfo(key) -> { count, urgent: { text, tone } | null },
- * actionInfo(key) -> { label, disabled }, onAction(key), onSearch(key, text), onRange(range). Returns the methods below. */
-export function initOpsBar({ root, esc, branches, visibleBranches, getBranchId, onBranch, tabs, getTab, onTab, tabInfo, actionInfo, onAction, onSearch, onRange }) {
+ * actionInfo(key) -> { label, disabled }, onAction(key), onSearch(key, text), onRange(range), onGlobalSearch(text) (optional: adds a "Search all" button that
+ * looks in every module at once). Returns the methods below. */
+export function initOpsBar({ root, esc, branches, visibleBranches, getBranchId, onBranch, tabs, getTab, onTab, tabInfo, actionInfo, onAction, onSearch, onRange, onGlobalSearch }) {
   const saved = savedRange(loadPrefs());
   const state = { preset: saved.preset, custom: saved.custom };
   const searchByTab = {};
@@ -21,6 +22,9 @@ export function initOpsBar({ root, esc, branches, visibleBranches, getBranchId, 
       '<div class="ops-bar-branches" id="ops-bar-branches" role="group" aria-label="Branch"></div>' +
       '<div class="ops-bar-find">' +
         '<label class="ops-search"><span class="sr-only">Search</span><input type="search" id="ops-bar-search" placeholder="Search customer, order, SKU, item, reference…" autocomplete="off" enterkeyhint="search"></label>' +
+        (onGlobalSearch ? '<button type="button" class="btn small secondary ops-bar-global" id="ops-bar-global" title="Search sales, layaways, scrap and Subasta together" aria-label="Search all modules">' +
+          '<svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>' +
+          '<span class="ops-gs-text"> Search all</span></button>' : '') +
         '<div class="ops-bar-dates">' +
           '<div class="ops-seg ops-bar-presets" id="ops-bar-presets" role="group" aria-label="Date range">' +
             RANGE_PRESETS.map((p) => '<button type="button" data-preset="' + p.key + '">' + p.label + '</button>').join('') + '</div>' +
@@ -82,6 +86,8 @@ export function initOpsBar({ root, esc, branches, visibleBranches, getBranchId, 
   searchEl.addEventListener('search', () => { clearTimeout(searchTimer); pushSearch(); }); // the browser's own clear (x) button
   /** Show the search text of the module now on show. */
   function syncSearch() { searchEl.value = searchByTab[getTab()] || ''; }
+
+  if (onGlobalSearch) $('ops-bar-global').addEventListener('click', () => onGlobalSearch(searchEl.value.trim()));
 
   // ---- date ----
   function renderDates() {

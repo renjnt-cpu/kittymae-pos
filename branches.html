@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261007p">
+<link rel="stylesheet" href="css/styles.css?v=20261007r">
 </head>
 <body>
 <main>
@@ -19,18 +19,20 @@
 // the full Needs Attention list -- moved to POS -> Branch Dashboard. Each module is still its own self-contained tab module mounted into
 // its own root -- this page only owns the branch selection, the sticky bar, the forfeited-layaway warning, the deep links and the
 // activity-feed links. Online Orders used to live here too -- moved to its own ERP-only page (Ren, 2026-09-24).
-import { initShell, toast, esc } from './js/shell.js?v=20261007p';
-import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007p';
-import { renderPosNav } from './js/posNav.js?v=20261007p';
-import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007p';
-import { getInitialRange, loadBranchPref, saveBranchPref } from './js/opsPrefs.js?v=20261007p';
-import { initOpsBar } from './js/opsBar.js?v=20261007p';
-import { initOpsStrip } from './js/opsStrip.js?v=20261007p';
-import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007p';
-import { initPosTab } from './js/posTab.js?v=20261007p';
-import { initLayawayTab } from './js/layawayTab.js?v=20261007p';
-import { initScrapTab } from './js/scrapTab.js?v=20261007p';
-import { initSubastaTab } from './js/subastaTab.js?v=20261007p';
+import { initShell, toast, esc } from './js/shell.js?v=20261007r';
+import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007r';
+import { renderPosNav } from './js/posNav.js?v=20261007r';
+import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007r';
+import { getInitialRange, loadBranchPref, saveBranchPref } from './js/opsPrefs.js?v=20261007r';
+import { initOpsBar } from './js/opsBar.js?v=20261007r';
+import { initOpsStrip } from './js/opsStrip.js?v=20261007r';
+import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007r';
+import { initApprovalsInbox } from './js/branchInbox.js?v=20261007r';
+import { initGlobalSearch } from './js/branchSearch.js?v=20261007r';
+import { initPosTab } from './js/posTab.js?v=20261007r';
+import { initLayawayTab } from './js/layawayTab.js?v=20261007r';
+import { initScrapTab } from './js/scrapTab.js?v=20261007r';
+import { initSubastaTab } from './js/subastaTab.js?v=20261007r';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
@@ -79,7 +81,7 @@ async function mountBranches(visibleBranches, branches) {
   let range = getInitialRange();
   // Each tab's own From/To inputs, driven by the global range (declared up here: the bar announces the range as soon as it mounts).
   const RANGE_INPUTS = [['pos-f-from', 'pos-f-to'], ['sc-f-from', 'sc-f-to'], ['sb-f-from', 'sb-f-to'], ['mm-from', 'mm-to'], ['mm-pay-f-from', 'mm-pay-f-to']];
-  let bar = null, strip = null;
+  let bar = null, strip = null, inbox = null, finder = null;
 
   root.innerHTML =
     '<div id="ops-bar-root"></div>' +
@@ -126,12 +128,33 @@ async function mountBranches(visibleBranches, branches) {
     document.getElementById(t.search)?.closest('.field')?.classList.add('km-proxied');
   });
 
+  // Approvals inbox (every open request of every module) and Search everything (all four modules at once) -- Phase 6. Both are drawers
+  // opened from the summary row / the bar; a record they point at opens in its own tab, on its own branch.
+  async function openFound(rec) {
+    const tab = { pos_sale: 'pos', layaway_holds: 'layaway', scrap_entries: 'scrap', subasta_items: 'subasta' }[rec.open_table];
+    if (!tab) return;
+    if (rec.branch_id != null && rec.branch_id !== selectedBranch && canSee(rec.branch_id)) await selectBranch(rec.branch_id);
+    showSubTab(tab);
+    const opener = openers[rec.open_table];
+    if (opener) opener(rec.open_id);
+  }
+  inbox = initApprovalsInbox({
+    esc, toast, employee, branches, visibleBranches, getBranchId: () => selectedBranch, onOpen: openFound,
+    // after an approval / rejection: the tabs and the summary row show the new state
+    onChanged: () => Promise.all([mods.pos?.reload(), mods.layaway?.reload(), mods.scrap?.reload(), mods.subasta?.reload(), strip ? strip.refresh() : null, refreshForfeitedNotice()]),
+  });
+  finder = initGlobalSearch({
+    esc, branches, visibleBranches, getBranchId: () => selectedBranch,
+    onOpen: (r) => openFound({ open_table: r.record_table, open_id: r.record_id, branch_id: r.branch_id, module: r.module }),
+  });
+
   // The compact summary row and the bar are mounted last and wrapped so that, whatever happens inside them, the four working tabs above are
   // already up and untouched.
   try {
     strip = initOpsStrip({
       root: document.getElementById('ops-strip-root'), esc, branches, getBranchId: () => selectedBranch, getRange: () => range, showTab: openTab,
       onData: () => { if (bar) bar.renderTabs(); },
+      onOpenApprovals: () => inbox.open(),
       // Admin only (set_branch_ops_setting() checks it again server-side): deadline rule, reminder schedule, branch visibility.
       onOpenSettings: employee.role === 'Admin'
         ? () => openOpsSettings({ esc, onSaved: async (keys) => {
@@ -154,6 +177,7 @@ async function mountBranches(visibleBranches, branches) {
     // The search text goes to the module on show -- its own (hidden) search box does the filtering, exactly as if it had been typed there.
     onSearch: (key, text) => { const el = document.getElementById(TABS.find((x) => x.key === key).search); if (el) { el.value = text; el.dispatchEvent(new Event('input', { bubbles: true })); } },
     onRange: (r) => { range = r; applyRangeToTabs(r); if (strip) strip.refresh(); bar.renderTabs(); },
+    onGlobalSearch: (text) => finder.open({ query: text }),
   });
   showSubTab(activeSubTab);
 

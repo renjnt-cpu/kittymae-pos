@@ -1,7 +1,7 @@
 // The two choices the Branches page and the Branch Dashboard share, remembered in this browser only: the date range (Today /
 // Yesterday / This Week / ... / All Time) and the branch last looked at. Sharing them is what makes a dashboard card open the
 // operational page on the same dates and branch -- the number clicked is the number found in the list.
-import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261007p';
+import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261007r';
 
 const STORE_KEY = 'km-branch-ops-v1';
 const BRANCH_KEY = 'km-branch-sel-v1';

@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20261007p';
-import { localDateStr } from './uiKit.js?v=20261007p';
+import { supabase } from './supabaseClient.js?v=20261007r';
+import { localDateStr } from './uiKit.js?v=20261007r';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -977,6 +977,31 @@ export async function adminApplyBranchRecordAction(recordTable, recordId, action
   const { data, error } = await supabase.rpc('admin_apply_branch_record_action', {
     p_record_table: recordTable, p_record_id: String(recordId), p_action: action, p_reason: reason, p_error_type: errorType || null,
   });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Every open approval request for the branches given (omitted = all the caller may see), in one common shape: { source, request_id, module, type_label,
+ * branch_id, order_ref, customer, sku, amount, requested_by, requested_at, reason, error_type, status, supervisor_by, detail, open_table, open_id, snapshot }.
+ * Row-level security decides what is visible: approvers see every request, anyone else only their own. (branch_approvals_inbox, migration 190.) */
+export async function getBranchApprovalsInbox(branchIds) {
+  const { data, error } = await supabase.rpc('branch_approvals_inbox', branchIds ? { p_branch_ids: branchIds } : {});
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+/** Sales, layaways, scrap entries and Subasta items matching a text (and optional filters) -- { modules: { POS|Layaway|Scrap|Subasta: { total, rows } } }.
+ * from / to are Manila days. (search_branch_records, migration 190.) */
+export async function searchBranchRecords({ q, branchIds, from, to, admin, status, method, limit } = {}) {
+  const args = { p_q: q || '' };
+  if (branchIds) args.p_branch_ids = branchIds;
+  if (from) args.p_from = from;
+  if (to) args.p_to = to;
+  if (admin) args.p_admin = admin;
+  if (status) args.p_status = status;
+  if (method) args.p_method = method;
+  if (limit) args.p_limit = limit;
+  const { data, error } = await supabase.rpc('search_branch_records', args);
   if (error) throw new Error(error.message);
   return data;
 }

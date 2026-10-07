@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branch Dashboard — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261007p">
+<link rel="stylesheet" href="css/styles.css?v=20261007r">
 </head>
 <body>
 <main>
@@ -19,14 +19,14 @@
 // are the ones the Branches page used to open with (js/branchOps.js, the server reports branch_ops_summary / branch_ops_attention); nothing
 // is calculated twice. The date range and the branch are remembered in this browser and shared with the Branches page, so what is clicked
 // here is what is found there.
-import { initShell, esc } from './js/shell.js?v=20261007p';
-import { getBranches, getViewableBranchIds } from './js/api.js?v=20261007p';
-import { renderPosNav } from './js/posNav.js?v=20261007p';
-import { branchButtonStyle } from './js/branchColors.js?v=20261007p';
-import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007p';
-import { initBranchOps } from './js/branchOps.js?v=20261007p';
-import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007p';
-import { loadBranchPref, saveBranchPref } from './js/opsPrefs.js?v=20261007p';
+import { initShell, esc } from './js/shell.js?v=20261007r';
+import { getBranches, getViewableBranchIds } from './js/api.js?v=20261007r';
+import { renderPosNav } from './js/posNav.js?v=20261007r';
+import { branchButtonStyle } from './js/branchColors.js?v=20261007r';
+import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007r';
+import { initBranchOps } from './js/branchOps.js?v=20261007r';
+import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007r';
+import { loadBranchPref, saveBranchPref } from './js/opsPrefs.js?v=20261007r';
 
 const employee = await initShell();
 if (employee) {

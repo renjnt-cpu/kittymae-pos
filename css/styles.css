@@ -762,3 +762,26 @@ tr.lw-row-orange td { background:#fff4e8; }
 @media (max-width:760px) { .tiles.tiles-compact .tile { flex:1 1 calc(50% - 4px); } .tiles.tiles-compact .tile .num { font-size:17px; } }
 .sc-payrow .field[hidden] { display:none; }
 .drawer-footer[hidden] { display:none; }
+
+/* ---- Phase 6: Approvals inbox + Search everything (drawers opened from the Branches summary row / sticky bar) ---- */
+.ops-bar-global { flex:0 0 auto; white-space:nowrap; }
+.ops-strip-approvals { padding:3px 10px; font-size:12px; }
+.ops-strip-approvals.has { background:#fdecea; border-color:#f3c1bd; color:var(--warn); font-weight:700; }
+.inbox-tools { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+.inbox-scope select { padding:7px 10px; border-radius:20px; border:1px solid #ddd; font-size:13px; }
+.inbox-h { margin:14px 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted); }
+#inbox-drawer .lw-approval-card { margin-bottom:8px; }
+.srch-filters { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:flex-end; margin:8px 0 12px; }
+.srch-filters .field { min-width:0; flex:1 1 130px; }
+.srch-filters .field > span { display:block; font-size:11px; color:var(--muted); margin-bottom:2px; }
+.srch-filters select, .srch-filters input[type="date"] { width:100%; box-sizing:border-box; padding:7px 8px; border:1px solid #ddd; border-radius:8px; font-size:13px; }
+#srch-q { width:100%; box-sizing:border-box; padding:10px 14px; border:1px solid #ddd; border-radius:22px; font-size:14px; }
+.srch-group { margin-bottom:14px; }
+.srch-group h4 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted); display:flex; align-items:center; gap:6px; }
+.srch-row { display:grid; grid-template-columns:1fr auto; gap:2px 10px; width:100%; text-align:left; background:#fff; border:1px solid #eee; border-radius:10px; padding:8px 12px; margin-bottom:6px; cursor:pointer; font:inherit; }
+.srch-row:hover, .srch-row:focus-visible { border-color:var(--rose); box-shadow:0 1px 6px rgba(0,0,0,0.08); }
+.srch-main { min-width:0; overflow-wrap:anywhere; }
+.srch-right { text-align:right; white-space:nowrap; font-size:13px; }
+.srch-sub { grid-column:1 / -1; font-size:11px; overflow-wrap:anywhere; }
+@media (max-width:760px) { .ops-bar-global { min-height:38px; padding:8px 11px; } .ops-gs-text { display:none; } .srch-filters .field { flex:1 1 44%; } }
+.ops-bar-global svg { vertical-align:-2px; }

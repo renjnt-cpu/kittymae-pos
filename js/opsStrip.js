@@ -2,12 +2,12 @@
 // chosen in the bar, how busy each module is -- "PACIFIC MALL · POS 33 sales · Layaway 34 active · 3 overdue · Scrap 27 entries · Subasta 8 listed" --
 // plus the few things that need action. The full analytics (cards, comparison between branches, the whole Needs Attention list) live on
 // POS -> Branch Dashboard. Same server reports (branch_ops_summary / branch_ops_attention), so the numbers are the dashboard's.
-import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007p';
-import { ATTENTION_KINDS, urgentFrom, money, num } from './opsAttention.js?v=20261007p';
+import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007r';
+import { ATTENTION_KINDS, urgentFrom, money, num } from './opsAttention.js?v=20261007r';
 
 /** Options: root, esc, branches (all active), getBranchId(), getRange() -> { from, to, label }, showTab(tab, view), onData() (the module pills re-draw their badges).
  * Returns { refresh, render, getUrgent(branchId) }. Never throws into the page. */
-export function initOpsStrip({ root, esc, branches, getBranchId, getRange, showTab, onData, onOpenSettings }) {
+export function initOpsStrip({ root, esc, branches, getBranchId, getRange, showTab, onData, onOpenSettings, onOpenApprovals }) {
   const state = { summary: null, attention: [], error: '' };
   const branchName = (id) => ((branches || []).find((b) => b.id === id) || {}).name || ('Branch #' + id);
 
@@ -19,6 +19,7 @@ export function initOpsStrip({ root, esc, branches, getBranchId, getRange, showT
     const r = (state.summary.branches || []).find((x) => x.branch_id === id);
     const item = (tab, view, tone, html) => '<button type="button" class="ops-strip-item' + (tone ? ' tone-' + tone : '') + '" data-tab="' + tab + '"' + (view ? ' data-view="' + view + '"' : '') + '>' + html + '</button>';
     const sep = '<span class="ops-strip-sep" aria-hidden="true">·</span>';
+    const pendingN = r && r.pending ? r.pending.total : 0;
     const parts = r
       ? [
         item('pos', '', '', '<span class="ops-strip-k">POS</span> <b>' + num(r.pos.transactions) + '</b> sale' + (r.pos.transactions === 1 ? '' : 's')),
@@ -37,12 +38,14 @@ export function initOpsStrip({ root, esc, branches, getBranchId, getRange, showT
     root.innerHTML = '<div class="ops-strip" role="region" aria-label="Branch summary">' +
       '<b class="ops-strip-name">' + esc(branchName(id)) + '</b><span class="ops-strip-range muted">' + esc(rg.label || '') + '</span>' +
       parts.join(sep) +
+      (onOpenApprovals ? '<button type="button" class="btn small secondary ops-strip-approvals' + (pendingN ? ' has' : '') + '" id="ops-strip-approvals" title="Every request waiting for approval, all modules">Approvals' + (pendingN ? ' <b>' + num(pendingN) + '</b>' : '') + '</button>' : '') +
       '<a class="ops-strip-link" href="branch-dashboard.html">Branch Dashboard ›</a>' +
       (onOpenSettings ? '<button type="button" class="btn small secondary ops-strip-gear" id="ops-strip-gear" title="Layaway deadline, reminders and branch visibility">⚙ Settings</button>' : '') +
       (chips ? '<div class="ops-strip-attn"><span class="muted">Needs attention:</span> ' + chips + (attn.length > 3 ? ' <a class="ops-strip-more" href="branch-dashboard.html">+' + (attn.length - 3) + ' more</a>' : '') + '</div>' : '') +
     '</div>';
     root.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab, b.dataset.view || null)));
     root.querySelector('#ops-strip-gear')?.addEventListener('click', () => onOpenSettings());
+    root.querySelector('#ops-strip-approvals')?.addEventListener('click', () => onOpenApprovals());
   }
 
   let token = 0;
