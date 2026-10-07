@@ -17,18 +17,18 @@ import {
   listLayawayForfeitRequests, requestLayawayForfeit, approveLayawayForfeitStage1, approveLayawayForfeitFinal, rejectLayawayForfeit,
   cancelLayawayForfeitRequest, getLayawayReminderQueue, markLayawayContacted, setLayawayAltContact, listLayawayChangeLog,
   logBranchErrorCorrection, listActiveEmployees, getProductNames,
-} from './api.js?v=20261007s';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007s';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20261007s';
-import { daysBetween, manilaToday, manilaDateStr } from './opsDates.js?v=20261007s';
-import { getOpsConfig, layawayDeadline } from './branchOpsConfig.js?v=20261007s';
-import { confirmDialog, reasonDialog, messageDialog, ERROR_TYPES } from './dialogs.js?v=20261007s';
-import { layawayInfo, statusChipHtml, progressHtml, paidOf, daysText, daysToneOf, ACTIVE_STATUSES } from './layawayStatus.js?v=20261007s';
-import { openCustomerHistory } from './customerHistory.js?v=20261007s';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007s';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007s';
-import { attachCustomerPicker } from './customerPicker.js?v=20261007s';
-import { friendlyError } from './shell.js?v=20261007s';
+} from './api.js?v=20261007t';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007t';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20261007t';
+import { daysBetween, manilaToday, manilaDateStr } from './opsDates.js?v=20261007t';
+import { getOpsConfig, layawayDeadline } from './branchOpsConfig.js?v=20261007t';
+import { confirmDialog, reasonDialog, messageDialog, ERROR_TYPES } from './dialogs.js?v=20261007t';
+import { layawayInfo, statusChipHtml, progressHtml, paidOf, daysText, daysToneOf, ACTIVE_STATUSES } from './layawayStatus.js?v=20261007t';
+import { openCustomerHistory } from './customerHistory.js?v=20261007t';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007t';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007t';
+import { attachCustomerPicker } from './customerPicker.js?v=20261007t';
+import { friendlyError } from './shell.js?v=20261007t';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -150,7 +150,9 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   // though the server (is_amount_editor()/transaction.edit_amount) already granted
   // them, so Admin couldn't see this Edit button at all and Branch Team Leader was
   // fully blocked from it (Ren: "supervisor and branch team leader can also edit").
-  const canEditAmount = employee.role === 'Admin' || employee.position === 'Auditor' || employee.role === 'Branch Supervisor' ||
+  // 'Manager' added 2026-10-07 (Ren: "supervisor and manager can edit details of POS and Layaway") -- the database grants transaction.edit_amount to
+  // ROLE:Manager since migration 192, so a Manager (even one whose job title is not Supervisor-named) can edit and request payment deletions.
+  const canEditAmount = employee.role === 'Admin' || employee.role === 'Manager' || employee.position === 'Auditor' || employee.role === 'Branch Supervisor' ||
     employee.position === 'Branch Team Leader' || (employee.position || '').includes('Supervisor');
   // A Completed hold's SKU/Qty/Price are locked (its stock has already left
   // "reserved" and become an actual sale) -- but Admin/Auditor can still fix the
@@ -163,6 +165,14 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
   // everything else, but an item change needs a Supervisor (or Admin/Manager) to
   // approve it first. Mirrors can_approve_layaway_item_change() exactly.
   const canApproveItemChange = ['Admin', 'Manager', 'Branch Supervisor'].includes(employee.role) || (employee.position || '').includes('Supervisor');
+  // Sales Admin Associate (Ren, 2026-10-07: "add all Sales Admin Associate to edit customer, edit item, request delete but for approval of
+  // Supervisor, Manager and me"): they edit a live hold's customer / item (a reason is logged) and may REQUEST a delete; a Supervisor or Manager
+  // approves it, then Admin gives the final approval. Changing the ITEM (SKU) goes through the item-change request, like the Branch Team Leader.
+  // Mirrors edit_layaway_hold() / request_layaway_hold_deletion() in migration 192. Deleting a payment stays with canEditAmount, not them.
+  const isSalesAssociate = employee.position === 'Sales Admin Associate';
+  const canEditHold = canEditAmount || isSalesAssociate;
+  const canRequestDelete = canApproveItemChange || isSalesAssociate;
+  const itemChangeNeedsApproval = (employee.position === 'Branch Team Leader' || isSalesAssociate) && !canApproveItemChange;
   // Cancelling (the "final delete" of a layaway) is narrower still -- Admin only
   // (Ren, 2026-09-16: "i will be the one to final delete not supervisor or manager
   // now"), reversing the same-day-earlier change that let Manager/Branch Supervisor
@@ -1272,7 +1282,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     const reminders = remindersOf(h);
     const live = h.status === 'On Hold';
     const canRequestForfeit = live && canAct && !openReq && (info.overdue || canFinalDelete);
-    const canEditDetails = (live && canEditAmount) || (h.status === 'Completed' && canEditCompletedDetails);
+    const canEditDetails = (live && canEditHold) || (h.status === 'Completed' && canEditCompletedDetails);
     const kv = (k, v) => '<div class="drawer-kv"><span>' + k + '</span><b>' + v + '</b></div>';
 
     return (openReq
@@ -1351,7 +1361,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
               (canAct ? '<button type="button" class="btn small" data-act="toggle-addpay">+ Add Payment</button>' : '') +
               ((canAct || canManage) ? '<button type="button" class="btn small secondary" data-act="remind">Remind Customer</button>' : '') +
               (canEditDetails ? '<button type="button" class="btn small secondary" data-act="edit-customer">Edit Customer</button>' : '') +
-              (canEditAmount ? '<button class="btn small secondary" data-act="edit-hold" data-id="' + h.id + '">Edit Item</button>' : '') +
+              (canEditHold ? '<button class="btn small secondary" data-act="edit-hold" data-id="' + h.id + '">Edit Item</button>' : '') +
               (canAct ? '<button type="button" class="btn small secondary" data-act="change-deadline">Change Deadline</button>' : '') +
               (canAct ? '<button class="btn small secondary" data-act="complete" data-id="' + h.id + '">Complete</button>' : '') +
               // Only meaningful for a Lacking hold -- nothing to reserve once it's already In Stock. Supervisor-tier (Ren, 2026-09-28) plus Auditor
@@ -1362,8 +1372,9 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
               // Forfeiture is never one click (Ren, 2026-10-07): staff REQUEST it once the layaway is overdue, a Supervisor approves, Admin
               // gives the final approval. Admin can also forfeit from here (records the request and approves it in one go).
               (canRequestForfeit ? '<button class="btn small secondary" data-act="' + (canFinalDelete ? 'forfeit-now' : 'request-forfeit') + '" data-id="' + h.id + '">' + (canFinalDelete ? 'Forfeit…' : 'Request Forfeit') + '</button>' : '') +
-              // Delete is distinct from Cancel -- a Supervisor-tier REQUEST that Admin finally approves (Ren, 2026-09-26).
-              (canApproveItemChange ? '<button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '">Request Delete</button>' : '') +
+              // Delete is distinct from Cancel -- a REQUEST that a Supervisor or Manager reviews and Admin finally approves (Ren, 2026-09-26;
+              // Sales Admin Associates may file it too since 2026-10-07).
+              (canRequestDelete ? '<button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '">Request Delete</button>' : '') +
             '</div>' +
             (canAct
               ? '<form class="lw-addpay" data-hold-id="' + h.id + '" style="display:none;flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:8px;margin-top:10px;">' +
@@ -1373,7 +1384,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
                   '<div style="display:flex;gap:6px;"><button class="btn small" type="submit">Record payment</button><button type="button" class="btn small secondary" data-act="cancel-addpay">Cancel</button></div>' +
                 '</form>'
               : '') +
-            (canEditAmount ? editHoldFormHtml(h) : '') +
+            (canEditHold ? editHoldFormHtml(h) : '') +
           '</div>'
         : '') +
       // Completed's own Edit (details-only: Customer/Contact/Order ID/Notes, SKU/Qty/Price stay locked) -- separate section since there is no
@@ -1385,7 +1396,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '</div>'
         : '') +
       // Deleting a Completed / Cancelled / Forfeited hold is the same Supervisor-requests / Admin-approves flow (Ren, 2026-09-26: "both cases").
-      ((h.status === 'Cancelled' || h.status === 'Forfeited' || h.status === 'Completed') && canApproveItemChange
+      ((h.status === 'Cancelled' || h.status === 'Forfeited' || h.status === 'Completed') && canRequestDelete
         ? '<div class="drawer-section"><button class="btn small secondary" data-act="delete-hold" data-id="' + h.id + '">Request Delete</button></div>'
         : '') +
       '<div class="drawer-section"><h4>History</h4><div id="lw-history-box"><div class="muted">Loading…</div></div></div>';
@@ -1560,9 +1571,9 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
 
     const deleteBtn = container.querySelector('[data-act="delete-hold"]');
     if (deleteBtn) deleteBtn.addEventListener('click', async () => {
-      const out = await reasonDialog({ title: 'Request deleting this layaway', message: 'Needs Supervisor review, then final Admin approval, before anything is actually deleted.', label: 'Reason', confirmLabel: 'Send request', danger: true });
+      const out = await reasonDialog({ title: 'Request deleting this layaway', message: 'Needs a Supervisor or Manager to review it, then final Admin approval, before anything is actually deleted.', label: 'Reason', confirmLabel: 'Send request', danger: true });
       if (!out) return;
-      await runAction(() => requestLayawayHoldDeletion(h.id, out.reason), 'Deletion requested — pending Supervisor review, then final Admin approval.', async () => { await load(); refreshDetailIfOpen(h.id); });
+      await runAction(() => requestLayawayHoldDeletion(h.id, out.reason), 'Deletion requested — pending Supervisor or Manager review, then final Admin approval.', async () => { await load(); refreshDetailIfOpen(h.id); });
     });
 
     container.querySelectorAll('[data-act="del-payment"]').forEach((btn) => btn.addEventListener('click', async () => {
@@ -1608,8 +1619,8 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
       // item itself needs Supervisor approval first (Ren, 2026-09-24) -- unless they
       // separately qualify as a direct approver (e.g. a Branch Team Leader whose role
       // is already Branch Supervisor), matching edit_layaway_hold()'s own gate exactly.
-      if (skuChanged && employee.position === 'Branch Team Leader' && !canApproveItemChange) {
-        const out = await reasonDialog({ title: 'Request an item change', message: 'Changing the item needs a Supervisor\'s approval: ' + h.sku + ' → ' + sku + '.', label: 'Reason', initialReason: reason, confirmLabel: 'Send request' });
+      if (skuChanged && itemChangeNeedsApproval) {
+        const out = await reasonDialog({ title: 'Request an item change', message: 'Changing the item needs a Supervisor\'s (or Manager\'s) approval: ' + h.sku + ' → ' + sku + '.', label: 'Reason', initialReason: reason, confirmLabel: 'Send request' });
         if (!out) return;
         await runAction(() => requestLayawayItemChange(h.id, sku, '[Incorrect Layaway Item] ' + out.reason), 'Item change submitted for Supervisor approval.', async () => { await load(); refreshDetailIfOpen(h.id); });
         return;

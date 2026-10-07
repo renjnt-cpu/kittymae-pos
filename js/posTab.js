@@ -21,17 +21,17 @@ import {
   listRefundReasons, listRefundsForOrder, createRefundRequest, logBranchErrorCorrection,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges, LEDGER_ROW_CAP,
-} from './api.js?v=20261007s';
-import { branchColor } from './branchColors.js?v=20261007s';
-import { POS_PAYMENT_METHODS, POS_REF_REQUIRED, POS_CASH_METHODS, posMethodLabel } from './paymentMethods.js?v=20261007s';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, flagInvalid } from './uiKit.js?v=20261007s';
-import { manilaDateStr, manilaToday } from './opsDates.js?v=20261007s';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007s';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007s';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007s';
-import { attachCustomerPicker } from './customerPicker.js?v=20261007s';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007s';
-import { friendlyError } from './shell.js?v=20261007s';
+} from './api.js?v=20261007t';
+import { branchColor } from './branchColors.js?v=20261007t';
+import { POS_PAYMENT_METHODS, POS_REF_REQUIRED, POS_CASH_METHODS, posMethodLabel } from './paymentMethods.js?v=20261007t';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, flagInvalid } from './uiKit.js?v=20261007t';
+import { manilaDateStr, manilaToday } from './opsDates.js?v=20261007t';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007t';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007t';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007t';
+import { attachCustomerPicker } from './customerPicker.js?v=20261007t';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007t';
+import { friendlyError } from './shell.js?v=20261007t';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 12): Sales Transactions sortable
 // across Date & Time/Order/Customer/SKU/Qty/Amount/Payment. The ledger is one row per
@@ -90,8 +90,14 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   const canEditSale = ['Admin', 'Manager', 'Branch Supervisor'].includes(employee.role) || employee.position === 'Branch Team Leader';
   // Correcting an already-recorded amount (Unit Price, Qty, Discount, or the payment split) is narrower (Ren's spec 121-132) -- mirrors
   // is_amount_editor() exactly. Editor and Branch Team Leader added 2026-09-22 per Ren.
-  const canEditAmount = ['Admin', 'Branch Supervisor'].includes(employee.role) || ['Auditor', 'Editor', 'Branch Team Leader'].includes(employee.position) ||
+  // 'Manager' added 2026-10-07 (Ren: "supervisor and manager can edit details of POS and Layaway") -- the database grants transaction.edit_amount to
+  // ROLE:Manager since migration 192.
+  const canEditAmount = ['Admin', 'Manager', 'Branch Supervisor'].includes(employee.role) || ['Auditor', 'Editor', 'Branch Team Leader'].includes(employee.position) ||
     (employee.position || '').includes('Supervisor');
+  // Sales Admin Associate (Ren, 2026-10-07): may edit a sale's item / customer details (a reason is logged when an amount, quantity or discount
+  // changes) and request a void / delete (a Supervisor or Manager approves, then Admin) -- but not the payment split, which stays with canEditAmount.
+  // The database already allowed it (the associate holds transaction.edit_amount); this only shows the Edit button.
+  const canEditSaleItem = canEditAmount || employee.position === 'Sales Admin Associate';
   // assert_can_act_on_branch(): who may add a payment / request a void, delete or refund on a branch's sale.
   function canActOnBranch(bid) {
     if (['Admin', 'Manager'].includes(employee.role)) return true;
@@ -1133,7 +1139,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
         '<div><b>' + esc(r.products?.item_name || r.sku) + '</b> <span class="muted">' + esc(r.sku) + '</span></div>' +
         '<div class="muted" style="font-size:12px;margin-top:2px;">' + r.qty + ' × ' + money(r.unit_price) + (num(r.discount) > 0 ? ' − ' + money(r.discount) + ' discount' : '') +
           ' = <b style="color:var(--ink);">' + money(lineNet(r)) + '</b></div>' +
-        (canEditAmount ? '<div style="margin-top:6px;"><button type="button" class="btn small secondary" data-act="edit-item" data-id="' + r.id + '">Edit</button></div>' : '') +
+        (canEditSaleItem ? '<div style="margin-top:6px;"><button type="button" class="btn small secondary" data-act="edit-item" data-id="' + r.id + '">Edit</button></div>' : '') +
       '</div>').join('') +
     '</div>' +
     '<div class="drawer-section"><h4>Payment</h4>' +

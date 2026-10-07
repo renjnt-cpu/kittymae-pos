@@ -4,13 +4,13 @@
 // (branch_ops_summary / branch_ops_attention, migration 166) so the numbers never depend on how many rows a tab happened to load.
 // Every card, flag and branch name is a way into the Branches page on the same branch and dates. Layaway deadlines/overdue and
 // pending approvals deliberately ignore the date range -- they describe what needs action today.
-import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007s';
-import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261007s';
-import { loadPrefs, savePrefs, savedRange } from './opsPrefs.js?v=20261007s';
-import { ATTENTION_KINDS, urgentFrom, money, num, plural } from './opsAttention.js?v=20261007s';
+import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261007t';
+import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261007t';
+import { loadPrefs, savePrefs, savedRange } from './opsPrefs.js?v=20261007t';
+import { ATTENTION_KINDS, urgentFrom, money, num, plural } from './opsAttention.js?v=20261007t';
 
 export { ATTENTION_KINDS };
-export { getInitialRange } from './opsPrefs.js?v=20261007s';
+export { getInitialRange } from './opsPrefs.js?v=20261007t';
 
 const grams = (n) => Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 3 }) + ' g';
 
