@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20261007u';
-import { localDateStr } from './uiKit.js?v=20261007u';
+import { supabase } from './supabaseClient.js?v=20261007v';
+import { localDateStr } from './uiKit.js?v=20261007v';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -667,7 +667,7 @@ export async function removeBillAttachment(billId, path) {
  * moment a second link between the two tables exists. */
 export async function listSubastaItems(branchId) {
   let query = supabase.from('subasta_items')
-    .select('*, subasta_payments(*)')
+    .select('*, subasta_payments(*), subasta_item_lines(*)')
     .order('pawn_date', { ascending: false, nullsFirst: false })
     .order('id', { ascending: false })
     .limit(LEDGER_ROW_CAP);
@@ -710,8 +710,23 @@ export async function createSubastaItem(o) {
   return data;
 }
 
+/** Adds a Subasta item with ONE OR MORE metal / purity / weight lines (create_subasta_item_v2, migration 194). o is createSubastaItem's, with
+ * `lines: [{ metal, karat (the purity), weight }]` in place of metal / purity / weight. Returns the new item's id. */
+export async function createSubastaItemV2(o) {
+  const { data, error } = await supabase.rpc('create_subasta_item_v2', {
+    p_branch_id: o.branchId, p_sku: o.sku || null, p_item_description: o.itemDescription, p_category: o.category || null,
+    p_lines: (o.lines || []).map((l) => ({ metal: l.metal || null, purity: l.karat || null, weight: l.weight ?? null })),
+    p_pawner_name: o.pawnerName || null, p_pawner_contact: o.pawnerContact || null, p_pawn_reference: o.pawnReference || null,
+    p_original_source: o.originalSource || null, p_pawn_date: o.pawnDate || null, p_principal: o.principal ?? null,
+    p_auction_eligible_date: o.auctionEligibleDate || null, p_notes: o.notes || null,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 /** Corrects an item: `patch` holds only the changed fields (column names) plus the reason and the kind of mistake; the old and
- * new values land in the audit trail and the error-correction log (update_subasta_item). */
+ * new values land in the audit trail and the error-correction log (update_subasta_item). A correction of the metal lines is
+ * `patch.lines = [{ metal, purity, weight }]` -- the item's own metal / purity / weight then follow from them. */
 export async function updateSubastaItem(id, patch, reason, errorType) {
   const { error } = await supabase.rpc('update_subasta_item', { p_id: id, p_patch: patch, p_reason: reason, p_error_type: errorType });
   if (error) throw new Error(error.message);

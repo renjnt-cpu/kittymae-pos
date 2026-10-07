@@ -19,19 +19,19 @@ import {
   uploadScrapAttachment, uploadScrapPaymentProof, getScrapAttachmentUrl, convertScrapToSubasta,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges,
-} from './api.js?v=20261007u';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007u';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261007u';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007u';
-import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007u';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007u';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007u';
-import { attachCustomerPicker } from './customerPicker.js?v=20261007u';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007u';
-import { GOLD_PURITIES } from './metals.js?v=20261007u';
-import { linesOf, linesLabel, normLines, mountScrapLines } from './scrapLines.js?v=20261007u';
-import { manilaToday } from './opsDates.js?v=20261007u';
-import { friendlyError } from './shell.js?v=20261007u';
+} from './api.js?v=20261007v';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007v';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261007v';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007v';
+import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007v';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007v';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007v';
+import { attachCustomerPicker } from './customerPicker.js?v=20261007v';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007v';
+import { GOLD_PURITIES } from './metals.js?v=20261007v';
+import { linesOf, linesLabel, normLines, mountScrapLines } from './scrapLines.js?v=20261007v';
+import { manilaToday } from './opsDates.js?v=20261007v';
+import { friendlyError } from './shell.js?v=20261007v';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 18): Scrap sortable by Date/Metal-Purity/Customer/Type/Weight/Amount.
 const SC_SORT_FIELDS = [
@@ -108,10 +108,9 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
   const canTransfer = () => has('system.manager_or_admin') || has('role.position_manager') || has('scrap.edit');
   const canEdit = (r) => !r.converted_to_subasta_item_id && canActOnBranch(r.branch_id) &&
     (has('scrap.edit') || ((has('role.admin_assistant') || has('role.sales_executive')) && r.created_by === employee.id && !r.attachment_path));
-  const mayConvert = (r) => r.kind === 'Bought from Customer' && !r.converted_to_subasta_item_id &&
+  // A purchase with several metal lines converts too: its lines become the Subasta item's lines (convert_scrap_to_subasta, migration 194).
+  const canConvert = (r) => r.kind === 'Bought from Customer' && !r.converted_to_subasta_item_id &&
     (['Admin', 'Manager'].includes(employee.role) || (employee.role === 'Branch Supervisor' && r.branch_id === employee.branch_id) || POSITION_MANAGERS.includes(employee.position));
-  // A Subasta item holds one metal and purity, so a purchase with several metal lines cannot be converted (convert_scrap_to_subasta says so too).
-  const canConvert = (r) => mayConvert(r) && (r._lines || []).length <= 1;
   const canSeeScrapCash = () => ['Admin', 'Manager'].includes(employee.role) || employee.position === 'Sales Admin Associate' ||
     (employee.role === 'Branch Supervisor' && getBranchId() === employee.branch_id);
 
@@ -850,7 +849,6 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       (!r.attachment_path && canAddHere() ? '<button type="button" class="btn small secondary" data-act="attach-photo">Attach photo</button>' : '') +
       (canEdit(r) ? '<button type="button" class="btn small secondary" data-act="edit">Edit</button>' : '') +
       (canConvert(r) ? '<button type="button" class="btn small secondary" data-act="convert-toggle">Convert to Subasta</button>' : '') +
-      (mayConvert(r) && !canConvert(r) ? '<span class="muted" style="font-size:11px;align-self:center;">Several metals / purities — cannot be converted to Subasta.</span>' : '') +
       (!r.converted_to_subasta_item_id && canActOnBranch(r.branch_id) && !pending
         ? (isAdmin ? '<button type="button" class="btn small danger" data-act="delete">Delete…</button>' : '<button type="button" class="btn small secondary" data-act="request-delete">Request Delete</button>') : '') +
       '</div>' +

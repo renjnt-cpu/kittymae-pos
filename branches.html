@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branches — Kittymae POS</title>
-<link rel="stylesheet" href="css/styles.css?v=20261007u">
+<link rel="stylesheet" href="css/styles.css?v=20261007v">
 </head>
 <body>
 <main>
@@ -19,20 +19,20 @@
 // the full Needs Attention list -- moved to POS -> Branch Dashboard. Each module is still its own self-contained tab module mounted into
 // its own root -- this page only owns the branch selection, the sticky bar, the forfeited-layaway warning, the deep links and the
 // activity-feed links. Online Orders used to live here too -- moved to its own ERP-only page (Ren, 2026-09-24).
-import { initShell, toast, esc } from './js/shell.js?v=20261007u';
-import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007u';
-import { renderPosNav } from './js/posNav.js?v=20261007u';
-import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007u';
-import { getInitialRange, loadBranchPref, saveBranchPref } from './js/opsPrefs.js?v=20261007u';
-import { initOpsBar } from './js/opsBar.js?v=20261007u';
-import { initOpsStrip } from './js/opsStrip.js?v=20261007u';
-import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007u';
-import { initApprovalsInbox } from './js/branchInbox.js?v=20261007u';
-import { initGlobalSearch } from './js/branchSearch.js?v=20261007u';
-import { initPosTab } from './js/posTab.js?v=20261007u';
-import { initLayawayTab } from './js/layawayTab.js?v=20261007u';
-import { initScrapTab } from './js/scrapTab.js?v=20261007u';
-import { initSubastaTab } from './js/subastaTab.js?v=20261007u';
+import { initShell, toast, esc } from './js/shell.js?v=20261007v';
+import { getBranches, subscribeToChanges, listLayaways, getViewableBranchIds, getRecordBranch } from './js/api.js?v=20261007v';
+import { renderPosNav } from './js/posNav.js?v=20261007v';
+import { loadOpsConfig } from './js/branchOpsConfig.js?v=20261007v';
+import { getInitialRange, loadBranchPref, saveBranchPref } from './js/opsPrefs.js?v=20261007v';
+import { initOpsBar } from './js/opsBar.js?v=20261007v';
+import { initOpsStrip } from './js/opsStrip.js?v=20261007v';
+import { openOpsSettings } from './js/branchOpsSettings.js?v=20261007v';
+import { initApprovalsInbox } from './js/branchInbox.js?v=20261007v';
+import { initGlobalSearch } from './js/branchSearch.js?v=20261007v';
+import { initPosTab } from './js/posTab.js?v=20261007v';
+import { initLayawayTab } from './js/layawayTab.js?v=20261007v';
+import { initScrapTab } from './js/scrapTab.js?v=20261007v';
+import { initSubastaTab } from './js/subastaTab.js?v=20261007v';
 
 const fmtDateTime = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 

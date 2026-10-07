@@ -15,22 +15,23 @@
 //   * people allowed to see it can open a pawner's history (every item that pawner pawned).
 // The drawer pattern, filters and cards are the ones Layaway and Scrap already use.
 import {
-  listSubastaItems, getSubastaOpsReport, createSubastaItem, updateSubastaItem, setSubastaStatus, markSubastaSold, addSubastaPayment,
+  listSubastaItems, getSubastaOpsReport, createSubastaItemV2, updateSubastaItem, setSubastaStatus, markSubastaSold, addSubastaPayment,
   updateSubastaPayment, uploadSubastaPaymentProof, getSubastaAttachmentUrl, getSubastaPawnerHistory, searchProducts,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges,
-} from './api.js?v=20261007u';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007u';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, flagInvalid } from './uiKit.js?v=20261007u';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007u';
-import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007u';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007u';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007u';
-import { attachCustomerPicker } from './customerPicker.js?v=20261007u';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007u';
-import { METALS, purityFields } from './metals.js?v=20261007u';
-import { manilaToday, manilaDateStr, daysBetween } from './opsDates.js?v=20261007u';
-import { friendlyError } from './shell.js?v=20261007u';
+} from './api.js?v=20261007v';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261007v';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, flagInvalid } from './uiKit.js?v=20261007v';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261007v';
+import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261007v';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261007v';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261007v';
+import { attachCustomerPicker } from './customerPicker.js?v=20261007v';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261007v';
+import { METALS } from './metals.js?v=20261007v';
+import { subastaLinesOf, linesLabel, normLines, mountScrapLines } from './scrapLines.js?v=20261007v';
+import { manilaToday, manilaDateStr, daysBetween } from './opsDates.js?v=20261007v';
+import { friendlyError } from './shell.js?v=20261007v';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 19): Subasta sortable by Pawn Date / Item / SKU / Weight / Sale Price / Status.
 const SB_SORT_FIELDS = [
@@ -64,7 +65,7 @@ const FIELD_LABELS = {
   sku: 'SKU', item_description: 'Item', category: 'Category', metal_type: 'Metal', purity: 'Purity', weight_grams: 'Weight (g)', pawner_name: 'Pawner', pawner_contact: 'Pawner contact',
   pawn_reference: 'Pawn reference', original_source: 'Original source', pawn_date: 'Pawn date', principal_amount: 'Principal', auction_eligible_date: 'Auction eligible date',
   listed_date: 'Listed date', notes: 'Notes', sale_date: 'Sale date', sale_price: 'Sale price', buyer_name: 'Buyer', buyer_contact: 'Buyer contact', status: 'Status',
-  amount: 'Amount', payment_method: 'Method', reference_number: 'Reference', paid_at: 'Date paid',
+  amount: 'Amount', payment_method: 'Method', reference_number: 'Reference', paid_at: 'Date paid', lines: 'Metal lines',
 };
 
 /** Mounts the Subasta tab into `root` (an empty container this owns entirely), scoped to `getBranchId()` at call time.
@@ -150,15 +151,11 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
               '<div id="sb-sku-suggest" class="cust-suggest" hidden></div>' +
             '</div>' +
             '<div class="field"><label>Item description *</label><input type="text" name="itemDescription"></div>' +
-            '<div class="sc-row2">' +
-              '<div class="field"><label>Category</label><input type="text" name="category" list="sb-cat-list" autocomplete="off"><datalist id="sb-cat-list">' + CATEGORIES.map((c) => '<option value="' + c + '">').join('') + '</datalist></div>' +
-              '<div class="field"><label>Metal *</label><select name="metal"><option value="">— choose —</option>' + METALS.map((m) => '<option>' + m + '</option>').join('') + '</select></div>' +
-            '</div>' +
-            '<div class="sc-row2">' +
-              '<div class="field"><label>Purity</label><select name="purity"></select></div>' +
-              '<div class="field"><label>Weight (grams)</label><input type="number" name="weight" step="0.001" min="0" inputmode="decimal"></div>' +
-            '</div>' +
-            '<div class="field" data-purity-other hidden><label>Custom purity *</label><input type="text" name="purityOther" placeholder="e.g. 20K"></div>' +
+            '<div class="field"><label>Category</label><input type="text" name="category" list="sb-cat-list" autocomplete="off"><datalist id="sb-cat-list">' + CATEGORIES.map((c) => '<option value="' + c + '">').join('') + '</datalist></div>' +
+          '</div>' +
+          '<div class="drawer-section"><h4>Metal &amp; weight</h4>' +
+            '<p class="muted" style="margin:0 0 8px;font-size:12px;">One line for each metal and purity in this item — add another line when it has more than one purity.</p>' +
+            '<div id="sb-lines-box"></div>' +
           '</div>' +
           '<div class="drawer-section"><h4>Pawner / source</h4>' +
             '<div class="field"><label>Pawner name</label><input type="text" name="pawner" autocomplete="off"></div>' +
@@ -210,7 +207,9 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
   const form = $('sb-form');
   const fe = (f, name) => f.elements[name];
   const today = () => manilaToday();
-  const purity = purityFields(form);
+  // The metal / purity / weight lines (js/scrapLines.js): one per purity; a Subasta item has no price per line, and keeps its own rules --
+  // purity and weight are required for gold and silver only.
+  const newLines = mountScrapLines($('sb-lines-box'), { esc, getMoney: () => false, metalBlank: true, strict: false });
 
   function showFormError(message, el) {
     const box = $('sb-form-err');
@@ -234,7 +233,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
     $('sb-form-err').hidden = true;
     fe(form, 'pawnDate').value = today(); fe(form, 'pawnDate').max = today();
     $('sb-form-branch').value = branchName(getBranchId());
-    purity.set('', '');
+    newLines.load(null);
     $('sb-sku-name').textContent = '';
     hideSuggest();
     syncListNow();
@@ -249,13 +248,13 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
     skuInput.value = p.sku;
     skuNamePreview.textContent = p.item_name + (p.category || p.product_line ? ' · ' + (p.category || p.product_line) : '');
     if (!fe(form, 'itemDescription').value.trim()) fe(form, 'itemDescription').value = p.item_name || '';
-    if (!fe(form, 'weight').value && p.gross_weight_g != null && Number(p.gross_weight_g) > 0) fe(form, 'weight').value = p.gross_weight_g;
     if (!fe(form, 'category').value.trim() && (p.category || p.product_line)) fe(form, 'category').value = p.category || p.product_line;
+    // the catalog's metal, purity and weight go onto the FIRST line, only where it is still blank
     const mp = String(p.metal_purity || '').trim().toUpperCase();
-    if (!fe(form, 'metal').value) {
-      if (/^(10|14|16|18|21|22|24)K$/.test(mp)) purity.set('Gold', mp);
-      else if (['999', '925', '800'].includes(digits(mp))) purity.set('Silver', digits(mp));
-    }
+    const w = p.gross_weight_g != null && Number(p.gross_weight_g) > 0 ? p.gross_weight_g : null;
+    if (/^(10|14|16|18|21|22|24)K$/.test(mp)) newLines.prefillFirst({ metal: 'Gold', purity: mp, weight: w });
+    else if (['999', '925', '800'].includes(digits(mp))) newLines.prefillFirst({ metal: 'Silver', purity: digits(mp), weight: w });
+    else newLines.prefillFirst({ weight: w });
     hideSuggest();
   }
   skuInput.addEventListener('input', () => {
@@ -294,10 +293,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
   /** The rules both the New form and the Edit form check before asking the database (which checks them again). */
   function itemProblem(v) {
     if (!v.itemDescription) return ['Enter the item description.', 'itemDescription'];
-    if (!v.metal) return ['Choose the metal (Gold, Silver or Other).', 'metal'];
-    if ((v.metal === 'Gold' || v.metal === 'Silver') && !v.purity) return ['Choose the purity (or type a custom one) -- it is needed for gold and silver.', 'purity'];
-    if (v.weight != null && !(v.weight > 0)) return ['Weight must be more than 0 grams.', 'weight'];
-    if ((v.metal === 'Gold' || v.metal === 'Silver') && v.weight == null) return ['Enter the weight in grams -- it is needed for gold and silver.', 'weight'];
+    // the metal / purity / weight rules live in the lines editor's read() (the same rules, line by line)
     if (v.principal != null && v.principal < 0) return ['The principal amount cannot be negative.', 'principal'];
     if (v.pawnDate && v.pawnDate > today()) return ['The pawn date cannot be in the future.', 'pawnDate'];
     if (v.pawnDate && v.eligibleDate && v.eligibleDate < v.pawnDate) return ['The auction eligible date cannot be before the pawn date.', 'eligibleDate'];
@@ -309,17 +305,19 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
     ev.preventDefault();
     $('sb-form-err').hidden = true;
     const v = {
-      itemDescription: fe(form, 'itemDescription').value.trim(), metal: fe(form, 'metal').value, purity: purity.read(), weight: numOrNull(fe(form, 'weight')),
+      itemDescription: fe(form, 'itemDescription').value.trim(),
       principal: numOrNull(fe(form, 'principal')), pawnDate: fe(form, 'pawnDate').value, eligibleDate: fe(form, 'eligibleDate').value,
     };
     const bad = itemProblem(v);
     if (bad) return void showFormError(bad[0], fe(form, bad[1]));
+    const got = newLines.read();
+    if (got.error) return void showFormError(got.error, got.el);
     const btn = $('sb-form-submit');
     btn.disabled = true;
     try {
-      const id = await createSubastaItem({
-        branchId: getBranchId(), sku: fe(form, 'sku').value.trim(), itemDescription: v.itemDescription, category: fe(form, 'category').value.trim(), metal: v.metal,
-        purity: v.purity, weight: v.weight, pawnerName: fe(form, 'pawner').value.trim(), pawnerContact: fe(form, 'pawnerContact').value.trim(),
+      const id = await createSubastaItemV2({
+        branchId: getBranchId(), sku: fe(form, 'sku').value.trim(), itemDescription: v.itemDescription, category: fe(form, 'category').value.trim(), lines: got.lines,
+        pawnerName: fe(form, 'pawner').value.trim(), pawnerContact: fe(form, 'pawnerContact').value.trim(),
         pawnReference: fe(form, 'pawnReference').value.trim(), originalSource: fe(form, 'originalSource').value.trim(), pawnDate: v.pawnDate || null,
         principal: v.principal, auctionEligibleDate: v.eligibleDate || null, notes: fe(form, 'notes').value.trim(),
       });
@@ -344,8 +342,10 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
   function decorate(r) {
     r._paid = (r.subasta_payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
     r._eff = effOf(r);
+    r._lines = subastaLinesOf(r);
+    r._label = linesLabel(r._lines);
     r._st = r.status === 'Sold' ? paymentStatusOf(r.sale_price, r._paid) : paymentStatusOf(0, 0);
-    r._hay = [r.id, '#' + r.id, r.item_description, r.sku, r.category, r.metal_type, r.purity, r.pawner_name, r.pawner_contact, r.pawn_reference, r.original_source,
+    r._hay = [r.id, '#' + r.id, r.item_description, r.sku, r.category, r.metal_type, r.purity, r._label, ...r._lines.map((l) => (l.metal_type || '') + ' ' + (l.purity || '')), r.pawner_name, r.pawner_contact, r.pawn_reference, r.original_source,
       r.buyer_name, r.buyer_contact, r.notes, r.status, r._eff, r.pawn_date, r.sale_date, r.weight_grams, r.sale_price, r.creator && r.creator.full_name,
       r.processor && r.processor.full_name, ...(r.subasta_payments || []).map((p) => (p.reference_number || '') + ' ' + p.payment_method)].filter((x) => x != null).join(' ').toLowerCase();
     return r;
@@ -423,7 +423,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
     return { search: $('sb-f-search').value.trim().toLowerCase(), status: $('sb-f-status').value, metal: $('sb-f-metal').value, from: $('sb-f-from').value, to: $('sb-f-to').value };
   }
   function matchesNonDate(r, f) {
-    if (f.metal !== 'all' && r.metal_type !== f.metal) return false;
+    if (f.metal !== 'all' && !r._lines.some((l) => l.metal_type === f.metal)) return false;
     switch (f.status) {
       case 'all': break;
       case 'open': if (!OPEN.includes(r.status)) return false; break;
@@ -504,7 +504,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
       '<thead><tr><th>Item</th><th>Pawner</th><th class="nw">Weight</th><th class="nw">Pawn Ref / Date</th><th class="nw">Eligible</th><th class="nw">Status</th><th class="nw">Sale</th><th class="nw">Payment</th><th></th></tr></thead><tbody>' +
       info.rows.map((r) => '<tr data-row-id="' + r.id + '">' +
         '<td data-label="Item"><b>' + esc(r.item_description) + '</b><div class="muted" style="font-size:10.5px;">' +
-          esc([r.sku, r.category, [r.metal_type, r.purity].filter(Boolean).join(' ')].filter(Boolean).join(' · ') || '—') + '</div></td>' +
+          esc([r.sku, r.category, r._label].filter(Boolean).join(' · ') || '—') + '</div></td>' +
         '<td data-label="Pawner">' + (r.pawner_name ? esc(r.pawner_name) + (r.pawner_contact ? '<div class="muted" style="font-size:10.5px;">' + esc(r.pawner_contact) + '</div>' : '') : '<span class="muted">—</span>') + '</td>' +
         '<td data-label="Weight" class="nw">' + grams(r.weight_grams) + '</td>' +
         '<td data-label="Pawn Ref / Date" class="nw">' + esc(r.pawn_reference || '—') + '<div class="muted" style="font-size:10.5px;">' + fmtDate(r.pawn_date) + '</div></td>' +
@@ -638,9 +638,17 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
 
     h += '<div class="drawer-section"><h4>Item</h4>' +
       kv('Item', esc(r.item_description)) + kv('SKU', esc(r.sku || '—')) + kv('Category', esc(r.category || '—')) +
-      kv('Metal / Purity', esc([r.metal_type, r.purity].filter(Boolean).join(' ') || '—')) + kv('Weight', grams(r.weight_grams)) +
+      kv('Metal / Purity', esc(r._label || '—')) + kv(r._lines.length > 1 ? 'Total weight' : 'Weight', grams(r.weight_grams)) +
       kv('Branch', esc(branchName(r.branch_id))) + kv('Status', statusBadge(eff)) +
       (converted ? kv('Origin', 'Converted from Scrap #' + r.converted_from_scrap_entry_id) : '') + '</div>';
+
+    // An item with several metals / purities: one row per line.
+    if (r._lines.length > 1) {
+      h += '<div class="drawer-section"><h4>Metal &amp; weight</h4>' +
+        '<div class="table-scroll table-mini"><table class="ops-table sc-lines-table"><thead><tr><th>Metal</th><th>Purity</th><th>Weight</th></tr></thead><tbody>' +
+        r._lines.map((l) => '<tr><td data-label="Metal">' + esc(l.metal_type || '—') + '</td><td data-label="Purity">' + esc(l.purity || '—') + '</td><td data-label="Weight">' + grams(l.weight_grams) + '</td></tr>').join('') +
+        '</tbody><tfoot><tr><td colspan="2"><b>Total</b></td><td><b>' + grams(r.weight_grams) + '</b></td></tr></tfoot></table></div></div>';
+    }
 
     h += '<div class="drawer-section"><h4>Pawner / source</h4>' +
       kv('Pawner', esc(r.pawner_name || '—')) + kv('Contact', esc(r.pawner_contact || '—')) + kv('Pawn reference', esc(r.pawn_reference || '—')) + kv('Original source', esc(r.original_source || '—')) +
@@ -881,7 +889,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
     const body = $('sb-detail-body');
     body.innerHTML =
       '<form id="sb-sold-form" novalidate class="lw-edit-form" style="display:flex;flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:8px;">' +
-        '<p class="muted" style="margin:0;font-size:12px;">' + esc(r.item_description) + ' · ' + esc([r.metal_type, r.purity].filter(Boolean).join(' ') || '—') + ' · ' + grams(r.weight_grams) + '</p>' +
+        '<p class="muted" style="margin:0;font-size:12px;">' + esc(r.item_description) + ' · ' + esc(r._label || '—') + ' · ' + grams(r.weight_grams) + '</p>' +
         '<div class="msg error" data-sold-err hidden></div>' +
         '<div class="drawer-section"><h4>Sale</h4>' +
           '<div class="sc-row2"><div class="field"><label>Sale date</label><input type="date" name="saleDate"></div>' +
@@ -986,12 +994,9 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
         '<div class="drawer-section"><h4>Item</h4>' +
           '<div class="field"><label>SKU</label><input type="text" name="sku" value="' + v(r.sku) + '"></div>' +
           '<div class="field"><label>Item description *</label><input type="text" name="itemDescription" value="' + v(r.item_description) + '"></div>' +
-          '<div class="sc-row2"><div class="field"><label>Category</label><input type="text" name="category" list="sb-cat-list" value="' + v(r.category) + '"></div>' +
-          '<div class="field"><label>Metal *</label><select name="metal"><option value="">— choose —</option>' + METALS.map((m) => '<option' + (m === r.metal_type ? ' selected' : '') + '>' + m + '</option>').join('') + '</select></div></div>' +
-          '<div class="sc-row2"><div class="field"><label>Purity</label><select name="purity"></select></div>' +
-          '<div class="field"><label>Weight (grams)</label><input type="number" name="weight" step="0.001" min="0" value="' + v(r.weight_grams) + '"></div></div>' +
-          '<div class="field" data-purity-other hidden><label>Custom purity *</label><input type="text" name="purityOther"></div>' +
+          '<div class="field"><label>Category</label><input type="text" name="category" list="sb-cat-list" value="' + v(r.category) + '"></div>' +
         '</div>' +
+        '<div class="drawer-section"><h4>Metal &amp; weight</h4><div id="sb-edit-lines-box"></div></div>' +
         '<div class="drawer-section"><h4>Pawner / source</h4>' +
           '<div class="field"><label>Pawner name</label><input type="text" name="pawner" autocomplete="off" value="' + v(r.pawner_name) + '"></div>' +
           '<div class="field"><label>Contact number</label><input type="text" name="pawnerContact" autocomplete="off" value="' + v(r.pawner_contact) + '"></div>' +
@@ -1016,8 +1021,9 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
         '<div style="display:flex;gap:8px;"><button class="btn" type="submit">Save correction</button><button class="btn secondary" type="button" data-act="cancel-edit">Cancel</button></div>' +
       '</form>';
     const ef = $('sb-edit-form');
-    const epurity = purityFields(ef);
-    epurity.set(r.metal_type || '', r.purity || '');
+    // The same lines editor as New Subasta, filled with this item's lines (an item that never had any metal opens with one blank line).
+    const edLines = mountScrapLines($('sb-edit-lines-box'), { esc, getMoney: () => false, metalBlank: true, strict: false });
+    edLines.load(r._lines.length ? r._lines : null);
     attachCustomerPicker({ nameInput: fe(ef, 'pawner'), contactInput: fe(ef, 'pawnerContact') });
     if (r.status === 'Sold') attachCustomerPicker({ nameInput: fe(ef, 'buyer'), contactInput: fe(ef, 'buyerContact') });
     ef.querySelector('[data-act="cancel-edit"]').addEventListener('click', () => openDetail(r.id));
@@ -1028,17 +1034,29 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
       const fail = (m, el) => { err.textContent = friendlyError(m); err.hidden = false; err.scrollIntoView({ block: 'nearest' }); if (el) flagInvalid(el); };
       const str = (n) => fe(ef, n).value.trim();
       const cur = {
-        itemDescription: str('itemDescription'), metal: fe(ef, 'metal').value, purity: epurity.read(), weight: numOrNull(fe(ef, 'weight')),
+        itemDescription: str('itemDescription'),
         principal: numOrNull(fe(ef, 'principal')), pawnDate: fe(ef, 'pawnDate').value, eligibleDate: fe(ef, 'eligibleDate').value,
       };
       const bad = itemProblem(cur);
       if (bad) return fail(bad[0], fe(ef, bad[1]));
+      const gotLines = edLines.read();
+      if (gotLines.error) return fail(gotLines.error, gotLines.el);
       const patch = {};
       const setStr = (key, val, old) => { if (val !== String(old || '')) patch[key] = val || null; };
       const setNum = (key, val, old) => { if ((val == null ? null : val) !== (old == null ? null : Number(old))) patch[key] = val; };
       const setDate = (key, val, old) => { if (val !== String(old || '')) patch[key] = val || null; };
       setStr('sku', str('sku'), r.sku); setStr('item_description', cur.itemDescription, r.item_description); setStr('category', str('category'), r.category);
-      setStr('metal_type', cur.metal, r.metal_type); setStr('purity', cur.purity, r.purity); setNum('weight_grams', cur.weight, r.weight_grams);
+      // The metal lines are sent only when something in them changed; the item's own metal / purity / weight then follow from them on the server.
+      let lineChange = null;
+      {
+        const was = normLines(r._lines.map((l) => ({ metal_type: l.metal_type, karat: l.purity, weight_grams: l.weight_grams })));
+        const now = normLines(gotLines.lines.map((l) => ({ metal_type: l.metal, karat: l.karat, weight_grams: l.weight })));
+        const same = (x, y) => String(x.metal || '') === String(y.metal || '') && x.karat === y.karat && (Number.isNaN(x.weight) ? null : x.weight) === (Number.isNaN(y.weight) ? null : y.weight);
+        if (was.length !== now.length || was.some((x, i) => !same(x, now[i]))) {
+          patch.lines = gotLines.lines.map((l) => ({ metal: l.metal, purity: l.karat, weight: l.weight }));
+          lineChange = was.length !== now.length || was.some((x, i) => String(x.metal || '') !== String(now[i].metal || '') || x.karat !== now[i].karat) ? 'Wrong Purity' : 'Wrong Weight';
+        }
+      }
       setStr('pawner_name', str('pawner'), r.pawner_name); setStr('pawner_contact', str('pawnerContact'), r.pawner_contact);
       setStr('pawn_reference', str('pawnReference'), r.pawn_reference); setStr('original_source', str('originalSource'), r.original_source);
       setDate('pawn_date', cur.pawnDate, r.pawn_date); setNum('principal_amount', cur.principal, r.principal_amount); setDate('auction_eligible_date', cur.eligibleDate, r.auction_eligible_date);
@@ -1057,7 +1075,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
       setStr('notes', str('notes'), r.notes);
       const keys = Object.keys(patch);
       if (!keys.length) return fail('Nothing was changed.');
-      const guess = patch.purity !== undefined ? 'Wrong Purity' : patch.weight_grams !== undefined ? 'Wrong Weight' : (patch.sale_price !== undefined || patch.principal_amount !== undefined) ? 'Wrong Amount'
+      const guess = lineChange ? lineChange : (patch.sale_price !== undefined || patch.principal_amount !== undefined) ? 'Wrong Amount'
         : (patch.pawn_date !== undefined || patch.sale_date !== undefined || patch.auction_eligible_date !== undefined || patch.listed_date !== undefined) ? 'Wrong Date'
         : (patch.pawner_name !== undefined || patch.buyer_name !== undefined || patch.pawner_contact !== undefined) ? 'Wrong Customer' : patch.sku !== undefined ? 'Wrong SKU' : 'Other';
       const out = await reasonDialog({ title: 'Save this correction?', message: 'Changing: ' + keys.map((k) => FIELD_LABELS[k] || k).join(', ') + '.\nIt is recorded with your name, the old and new values and the reason.',

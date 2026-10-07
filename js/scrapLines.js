@@ -2,7 +2,10 @@
 // A customer who sells 18K and 16K together is ONE entry with two lines: each line has its own metal, purity, weight and price per gram,
 // the entry keeps one customer, one final amount and one set of payments. The New Scrap and the Edit forms share this editor; the list
 // and the detail drawer share the label helpers. The database (create_scrap_entry_v3 / update_scrap_entry, migration 193) checks everything again.
-import { purityOptionsHtml } from './metals.js?v=20261007u';
+// The same editor serves a SUBASTA item (2026-10-07, "add the same for subasta items"; create_subasta_item_v2 / update_subasta_item, migration 194):
+// opts.metalBlank / opts.strict = false give it the item's own rules -- a line may start with no metal chosen, and purity and weight are required only
+// for gold and silver -- and the price fields are hidden (getMoney() false).
+import { purityOptionsHtml } from './metals.js?v=20261007v';
 
 const METALS = ['Gold', 'Silver', 'Other'];
 const MAX_LINES = 12;
@@ -16,12 +19,20 @@ export function linesOf(r) {
     gross_amount: r.gross_amount, amount: r.total_amount }];
 }
 
+/** The lines of a Subasta item (subasta_item_lines rows) in the shape linesLabel / the editor use (`purity` is read as `karat`); an item without rows reads
+ * as one line from its own columns when it has any metal, purity or weight, else as no lines. */
+export function subastaLinesOf(r) {
+  const l = (r.subasta_item_lines || []).slice().sort((a, b) => a.line_no - b.line_no).map((x) => Object.assign({}, x, { karat: x.purity }));
+  if (l.length) return l;
+  return r.metal_type || r.purity || r.weight_grams != null ? [{ line_no: 1, metal_type: r.metal_type, karat: r.purity, purity: r.purity, weight_grams: r.weight_grams }] : [];
+}
+
 /** "Gold 18K", "Gold 18K + 16K" (one metal, several purities) or "Gold 18K + Silver 925" (more than one metal). */
 export function linesLabel(lines) {
-  const metals = [...new Set(lines.map((l) => l.metal_type))];
-  if (metals.length === 1) {
+  const metals = [...new Set(lines.map((l) => l.metal_type).filter(Boolean))]; // a Subasta line on an old item may have no metal
+  if (metals.length <= 1) {
     const ks = [...new Set(lines.map((l) => l.karat || ''))].filter(Boolean);
-    return metals[0] + (ks.length ? ' ' + ks.join(' + ') : '');
+    return ((metals[0] || '') + (ks.length ? ' ' + ks.join(' + ') : '')).trim();
   }
   return lines.map((l) => ((l.metal_type || '') + ' ' + (l.karat || '')).trim()).join(' + ');
 }
@@ -33,11 +44,14 @@ export const normLines = (lines) => lines.map((l) => ({
   gross: (l.gross_amount ?? l.gross) == null || (l.gross_amount ?? l.gross) === '' ? null : r2(Number(l.gross_amount ?? l.gross)),
 }));
 
-/** Mounts the lines editor into `box`. opts: { esc, getMoney() -> whether price / amount fields apply (false for a transfer), onChange() }.
- * Returns { load(lines|null), read(), totals(), sync() }. */
+/** Mounts the lines editor into `box`. opts: { esc, getMoney() -> whether price / amount fields apply (false for a transfer or a Subasta item), onChange(),
+ * metalBlank (a "— choose —" metal, the default for a new line), strict (default true: purity and weight are required on every line; false = only for
+ * gold and silver) }. Returns { load(lines|null), read(), totals(), sync(), prefillFirst({ metal, purity, weight }) }. */
 export function mountScrapLines(box, opts) {
   const esc = (opts && opts.esc) || esc0;
   const money = () => (opts && opts.getMoney ? !!opts.getMoney() : true);
+  const blankMetal = !!(opts && opts.metalBlank), strict = !(opts && opts.strict === false);
+  const star = strict ? ' *' : '';
   const changed = () => { updateTotal(); if (opts && opts.onChange) opts.onChange(); };
 
   box.innerHTML = '<div data-lines></div>' +
@@ -51,11 +65,11 @@ export function mountScrapLines(box, opts) {
     return '<div class="sc-line" data-line>' +
       '<div class="sc-line-head"><span data-line-title></span><button type="button" class="sc-line-del" data-del-line aria-label="Remove this line" title="Remove this line">✕</button></div>' +
       '<div class="sc-row2">' +
-        '<div class="field"><label>Metal *</label><select data-f="metal">' + METALS.map((m) => '<option>' + m + '</option>').join('') + '</select></div>' +
-        '<div class="field"><label>Purity *</label><select data-f="purity"></select></div>' +
+        '<div class="field"><label>Metal *</label><select data-f="metal">' + (blankMetal ? '<option value="">— choose —</option>' : '') + METALS.map((m) => '<option>' + m + '</option>').join('') + '</select></div>' +
+        '<div class="field"><label>Purity' + star + '</label><select data-f="purity"></select></div>' +
       '</div>' +
       '<div class="field" data-purity-other hidden><label>Custom purity *</label><input type="text" data-f="purityOther" placeholder="e.g. 20K"></div>' +
-      '<div class="field"><label>Weight (grams) *</label><input type="number" data-f="weight" step="0.001" min="0" inputmode="decimal"></div>' +
+      '<div class="field"><label>Weight (grams)' + star + '</label><input type="number" data-f="weight" step="0.001" min="0" inputmode="decimal"></div>' +
       '<div class="sc-row2" data-money>' +
         '<div class="field"><label>Price per gram (₱)</label><input type="number" data-f="ppg" step="0.01" min="0" inputmode="decimal"></div>' +
         '<div class="field"><label>Amount (₱)</label><input type="number" data-f="gross" step="0.01" min="0" inputmode="decimal" placeholder="weight × price"></div>' +
@@ -82,7 +96,7 @@ export function mountScrapLines(box, opts) {
     wrap.innerHTML = rowHtml(line);
     const row = wrap.firstElementChild;
     host.appendChild(row);
-    const metal = (line && (line.metal_type || line.metal)) || 'Gold';
+    const metal = (line && (line.metal_type || line.metal)) || (blankMetal ? '' : 'Gold');
     f(row, 'metal').value = metal;
     setPurity(row, metal, line ? String(line.karat || '').trim() : '');
     if (line && line.weight_grams != null) f(row, 'weight').value = line.weight_grams;
@@ -124,7 +138,7 @@ export function mountScrapLines(box, opts) {
     const rs = rows();
     if (rs.length >= MAX_LINES) return;
     const last = rs[rs.length - 1];
-    const row = addRow({ metal_type: last ? f(last, 'metal').value : 'Gold', karat: '' });
+    const row = addRow({ metal_type: last ? f(last, 'metal').value : (blankMetal ? '' : 'Gold'), karat: '' });
     changed();
     f(row, 'purity').focus();
   });
@@ -133,10 +147,18 @@ export function mountScrapLines(box, opts) {
     /** Replaces every line: `lines` are scrap_entry_lines rows (or null for one empty Gold 18K line). */
     load(lines) {
       host.innerHTML = '';
-      (lines && lines.length ? lines : [{ metal_type: 'Gold', karat: '18K' }]).forEach((l) => addRow(l));
+      (lines && lines.length ? lines : [blankMetal ? { metal_type: '', karat: '' } : { metal_type: 'Gold', karat: '18K' }]).forEach((l) => addRow(l));
       updateTotal();
     },
     sync,
+    /** Fills the FIRST line from a catalog product, only where it is still blank (the metal and purity only while no metal is chosen yet). */
+    prefillFirst({ metal, purity, weight }) {
+      const row = rows()[0];
+      if (!row) return;
+      if (metal && !f(row, 'metal').value) { f(row, 'metal').value = metal; setPurity(row, metal, purity || ''); }
+      if (weight && !f(row, 'weight').value) f(row, 'weight').value = weight;
+      changed();
+    },
     /** Money in the lines as typed so far: sum of the amounts, and whether every / any line has one. */
     totals() {
       const rs = rows();
@@ -155,14 +177,19 @@ export function mountScrapLines(box, opts) {
       const rs = rows(), multi = rs.length > 1, m = money(), lines = [];
       for (let i = 0; i < rs.length; i++) {
         const row = rs[i], on = multi ? ' on line ' + (i + 1) : '';
+        const metal = f(row, 'metal').value;
+        if (!metal) return { error: 'Choose the metal' + on + ' (Gold, Silver or Other).', el: f(row, 'metal') };
         const purity = purityOf(row);
-        if (!purity) return { error: 'Choose the purity' + on + ' (or type a custom one).', el: f(row, f(row, 'purity').value === 'Custom' ? 'purityOther' : 'purity') };
-        const w = Number(f(row, 'weight').value);
-        if (!(w > 0)) return { error: 'Enter the weight in grams (more than 0)' + on + '.', el: f(row, 'weight') };
+        const needsBoth = strict || metal === 'Gold' || metal === 'Silver';
+        if (!purity && needsBoth) return { error: 'Choose the purity' + on + ' (or type a custom one)' + (strict ? '' : ' -- it is needed for gold and silver') + '.', el: f(row, f(row, 'purity').value === 'Custom' ? 'purityOther' : 'purity') };
+        const wRaw = f(row, 'weight').value;
+        const w = wRaw === '' ? null : Number(wRaw);
+        if (w != null && !(w > 0)) return { error: 'Weight must be more than 0 grams' + on + '.', el: f(row, 'weight') };
+        if (w == null && needsBoth) return { error: 'Enter the weight in grams' + (strict ? ' (more than 0)' : ' -- it is needed for gold and silver') + on + '.', el: f(row, 'weight') };
         const ppg = f(row, 'ppg').value === '' ? null : Number(f(row, 'ppg').value);
         const gross = Number(f(row, 'gross').value);
         if (m && !(gross > 0)) return { error: 'Enter the amount' + on + ': a price per gram, or the amount.', el: f(row, ppg ? 'gross' : 'ppg') };
-        lines.push({ metal: f(row, 'metal').value, karat: purity, weight: w, price_per_gram: m ? ppg : null, gross: m ? r2(gross) : null });
+        lines.push({ metal, karat: purity || null, weight: w, price_per_gram: m ? ppg : null, gross: m ? r2(gross) : null });
       }
       return { lines };
     },
