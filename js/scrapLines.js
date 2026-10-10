@@ -5,7 +5,7 @@
 // The same editor serves a SUBASTA item (2026-10-07, "add the same for subasta items"; create_subasta_item_v2 / update_subasta_item, migration 194):
 // opts.metalBlank / opts.strict = false give it the item's own rules -- a line may start with no metal chosen, and purity and weight are required only
 // for gold and silver -- and the price fields are hidden (getMoney() false).
-import { purityOptionsHtml } from './metals.js?v=20261007w';
+import { purityOptionsHtml } from './metals.js?v=20261011a';
 
 const METALS = ['Gold', 'Silver', 'Other'];
 const MAX_LINES = 12;

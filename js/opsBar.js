@@ -3,9 +3,9 @@
 // -> one main action button that follows the module ("+ New Sale", "+ New Layaway", ...). It owns no data: it tells the page what was
 // chosen (branch, search text for the module on show, date range, module, action) and the page does the rest. Search is remembered per
 // module, so what was typed for Layaway never filters Scrap.
-import { RANGE_PRESETS } from './opsDates.js?v=20261007w';
-import { branchButtonStyle } from './branchColors.js?v=20261007w';
-import { loadPrefs, savedRange, resolveRange, saveRange } from './opsPrefs.js?v=20261007w';
+import { RANGE_PRESETS } from './opsDates.js?v=20261011a';
+import { branchButtonStyle } from './branchColors.js?v=20261011a';
+import { loadPrefs, savedRange, resolveRange, saveRange } from './opsPrefs.js?v=20261011a';
 
 /** Options: root (empty container), esc, branches (all active -- for colours), visibleBranches (what this person may see), getBranchId(),
  * onBranch(id), tabs [{ key, label, dot, placeholder }], getTab(), onTab(key), tabInfo(key) -> { count, urgent: { text, tone } | null },

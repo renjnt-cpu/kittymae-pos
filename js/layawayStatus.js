@@ -10,8 +10,8 @@
 //   NEARING DEADLINE  deadline within the "nearing" window (default 15 days)
 //   PARTIALLY PAID    something paid, balance owed, deadline not close
 //   ON HOLD           nothing paid yet
-import { getOpsConfig, layawayDeadline } from './branchOpsConfig.js?v=20261007w';
-import { daysBetween, manilaToday } from './opsDates.js?v=20261007w';
+import { getOpsConfig, layawayDeadline } from './branchOpsConfig.js?v=20261011a';
+import { daysBetween, manilaToday } from './opsDates.js?v=20261011a';
 
 /** Colour family per status -- green done/paid, blue active, yellow nearing, red overdue/lost, grey cancelled. */
 export const STATUS_TONE = {

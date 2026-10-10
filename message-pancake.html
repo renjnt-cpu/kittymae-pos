@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Message Pancake — Kittymae POS</title>
+<link rel="stylesheet" href="css/styles.css?v=20261011a">
+</head>
+<body>
+<main>
+  <div id="msgp-msg"></div>
+  <div id="msgp-root"></div>
+</main>
+
+<script type="module">
+// Message Pancake (Ren, 2026-10-11): online customers on Messenger who need a reply / a follow-up, with the names shown in the POS.
+// The page itself is js/messagePancake.js; the database side is migration 207 (msgp_* functions, closed tables, message-pancake-sync Edge Function).
+import { initShell } from './js/shell.js?v=20261011a';
+import { renderPosNav } from './js/posNav.js?v=20261011a';
+import { startMessagePancake } from './js/messagePancake.js?v=20261011a';
+
+const employee = await initShell();
+if (employee) {
+  renderPosNav(employee, 'message-pancake.html');
+  startMessagePancake({ employee });
+}
+</script>
+</body>
+</html>
