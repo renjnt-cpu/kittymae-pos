@@ -852,3 +852,68 @@ tr.lw-row-orange td { background:#fff4e8; }
 .msgp-savebar { position:sticky; bottom:0; background:var(--rose-bg); padding:10px 0; z-index:5; }
 .msgp-tech pre { background:#f6f8fa; border-radius:6px; padding:10px; overflow:auto; max-height:260px; font-size:11px; }
 @media (max-width:600px) { .msgp-page { margin-left:0; width:100%; } .msgp-strip-link { padding:8px 14px; } .msgp-strip-go { margin-left:0; } }
+
+/* ---- Message Pancake: the AI Customer Message Monitor upgrade (2026-10-11) -- queue, conversation panel, reports, POS Customer Attention panel ---- */
+.msgp-b { white-space:nowrap; line-height:1.5; font-weight:600; letter-spacing:0.01em; }
+.msgp-b-red { background:#fdecea; color:#b3261e; border:1px solid #f3c3be; }
+.msgp-b-orange { background:#fff0d9; color:#9a5a00; border:1px solid #f4d49a; }
+.msgp-b-yellow { background:#fff8d0; color:#7a6200; border:1px solid #efe08a; }
+.msgp-b-green { background:#eaf6ec; color:#1f6b2b; border:1px solid #bfe0c4; }
+.msgp-b-blue { background:#e3edfd; color:#1a56b0; border:1px solid #bcd0f3; }
+.msgp-b-purple { background:#f1e5f7; color:#6a1b9a; border:1px solid #d9bde8; }
+.msgp-b-gray { background:#eeeeee; color:#555; border:1px solid #dcdcdc; }
+.msgp-t-yellow .num { color:#8a7000; } .msgp-t-green .num { color:var(--ok); } .msgp-t-purple .num { color:#6a1b9a; } .msgp-t-red .num { color:var(--warn); } .msgp-t-orange .num { color:#a15c00; }
+.msgp-tiles .tile { flex:1 1 130px; }
+.msgp-filters .msgp-more { flex:1 1 100%; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; border-top:1px solid #eee; padding-top:10px; }
+.msgp-grow { flex:1 1 260px; }
+.msgp-count { font-size:12px; margin:4px 2px 8px; }
+.msgp-card { cursor:pointer; }
+.msgp-card:focus-visible, .msgp-ac a:focus-visible { outline:2px solid #1a56b0; outline-offset:2px; }
+.msgp-p-critical { border-left-color:var(--warn); } .msgp-p-high { border-left-color:#e08a00; } .msgp-p-normal { border-left-color:#8fb3de; } .msgp-p-low { border-left-color:#cfd8dc; }
+.msgp-done { opacity:0.8; }
+.msgp-badges { display:flex; flex-wrap:wrap; gap:5px; margin:6px 0 2px; }
+.msgp-meta { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; font-size:12.5px; margin-top:6px; }
+.msgp-order { font-weight:600; }
+.msgp-reason { margin:2px 0; }
+/* the conversation panel */
+.msgp-drawer-wrap { position:fixed; inset:0; z-index:100; }
+.msgp-drawer-back { position:absolute; inset:0; background:rgba(0,0,0,0.35); }
+.msgp-drawer { position:absolute; top:0; right:0; bottom:0; width:min(580px,100%); background:var(--rose-bg); overflow-y:auto; padding:14px 16px 40px; box-shadow:-4px 0 14px rgba(0,0,0,0.18); }
+.msgp-dr-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:8px; }
+.msgp-dr-head h2 { margin:0 0 2px; font-size:18px; }
+.msgp-dr-actions { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
+.msgp-dr-sec { padding:12px 14px; margin-bottom:12px; }
+.msgp-dr-sec h3 { margin:0 0 8px; color:var(--ink); font-size:14px; }
+.msgp-kv { display:flex; justify-content:space-between; gap:12px; padding:3px 0; font-size:13px; border-bottom:1px dashed #eee; } .msgp-kv > span:last-child { text-align:right; }
+.msgp-detect { display:flex; gap:12px; flex-wrap:wrap; } .msgp-detect .field { flex:1 1 150px; }
+.msgp-esc { margin:8px 0; }
+.msgp-note { background:#fffdf3; border:1px solid #f0e6b8; border-radius:8px; padding:8px 10px; margin-bottom:8px; font-size:13px; }
+.msgp-tl { margin:0; padding-left:0; list-style:none; font-size:12.5px; } .msgp-tl li { padding:4px 0; border-bottom:1px dashed #eee; }
+.msgp-hist { font-size:12px; padding:2px 0; }
+body.msgp-noscroll { overflow:hidden; }
+/* the POS Customer Attention panel */
+.msgp-attn { background:#fff4e0; border-bottom:1px solid #f0d9ae; }
+.msgp-attn.urgent { background:#fdecea; border-bottom-color:#f3c3be; }
+.msgp-attn[hidden] { display:none; }
+.msgp-attn-bar { width:100%; display:flex; flex-wrap:wrap; gap:6px 12px; align-items:baseline; text-align:left; border:0; background:none; font:inherit; font-size:13px; color:#7a4500; padding:8px 20px; cursor:pointer; }
+.msgp-attn.urgent .msgp-attn-bar { color:#8e1d1d; }
+.msgp-attn-title { font-weight:bold; letter-spacing:0.03em; }
+.msgp-attn-caret { margin-left:auto; }
+.msgp-attn-panel { background:#fff; border-top:1px solid #eee; padding:10px 20px 14px; max-height:60vh; overflow-y:auto; }
+.msgp-attn-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+.msgp-attn-n { display:inline-block; min-width:16px; padding:0 4px; border-radius:8px; background:rgba(0,0,0,0.12); font-size:11px; text-align:center; }
+.msgp-attn-list { display:flex; flex-direction:column; gap:8px; }
+.msgp-ac { display:flex; justify-content:space-between; gap:12px; align-items:center; border:1px solid #e6edf2; border-left:4px solid #cfd8dc; border-radius:8px; padding:8px 12px; }
+.msgp-ac-critical { border-left-color:var(--warn); } .msgp-ac-high { border-left-color:#e08a00; } .msgp-ac-normal { border-left-color:#8fb3de; }
+.msgp-ac-top { display:flex; gap:8px; align-items:center; flex-wrap:wrap; } .msgp-ac-why { font-size:13px; } .msgp-ac-reason, .msgp-ac-meta { font-size:12.5px; color:#444; } .msgp-ac-meta { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:3px; }
+.msgp-dot { width:10px; height:10px; border-radius:50%; display:inline-block; } .msgp-dot-red { background:#c62828; } .msgp-dot-orange { background:#e08a00; } .msgp-dot-gray { background:#9aa5ad; } .msgp-dot-yellow { background:#d4b400; } .msgp-dot-green { background:#2e7d32; }
+.msgp-attn-foot { display:flex; justify-content:space-between; align-items:center; margin-top:10px; font-size:13px; }
+.msgp-toast { position:fixed; right:16px; bottom:16px; z-index:120; background:#fff; border:1px solid #f0d9ae; border-left:5px solid #e08a00; border-radius:10px; padding:12px 14px; box-shadow:0 6px 18px rgba(0,0,0,0.2); max-width:320px; font-size:13px; }
+.msgp-toast.urgent { border-left-color:var(--warn); }
+.msgp-cat { border:1px solid #e6edf2; border-radius:8px; padding:6px 10px; margin-bottom:8px; background:#fff; } .msgp-cat summary { cursor:pointer; padding:4px 0; }
+@media (max-width:600px) { .msgp-drawer { width:100%; } .msgp-attn-bar, .msgp-attn-panel { padding-left:14px; padding-right:14px; } .msgp-ac { flex-direction:column; align-items:stretch; } .msgp-kv { flex-direction:column; gap:0; } .msgp-kv > span:last-child { text-align:left; } }
+/* a link that looks like a button (Message Pancake's OPEN CHAT / VIEW MESSAGE) */
+a.btn { display:inline-block; text-decoration:none; background:var(--rose); color:var(--ink); border:none; border-radius:6px; padding:8px 14px; font-size:13px; cursor:pointer; font-weight:600; text-align:center; }
+a.btn.small { padding:5px 10px; font-size:12px; }
+a.btn.secondary { background:#eee; color:var(--ink); }
+a.btn:hover { filter:brightness(0.96); }

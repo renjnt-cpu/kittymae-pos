@@ -2,12 +2,12 @@
 // header{}/nav{}/nav a{} rules -- same structure as the main ERP's shell.js
 // (colored header bar, pill-shaped nav links below), just this site's own pastel
 // blue palette and 4-page link set instead of the ERP's full nav.
-import { esc } from './shell.js?v=20261011a';
-import { signOut } from './auth.js?v=20261011a';
-import { initActivityFeed } from './activityFeed.js?v=20261011a';
-import { showBirthdayBanner } from './birthdayBanner.js?v=20261011a';
-import { initAdminChat } from './adminChat.js?v=20261011a';
-import { initMsgpTicker, canSeeMessagePancake } from './msgpTicker.js?v=20261011a';
+import { esc } from './shell.js?v=20261011b';
+import { signOut } from './auth.js?v=20261011b';
+import { initActivityFeed } from './activityFeed.js?v=20261011b';
+import { showBirthdayBanner } from './birthdayBanner.js?v=20261011b';
+import { initAdminChat } from './adminChat.js?v=20261011b';
+import { initMsgpTicker, canOpenMessagePancake } from './msgpTicker.js?v=20261011b';
 
 // Where a clicked activity notification opens its record (spec 321) -- keyed by the
 // event's record_table. Pages this app doesn't have link across to the ERP.
@@ -36,7 +36,7 @@ export function renderPosNav(employee, activeHref) {
     { href: 'capital.html', label: 'Branch Capital' },
   ];
   // Message Pancake (Ren, 2026-10-11) -- online customers who need a reply; only for message_pancake.view, with a red count of urgent / follow-up chats.
-  if (canSeeMessagePancake(employee)) links.splice(2, 0, { href: 'message-pancake.html', label: 'Message Pancake', badge: 'msgp-nav-badge' });
+  if (canOpenMessagePancake(employee)) links.splice(2, 0, { href: 'message-pancake.html', label: 'Message Pancake', badge: 'msgp-nav-badge' });
   const active = links.find((l) => l.href === activeHref);
 
   // Same app-shell markup/behavior as the ERP's shell.js (App Shell, P0) --

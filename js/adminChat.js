@@ -5,7 +5,7 @@
 // Realtime push (subscribeToChanges), not polling, and capped history (see api.js) --
 // the two things that actually matter for the lag concern Ren raised before asking for
 // this.
-import { listAdminChatMessages, sendAdminChatMessage, subscribeToChanges } from './api.js?v=20261011a';
+import { listAdminChatMessages, sendAdminChatMessage, subscribeToChanges } from './api.js?v=20261011b';
 
 const STYLE_ID = 'km-chat-style';
 

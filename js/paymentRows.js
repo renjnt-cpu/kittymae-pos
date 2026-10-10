@@ -3,9 +3,9 @@
 // no date in the future or before the record's own date, the total never above what is due). New Scrap and Subasta "Mark Sold"
 // use it today; Layaway and POS adopt it in a later phase. The component keeps no state besides the inputs: build the HTML with
 // paymentRowsHtml(), put it in a container, then mountPaymentRows() on that container.
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261011a';
-import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261011a';
-import { manilaToday } from './opsDates.js?v=20261011a';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261011b';
+import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261011b';
+import { manilaToday } from './opsDates.js?v=20261011b';
 
 const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const money = (n) => '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 });

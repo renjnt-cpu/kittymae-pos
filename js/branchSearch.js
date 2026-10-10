@@ -3,9 +3,9 @@
 // filters the spec lists (From / To, branch, admin, status, payment method). The bar's own Search box still filters only the module on
 // show; this is the "where did that customer go?" tool. A result opens the record in its own tab (switching branch first if needed).
 // The lookup is search_branch_records() (row-level security applies: you only find what you may already see).
-import { searchBranchRecords, listActiveEmployees } from './api.js?v=20261011a';
-import { POS_PAYMENT_METHODS, posMethodLabel } from './paymentMethods.js?v=20261011a';
-import { friendlyError } from './shell.js?v=20261011a';
+import { searchBranchRecords, listActiveEmployees } from './api.js?v=20261011b';
+import { POS_PAYMENT_METHODS, posMethodLabel } from './paymentMethods.js?v=20261011b';
+import { friendlyError } from './shell.js?v=20261011b';
 
 const MODULES = ['POS', 'Layaway', 'Scrap', 'Subasta'];
 const MODULE_LABEL = { POS: 'POS Walk In & COD', Layaway: 'Layaway', Scrap: 'Scrap', Subasta: 'Subasta' };
