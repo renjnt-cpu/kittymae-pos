@@ -1,6 +1,6 @@
 // Message Pancake -- the wrappers for its database functions (migrations 207-213). POS-only: the ERP does not have this module.
 // Everything is checked again in the database (message_pancake.* keys, branch visibility); the page only hides what the person cannot use.
-import { supabase } from './supabaseClient.js?v=20261011c';
+import { supabase } from './supabaseClient.js?v=20261011d';
 
 async function rpc(name, args) {
   const { data, error } = await supabase.rpc(name, args);

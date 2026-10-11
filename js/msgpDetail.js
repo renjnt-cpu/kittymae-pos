@@ -1,12 +1,12 @@
 // Message Pancake -- one conversation in full (a side panel): what was detected and why, the order, who handles it and its status, the suggested reply, internal notes,
 // response times and the timeline. Everything here is staff-controlled: the detection can be changed, nothing is sent to the customer, nothing touches the order,
 // a payment or a refund (those buttons open the existing screens).
-import { esc, toast } from './shell.js?v=20261011c';
-import { reasonDialog } from './dialogs.js?v=20261011c';
+import { esc, toast } from './shell.js?v=20261011d';
+import { reasonDialog } from './dialogs.js?v=20261011d';
 import {
   msgpConversation, msgpAssign, msgpSetStatus, msgpResolve, msgpReopen, msgpSnooze, msgpAddNote, msgpCorrect, msgpEscalate, msgpDeescalate,
-} from './messagePancakeApi.js?v=20261011c';
-import { TONES, PRIORITIES, WAIT_COLOR, WAIT_LABEL, STATUSES, ESCALATION_REASONS, badge, badgesHtml, fmtWait, ago, stamp, money, eventText } from './msgpFormat.js?v=20261011c';
+} from './messagePancakeApi.js?v=20261011d';
+import { TONES, PRIORITIES, WAIT_COLOR, WAIT_LABEL, STATUSES, ESCALATION_REASONS, badge, badgesHtml, fmtWait, ago, stamp, money, eventText } from './msgpFormat.js?v=20261011d';
 
 const MSG = 'msgp-msg';
 const ERP = 'https://renjnt-cpu.github.io/kittymae-inventory-system/';

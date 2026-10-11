@@ -2,7 +2,7 @@
 // Google account IS the identity, matched by email against a roster (now `employees`
 // instead of the Employees sheet) — just persisted via `link_my_employee_record()`
 // (01_branches_employees.sql) instead of re-derived on every single call.
-import { supabase } from './supabaseClient.js?v=20261011c';
+import { supabase } from './supabaseClient.js?v=20261011d';
 
 export async function signInWithGoogle() {
   const redirectTo = new URL('index.html', window.location.href).toString();
@@ -24,6 +24,19 @@ export async function signInWithIdPassword(idNumber, password) {
 export async function signOut() {
   await supabase.auth.signOut();
   window.location.href = 'login.html';
+}
+
+/** True when an error message means "this device's login is no longer valid" (token expired and
+ * could not be renewed) rather than a real problem with the page. */
+export function isExpiredLogin(msg) {
+  return /JWT expired|Invalid JWT|exp claim|refresh token/i.test(String(msg || ''));
+}
+
+/** Clears a dead login on THIS device only (a global sign-out would also log the same person out of
+ * their other devices) and, unless told not to, sends them to the login screen with a short note. */
+export async function dropStaleSession(redirect = true) {
+  try { await supabase.auth.signOut({ scope: 'local' }); } catch (e) { /* nothing left to clear */ }
+  if (redirect) window.location.href = 'login.html?expired=1';
 }
 
 /**

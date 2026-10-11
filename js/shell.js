@@ -3,8 +3,8 @@
 // this site has only 4 pages, so it doesn't build the full ERP header/nav (Dashboard,
 // Branches, Transfers, Bills, etc. don't exist here) -- js/posNav.js renders this site's
 // own minimal nav instead, right after initShell() resolves.
-import { requireSession, linkEmployee } from './auth.js?v=20261011c';
-import { listMyPermissions } from './api.js?v=20261011c';
+import { requireSession, linkEmployee, isExpiredLogin, dropStaleSession } from './auth.js?v=20261011d';
+import { listMyPermissions } from './api.js?v=20261011d';
 
 export async function initShell() {
   const session = await requireSession();
@@ -15,6 +15,8 @@ export async function initShell() {
     employee = await linkEmployee();
   } catch (err) {
     const msg = String(err.message || err);
+    // the login on this device expired and could not be renewed: back to the login screen, not a dead end
+    if (isExpiredLogin(msg)) { await dropStaleSession(); return null; }
     document.body.innerHTML = msg.startsWith('NOT_REGISTERED')
       ? '<div class="center-screen"><div><h2>Not registered yet</h2><p>Signed in as <b>' + session.user.email + '</b>, but you\'re not in the Employees list.</p><p class="muted">Ask an Admin to add you, then sign in again.</p></div></div>'
       : msg.startsWith('INACTIVE')
