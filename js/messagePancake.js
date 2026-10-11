@@ -2,11 +2,11 @@
 // who is following up, who is frustrated, who has a payment / delivery / refund problem, who has been waiting too long -- with the order they belong to, who handles it, a
 // suggested reply and a full timeline. Reports for management, Settings for the owner.
 // The detection is rule-based advice for staff; every decision (reply, order, payment, refund, cancellation) stays with people.
-import { esc } from './shell.js?v=20261011b';
-import { startQueue } from './msgpQueue.js?v=20261011b';
-import { startReports } from './msgpReports.js?v=20261011b';
-import { startSettings } from './msgpSettings.js?v=20261011b';
-import { openDetail } from './msgpDetail.js?v=20261011b';
+import { esc } from './shell.js?v=20261011c';
+import { startQueue } from './msgpQueue.js?v=20261011c';
+import { startReports } from './msgpReports.js?v=20261011c';
+import { startSettings } from './msgpSettings.js?v=20261011c';
+import { openDetail } from './msgpDetail.js?v=20261011c';
 
 export async function startMessagePancake({ employee }) {
   const perms = employee.permissions || [];

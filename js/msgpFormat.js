@@ -1,7 +1,7 @@
 // Message Pancake -- the wording, colours and small helpers the queue, the conversation panel, the reports and the POS attention panel share.
 // Colour is never the only signal: every badge carries its text label (RED critical / angry, ORANGE urgent / frustrated / follow-up, YELLOW needs reply, GREEN ordering,
 // BLUE inquiry, PURPLE payment, GRAY resolved / low).
-import { esc } from './shell.js?v=20261011b';
+import { esc } from './shell.js?v=20261011c';
 
 export const TONES = {
   angry: { label: 'Angry', color: 'red' },
@@ -20,7 +20,7 @@ export const WAIT_COLOR = { normal: 'gray', attention: 'yellow', high: 'orange',
 export const WAIT_LABEL = { normal: 'Normal', attention: 'Attention', high: 'High attention', urgent: 'Urgent follow-up', none: '' };
 export const STATUSES = {
   unassigned: 'Unassigned', assigned: 'Assigned', in_progress: 'In progress', waiting_customer: 'Waiting for customer',
-  waiting_internal: 'Waiting for internal action', resolved: 'Resolved', closed: 'Closed',
+  waiting_internal: 'Waiting for internal action', resolved: 'Resolved', closed: 'Replied / closed',
 };
 export const ESCALATION_REASONS = ['Angry Customer', 'Repeated Follow-Up', 'Payment Problem', 'Refund', 'Large Order', 'VIP / Important Customer', 'Delivery Problem', 'Staff Needs Help', 'Other'];
 export const COLORS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'gray'];

@@ -1,9 +1,9 @@
 // Message Pancake -- the management reports (message_pancake.analytics): message volumes, reply times, follow-up rate, complaints, payment and refund issues, tone trends,
 // messages by branch, assigned / resolved conversations, and the inquiry -> ordering -> order funnel.
 // The tone is a rule-based guess and is shown as a trend only; it is NOT used to judge staff (the staff tables show assigned / resolved / open conversations and reply times).
-import { esc, toast } from './shell.js?v=20261011b';
-import { msgpReport } from './messagePancakeApi.js?v=20261011b';
-import { manilaToday, fmtWait } from './msgpFormat.js?v=20261011b';
+import { esc, toast } from './shell.js?v=20261011c';
+import { msgpReport } from './messagePancakeApi.js?v=20261011c';
+import { manilaToday, fmtWait } from './msgpFormat.js?v=20261011c';
 
 const MSG = 'msgp-msg';
 const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
@@ -45,7 +45,7 @@ export function startReports({ root, getBranches }) {
         table(['Day', 'Positive', 'Neutral', 'Concerned', 'Frustrated', 'Angry'], (d.tone_trend || []).map((x) => [x.day, x.positive, x.neutral, x.concerned, x.frustrated, x.angry])) + '</div>' +
       '<div class="card"><h3>Messages by branch</h3>' + table(['Branch', 'Conversations', 'Unanswered now', 'Complaints', 'Payment issues', 'Refund requests'], (d.by_branch || []).map((x) => [x.branch, x.conversations, x.unanswered_now, x.complaints, x.payment_issues, x.refund_requests])) + '</div>' +
       '<div class="card"><h3>Handling (management)</h3><p class="muted">Who was given which conversations, and how many they closed. Not a score: conversations differ a lot, and the detection is only a guide.</p>' +
-        table(['Assigned to', 'Conversations', 'Resolved', 'Still open'], (d.by_assignee || []).map((x) => [x.name, x.assigned, x.resolved, x.open])) +
+        table(['Assigned to', 'Conversations', 'Replied / resolved', 'Still open'], (d.by_assignee || []).map((x) => [x.name, x.assigned, x.resolved, x.open])) +
         '<h3>Resolved by</h3>' + table(['Who', 'Resolved in this period'], (d.resolved_by || []).map((x) => [x.name, x.resolved])) +
         '<h3>Replies in Pancake</h3>' + table(['Staff (as named in Pancake)', 'First replies', 'Average reply time'], (d.replies_by_staff || []).map((x) => [x.staff, x.replies, minTxt(x.avg_response_min)])) + '</div>';
     root.querySelector('#rp-csv').disabled = false;

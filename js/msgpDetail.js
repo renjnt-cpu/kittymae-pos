@@ -1,12 +1,12 @@
 // Message Pancake -- one conversation in full (a side panel): what was detected and why, the order, who handles it and its status, the suggested reply, internal notes,
 // response times and the timeline. Everything here is staff-controlled: the detection can be changed, nothing is sent to the customer, nothing touches the order,
 // a payment or a refund (those buttons open the existing screens).
-import { esc, toast } from './shell.js?v=20261011b';
-import { reasonDialog } from './dialogs.js?v=20261011b';
+import { esc, toast } from './shell.js?v=20261011c';
+import { reasonDialog } from './dialogs.js?v=20261011c';
 import {
   msgpConversation, msgpAssign, msgpSetStatus, msgpResolve, msgpReopen, msgpSnooze, msgpAddNote, msgpCorrect, msgpEscalate, msgpDeescalate,
-} from './messagePancakeApi.js?v=20261011b';
-import { TONES, PRIORITIES, WAIT_COLOR, WAIT_LABEL, STATUSES, ESCALATION_REASONS, badge, badgesHtml, fmtWait, ago, stamp, money, eventText } from './msgpFormat.js?v=20261011b';
+} from './messagePancakeApi.js?v=20261011c';
+import { TONES, PRIORITIES, WAIT_COLOR, WAIT_LABEL, STATUSES, ESCALATION_REASONS, badge, badgesHtml, fmtWait, ago, stamp, money, eventText } from './msgpFormat.js?v=20261011c';
 
 const MSG = 'msgp-msg';
 const ERP = 'https://renjnt-cpu.github.io/kittymae-inventory-system/';
@@ -91,7 +91,8 @@ export async function openDetail(id, { onChange } = {}) {
         '<div class="field"><label for="d-snooze">Snooze</label><select id="d-snooze"' + (p.reply ? '' : ' disabled') + '><option value="">' + (r.snooze_until ? 'Snoozed until ' + esc(stamp(r.snooze_until)) : 'Not snoozed') + '</option><option value="60">1 hour</option><option value="180">3 hours</option><option value="1440">1 day</option>' + (r.snooze_until ? '<option value="clear">Clear snooze</option>' : '') + '</select></div>' +
       '</div>' +
       (p.escalate && !r.escalated ? '<div><button type="button" class="btn small secondary" data-act="escalate">Escalate to supervisors…</button></div>' : '') +
-      (r.resolved_at ? row('Resolved', esc(stamp(r.resolved_at)) + (r.resolved_by ? ' by ' + esc(r.resolved_by) : '') + (r.resolution_note ? ' — ' + esc(r.resolution_note) : '')) : '') +
+      (r.resolved_at ? row('Resolved', esc(stamp(r.resolved_at)) + (r.resolved_by ? ' by ' + esc(r.resolved_by) : '') + (r.resolution_note ? ' — ' + esc(r.resolution_note) : '')) :
+        r.status === 'closed' && r.resolution_note ? row('Closed', esc(r.resolution_note) + ' — it comes back by itself if the customer writes again') : '') +
       '</section>' +
 
       (d.suggested_reply ? '<section class="card msgp-dr-sec"><h3>Suggested reply</h3><p class="muted">A starting point written for this kind of message — read it, change it, then paste it into the chat. It is <b>never sent automatically</b>, and it makes no promise about delivery, payment or refunds.</p>' +
