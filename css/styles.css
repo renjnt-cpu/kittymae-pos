@@ -917,3 +917,11 @@ a.btn { display:inline-block; text-decoration:none; background:var(--rose); colo
 a.btn.small { padding:5px 10px; font-size:12px; }
 a.btn.secondary { background:#eee; color:var(--ink); }
 a.btn:hover { filter:brightness(0.96); }
+
+/* Message Pancake reports: Top admins -- customers assisted */
+.msgp-top td:first-child, .msgp-top th:first-child { width:34px; text-align:center; color:var(--muted); }
+.msgp-top tr.msgp-top-first td { font-weight:bold; background:var(--rose-lt); }
+.msgp-top tr.msgp-top-first td:first-child { color:var(--ink); }
+.msgp-bar { position:relative; display:flex; align-items:center; min-width:150px; height:22px; background:#f1f1f1; border-radius:4px; overflow:hidden; }
+.msgp-bar span { position:absolute; left:0; top:0; bottom:0; background:var(--rose); }
+.msgp-bar b { position:relative; padding-left:8px; font-size:13px; color:var(--ink); }

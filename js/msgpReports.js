@@ -1,9 +1,9 @@
 // Message Pancake -- the management reports (message_pancake.analytics): message volumes, reply times, follow-up rate, complaints, payment and refund issues, tone trends,
 // messages by branch, assigned / resolved conversations, and the inquiry -> ordering -> order funnel.
 // The tone is a rule-based guess and is shown as a trend only; it is NOT used to judge staff (the staff tables show assigned / resolved / open conversations and reply times).
-import { esc, toast } from './shell.js?v=20261011d';
-import { msgpReport } from './messagePancakeApi.js?v=20261011d';
-import { manilaToday, fmtWait } from './msgpFormat.js?v=20261011d';
+import { esc, toast } from './shell.js?v=20261011e';
+import { msgpReport } from './messagePancakeApi.js?v=20261011e';
+import { manilaToday, fmtWait } from './msgpFormat.js?v=20261011e';
 
 const MSG = 'msgp-msg';
 const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
@@ -29,6 +29,16 @@ export function startReports({ root, getBranches }) {
   const card = (label, value, hint) => '<div class="tile"><div class="num">' + esc(value) + '</div><div class="lbl">' + esc(label) + (hint ? ' <span class="muted">' + esc(hint) + '</span>' : '') + '</div></div>';
   const table = (head, rows) => rows.length ? '<div class="table-scroll"><table><thead><tr>' + head.map((h) => '<th>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.map((r) => '<tr>' + r.map((c) => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>' : '<div class="muted">Nothing in this period.</div>';
 
+  // who answered the most customers: real people only (the database leaves out Botcake, the page itself, ...), best first, with a bar scaled to the leader
+  function topAdmins(list) {
+    if (!list || !list.length) return '<div class="muted">No replies in this period.</div>';
+    const max = Math.max(1, ...list.map((x) => x.customers));
+    return '<div class="table-scroll"><table class="msgp-top"><thead><tr><th>#</th><th>Admin (as named in Pancake)</th><th>Customers assisted</th><th>Replies sent</th><th>Average first reply</th></tr></thead><tbody>' +
+      list.map((x, i) => '<tr' + (i === 0 ? ' class="msgp-top-first"' : '') + '><td>' + (i + 1) + '</td><td>' + esc(x.staff) + '</td>' +
+        '<td><div class="msgp-bar"><span style="width:' + Math.max(2, Math.round(100 * x.customers / max)) + '%"></span><b>' + esc(x.customers) + '</b></div></td>' +
+        '<td>' + esc(x.messages) + '</td><td>' + esc(minTxt(x.avg_response_min)) + '</td></tr>').join('') + '</tbody></table></div>';
+  }
+
   function draw(d) {
     const t = d.totals, f = d.funnel;
     out.innerHTML =
@@ -38,6 +48,8 @@ export function startReports({ root, getBranches }) {
         card('Orders from messages', t.orders_from_messages) + card('Follow-up rate', t.follow_up_rate_pct == null ? '—' : t.follow_up_rate_pct + '%') +
         card('Complaints', t.complaints) + card('Payment issues', t.payment_issues) + card('Delivery issues', t.delivery_issues) + card('Refund requests', t.refund_requests) + card('Cancellation requests', t.cancellations) + card('Escalated', t.escalated) +
       '</div>' +
+      '<div class="card"><h3>Top admins — customers assisted</h3><p class="muted">The admins who replied to the most different customers in this period. Only real people are counted: Botcake, BotcakeAI and the page itself are left out. It counts activity, not quality — one long, careful chat counts once.</p>' +
+        topAdmins(d.top_admins) + '</div>' +
       '<div class="card"><h3>Inquiry → order</h3>' + table(['Conversations', 'Wanted to order', 'Linked to an order', 'Order paid', 'Order delivered'], [[f.conversations, f.ordering, f.with_order, f.order_paid, f.order_delivered]]) +
         '<div class="muted">“Paid” and “delivered” come from the order’s own Pancake fields. Orders are linked by the chat id or an exact phone number.</div></div>' +
       '<div class="card"><h3>What customers wrote about</h3>' + table(['Category', 'Conversations'], (d.intents || []).map((x) => [x.label, x.n])) + '</div>' +
@@ -63,6 +75,8 @@ export function startReports({ root, getBranches }) {
     const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
     const lines = [['Message Pancake report', d.from + ' to ' + d.to].map(q).join(','), '', ['Measure', 'Value'].map(q).join(',')];
     for (const [k, v] of Object.entries(d.totals)) lines.push([k, v].map(q).join(','));
+    lines.push('', ['Top admins', 'Customers assisted', 'Replies sent', 'First replies', 'Average first reply (min)'].map(q).join(','));
+    for (const x of d.top_admins || []) lines.push([x.staff, x.customers, x.messages, x.first_replies, x.avg_response_min].map(q).join(','));
     lines.push('', ['Category', 'Conversations'].map(q).join(','));
     for (const x of d.intents || []) lines.push([x.label, x.n].map(q).join(','));
     lines.push('', ['Day', 'Positive', 'Neutral', 'Concerned', 'Frustrated', 'Angry'].map(q).join(','));
