@@ -3,8 +3,8 @@
 // this site has only 4 pages, so it doesn't build the full ERP header/nav (Dashboard,
 // Branches, Transfers, Bills, etc. don't exist here) -- js/posNav.js renders this site's
 // own minimal nav instead, right after initShell() resolves.
-import { requireSession, linkEmployee, isExpiredLogin, dropStaleSession } from './auth.js?v=20261011e';
-import { listMyPermissions } from './api.js?v=20261011e';
+import { requireSession, linkEmployee, getMyLeaveOnlyCompany, isExpiredLogin, dropStaleSession } from './auth.js?v=20261012a';
+import { listMyPermissions } from './api.js?v=20261012a';
 
 export async function initShell() {
   const session = await requireSession();
@@ -25,11 +25,18 @@ export async function initShell() {
     return null;
   }
 
+  // Leave-only accounts (Layover staff, Ren 2026-10-12) have no business in the POS: the database refuses them everything
+  // here anyway, so just send them to the one place they do have -- Leave Management in the main ERP. A failed lookup shows
+  // the normal page; the database still holds the line. (Asked alongside the permissions lookup, so it costs no extra waiting.)
+  const leaveOnlyLookup = getMyLeaveOnlyCompany().catch(() => null);
+
   try {
     employee.permissions = await listMyPermissions();
   } catch (err) {
     employee.permissions = []; // fail closed -- a failed lookup shouldn't grant anything
   }
+
+  if (await leaveOnlyLookup) { window.location.replace('https://renjnt-cpu.github.io/kittymae-inventory-system/leave.html'); return null; }
 
   return employee;
 }
