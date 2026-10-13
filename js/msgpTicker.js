@@ -2,9 +2,9 @@
 // plus the count on the menu link and a short "customer needs attention" notice when a new important alert appears.
 // Runs for people with message_pancake.view_alerts / .view / .manage; everyone else makes no request. A failed look-up is silent -- it never gets in the way of the page.
 // The feed carries alert facts only (name, priority, reason, waiting time, order number, branch) -- never the message text -- and the database applies the branch rules.
-import { msgpAttention } from './messagePancakeApi.js?v=20261012b';
-import { esc } from './shell.js?v=20261012b';
-import { badge, fmtWait, shortName, WAIT_COLOR, PRIORITIES, TONES } from './msgpFormat.js?v=20261012b';
+import { msgpAttention } from './messagePancakeApi.js?v=20261012c';
+import { esc } from './shell.js?v=20261012c';
+import { badge, fmtWait, shortName, WAIT_COLOR, PRIORITIES, TONES } from './msgpFormat.js?v=20261012c';
 
 const POLL_MS = 120000;
 const NEW_MS = 15 * 60000;

@@ -2,8 +2,8 @@
 // `supabase` directly, so the query shape lives in one place. Mirrors the old app's
 // `api(name, ...args)` helper in spirit, just split into named functions since
 // supabase-js's table/RPC calls aren't as uniformly shaped as google.script.run's.
-import { supabase } from './supabaseClient.js?v=20261012b';
-import { localDateStr } from './uiKit.js?v=20261012b';
+import { supabase } from './supabaseClient.js?v=20261012c';
+import { localDateStr } from './uiKit.js?v=20261012c';
 
 /** Caps the core ledger list queries (Sales, Layaway, Scrap, Subasta) so a tab load
  * fetches recent history instead of the entire table unconditionally -- these had no
@@ -110,16 +110,6 @@ export async function getBranchOpsSummary(from, to, branchIds) {
   const args = { p_from: from, p_to: to };
   if (branchIds) args.p_branch_ids = branchIds;
   const { data, error } = await supabase.rpc('branch_ops_summary', args);
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-/** Total Cash per branch = the Remaining Cash of the Branch Capital page (capital given + net cash from scrap), right now.
- * {ok:false, rows:[]} for anyone who may not see capital (the dashboard then shows no Total Cash card). branchIds omitted = every branch the caller may see. */
-export async function getBranchOpsCash(branchIds) {
-  const args = {};
-  if (branchIds) args.p_branch_ids = branchIds;
-  const { data, error } = await supabase.rpc('branch_ops_cash', args);
   if (error) throw new Error(error.message);
   return data;
 }
