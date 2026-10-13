@@ -4,13 +4,13 @@
 // (branch_ops_summary / branch_ops_attention, migration 166) so the numbers never depend on how many rows a tab happened to load.
 // Every card, flag and branch name is a way into the Branches page on the same branch and dates. Layaway deadlines/overdue and
 // pending approvals deliberately ignore the date range -- they describe what needs action today.
-import { getBranchOpsSummary, getBranchOpsAttention, subscribeToChanges } from './api.js?v=20261012a';
-import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261012a';
-import { loadPrefs, savePrefs, savedRange } from './opsPrefs.js?v=20261012a';
-import { ATTENTION_KINDS, urgentFrom, money, num, plural } from './opsAttention.js?v=20261012a';
+import { getBranchOpsSummary, getBranchOpsAttention, getBranchOpsCash, subscribeToChanges } from './api.js?v=20261012b';
+import { RANGE_PRESETS, rangeFor, describeRange } from './opsDates.js?v=20261012b';
+import { loadPrefs, savePrefs, savedRange } from './opsPrefs.js?v=20261012b';
+import { ATTENTION_KINDS, urgentFrom, money, num, plural } from './opsAttention.js?v=20261012b';
 
 export { ATTENTION_KINDS };
-export { getInitialRange } from './opsPrefs.js?v=20261012a';
+export { getInitialRange } from './opsPrefs.js?v=20261012b';
 
 const grams = (n) => Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 3 }) + ' g';
 
@@ -47,6 +47,7 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
     preset: saved.preset, custom: saved.custom,
     scope: multi && prefs.scope === 'all' ? 'all' : 'current',
     summary: null, attention: [], error: null, loading: false,
+    cash: null, // { branch_id: { remaining, total_capital, scrap_cash_net } } -- null when this person may not see capital (then no Total Cash card / column)
   };
 
   const branchName = (id) => ((branches || []).find((b) => b.id === id) || {}).name || ('Branch #' + id);
@@ -92,6 +93,13 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
   function scopedAttention() {
     return state.scope === 'all' ? state.attention : state.attention.filter((a) => a.branch_id === getBranchId());
   }
+  /** Total Cash of the branch(es) in view (a balance right now -- the date range does not apply); null when it must not be shown. */
+  function cashOfScope() {
+    if (!state.cash) return null;
+    const t = { remaining: 0, capital: 0, net: 0 };
+    scopedRows().forEach((r) => { const c = state.cash[r.branch_id]; if (c) { t.remaining += Number(c.remaining) || 0; t.capital += Number(c.total_capital) || 0; t.net += Number(c.scrap_cash_net) || 0; } });
+    return t;
+  }
 
   // ---- rendering ----
   function renderControls() {
@@ -103,8 +111,8 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
   }
 
   // A card opens its module on the Branches page; a flag inside a card ("2 items overdue") opens the exact view that needs action.
-  function card({ label, value, sub, tab, view, tone, tag, flags }) {
-    return '<button type="button" class="ops-card' + (tone ? ' tone-' + tone : '') + '" data-tab="' + tab + '"' + (view ? ' data-view="' + view + '"' : '') + '>' +
+  function card({ label, value, sub, tab, view, tone, tag, flags, href }) {
+    return '<button type="button" class="ops-card' + (tone ? ' tone-' + tone : '') + '" data-tab="' + tab + '"' + (view ? ' data-view="' + view + '"' : '') + (href ? ' data-href="' + href + '"' : '') + '>' +
       '<span class="ops-card-lbl"><span>' + label + '</span>' + (tag ? '<span class="ops-tag">' + tag + '</span>' : '') + '</span>' +
       '<span class="ops-card-num">' + value + '</span>' +
       (sub ? '<span class="ops-card-sub">' + sub + '</span>' : '') +
@@ -133,6 +141,10 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
     const firstPending = scopedAttention().filter((x) => String(x.kind).startsWith('pending_') && ATTENTION_KINDS[x.kind])
       .sort((x, y) => ATTENTION_KINDS[x.kind].rank - ATTENTION_KINDS[y.kind].rank)[0];
     const pendTarget = firstPending ? ATTENTION_KINDS[firstPending.kind] : { tab: 'layaway', view: 'approvals' };
+    // Total Cash = the branch's Remaining Cash from Branch Capital (capital given + net cash from scrap), right now -- only for people who may see Branch Capital; opens that page
+    const cash = cashOfScope();
+    const cashCard = cash ? card({ label: 'Total Cash', value: money(cash.remaining), tag: 'right now', tab: 'capital', href: 'capital.html', tone: cash.remaining < 0 ? 'bad' : '',
+      sub: money(cash.capital) + ' capital given · ' + (cash.net < 0 ? money(-cash.net) + ' net paid out for scrap' : money(cash.net) + ' net received from scrap') }) : '';
     box.innerHTML = [
       card({ label: 'POS Sales', value: money(pos.net), sub: plural(pos.items || 0, 'item') + ' sold' + (pos.discounts > 0 ? ' · ' + money(pos.discounts) + ' in discounts' : ''), tab: 'pos' }),
       card({ label: 'POS Transactions', value: num(pos.transactions), sub: pos.transactions ? 'avg ' + money(avgSale) + ' per sale' : 'no sales in this range', tab: 'pos' }),
@@ -149,10 +161,11 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
       card({ label: 'Subasta Sold', value: num(sub.sold), sub: sub.sold ? money(sub.sales) + ' in sales' : 'none sold in this range', tab: 'subasta', tone: sub.unpaid_entries ? 'bad' : '',
         flags: sub.unpaid_entries ? [{ text: money(sub.unpaid_balance) + ' unpaid · ' + plural(sub.unpaid_entries, 'sold item'), tab: 'subasta', view: 'unpaid' }] : [] }),
       card({ label: 'Total Branch Cash Received', value: money(rec.total), sub: topMethods || 'nothing received in this range', tab: 'pos' }),
+      cashCard,
       card({ label: 'Pending Approvals', value: num(pen.total), tag: 'right now', tab: pendTarget.tab, view: pendTarget.view, tone: pen.total ? 'warn' : '',
         sub: penParts.length ? penParts.join(' · ') : 'nothing waiting' }),
-    ].join('');
-    box.querySelectorAll('.ops-card').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab, b.dataset.view || null)));
+    ].filter(Boolean).join('');
+    box.querySelectorAll('.ops-card').forEach((b) => b.addEventListener('click', () => { if (b.dataset.href) window.location.href = b.dataset.href; else showTab(b.dataset.tab, b.dataset.view || null); }));
     // a flag is its own link (a span inside the card button): it must not also trigger the card
     const openFlag = (ev, el) => { ev.stopPropagation(); ev.preventDefault(); showTab(el.dataset.flagTab, el.dataset.flagView || null); };
     box.querySelectorAll('[data-flag-tab]').forEach((f) => {
@@ -170,7 +183,8 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
     const box = $('ops-compare');
     if (!state.summary) { box.innerHTML = '<div class="muted">Loading…</div>'; return; }
     if (!rows.length) { box.innerHTML = '<p class="muted">No branches to compare.</p>'; return; }
-    const tot = { pos: 0, ptx: 0, active: 0, open: 0, coll: 0, owed: 0, scrapAmt: 0, scrapG: 0, subs: 0, tx: 0 };
+    const tot = { pos: 0, ptx: 0, active: 0, open: 0, coll: 0, owed: 0, scrapAmt: 0, scrapG: 0, subs: 0, tx: 0, cash: 0 };
+    const showCash = !!state.cash; // Total Cash column: only for people who may see Branch Capital
     const cur = getBranchId();
     box.innerHTML = '<div class="table-scroll table-mini"><table class="ops-table"><thead><tr>' +
       '<th>Branch</th>' +
@@ -184,11 +198,13 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
       '<th title="Scrap grams bought in the date range">Scrap Grams</th>' +
       '<th title="Subasta items sold in the date range">Subasta Sales</th>' +
       '<th title="POS sales + layaway payments + scrap entries + Subasta sales in the date range">Total Transactions</th>' +
+      (showCash ? '<th title="Remaining Cash right now (as on the Branch Capital page): capital given + net cash from scrap. Not affected by the date range.">Total Cash</th>' : '') +
       '</tr></thead><tbody>' +
       rows.map((r) => {
         const tx = transactionsOf(r);
         tot.pos += r.pos.net; tot.ptx += r.pos.transactions; tot.active += r.layaway.on_hold_lines; tot.open += r.layaway.opened_value; tot.coll += r.layaway.collected;
         tot.owed += r.layaway.on_hold_balance; tot.scrapAmt += r.scrap.purchased; tot.scrapG += r.scrap.grams; tot.subs += r.subasta.sales; tot.tx += tx;
+        const rowCash = showCash ? Number((state.cash[r.branch_id] || {}).remaining) || 0 : 0; tot.cash += rowCash;
         return '<tr class="' + (r.branch_id === cur ? 'ops-cur' : '') + '">' +
           '<td data-label="Branch"><button type="button" class="exp-row-btn" data-branch="' + r.branch_id + '" title="Open ' + esc(r.name) + ' on the Branches page"><b>' + esc(r.name) + '</b>' + (r.is_active ? '' : ' <span class="badge gray">inactive</span>') + ' ›</button></td>' +
           '<td data-label="POS Sales">' + money(r.pos.net) + '</td>' +
@@ -200,11 +216,12 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
           '<td data-label="Scrap Amount">' + money(r.scrap.purchased) + '</td>' +
           '<td data-label="Scrap Grams">' + grams(r.scrap.grams) + '</td>' +
           '<td data-label="Subasta Sales">' + money(r.subasta.sales) + '</td>' +
-          '<td data-label="Total Transactions">' + num(tx) + '</td></tr>';
+          '<td data-label="Total Transactions">' + num(tx) + '</td>' +
+          (showCash ? '<td data-label="Total Cash">' + money(rowCash) + '</td>' : '') + '</tr>';
       }).join('') +
       '</tbody><tfoot><tr><td><b>All shown</b></td><td><b>' + money(tot.pos) + '</b></td><td><b>' + num(tot.ptx) + '</b></td><td><b>' + num(tot.active) + '</b></td><td><b>' + money(tot.open) +
       '</b></td><td><b>' + money(tot.coll) + '</b></td><td><b>' + money(tot.owed) + '</b></td><td><b>' + money(tot.scrapAmt) + '</b></td><td><b>' + grams(tot.scrapG) +
-      '</b></td><td><b>' + money(tot.subs) + '</b></td><td><b>' + num(tot.tx) + '</b></td></tr></tfoot></table></div>';
+      '</b></td><td><b>' + money(tot.subs) + '</b></td><td><b>' + num(tot.tx) + '</b></td>' + (showCash ? '<td><b>' + money(tot.cash) + '</b></td>' : '') + '</tr></tfoot></table></div>';
     box.querySelectorAll('[data-branch]').forEach((b) => b.addEventListener('click', () => (openBranch || selectBranch)(Number(b.dataset.branch))));
   }
 
@@ -241,9 +258,11 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
     state.loading = true; state.error = null;
     renderControls();
     try {
-      const [summary, attention] = await Promise.all([getBranchOpsSummary(r.from, r.to), getBranchOpsAttention()]);
+      // Total Cash is asked alongside, and only ever optional: a failure or "not allowed" just means no Total Cash card, never a broken summary
+      const [summary, attention, cash] = await Promise.all([getBranchOpsSummary(r.from, r.to), getBranchOpsAttention(), getBranchOpsCash().catch(() => null)]);
       if (my !== token) return; // a newer refresh (e.g. another range click) superseded this one
       state.summary = summary; state.attention = attention;
+      state.cash = cash && cash.ok ? Object.fromEntries((cash.rows || []).map((c) => [c.branch_id, c])) : null;
     } catch (err) {
       if (my !== token) return;
       state.error = String((err && err.message) || err);
@@ -282,7 +301,7 @@ export function initBranchOps({ root, esc, branches, visibleBranchIds, getBranch
   subscribeToChanges([
     'sales_inventory_movements', 'sale_payments', 'layaway_holds', 'layaway_payments', 'scrap_entries', 'subasta_items',
     'layaway_forfeit_date_requests', 'layaway_item_change_requests', 'layaway_payment_deletion_requests', 'layaway_hold_deletion_requests',
-    'layaway_forfeit_requests', 'layaway_reminders', 'scrap_payments', 'subasta_payments', 'branch_record_requests',
+    'layaway_forfeit_requests', 'layaway_reminders', 'scrap_payments', 'subasta_payments', 'branch_record_requests', 'branch_capital_entries',
   ], () => { clearTimeout(timer); timer = setTimeout(refresh, 1500); });
 
   renderAll();
