@@ -17,18 +17,18 @@ import {
   listLayawayForfeitRequests, requestLayawayForfeit, approveLayawayForfeitStage1, approveLayawayForfeitFinal, rejectLayawayForfeit,
   cancelLayawayForfeitRequest, getLayawayReminderQueue, markLayawayContacted, setLayawayAltContact, listLayawayChangeLog,
   logBranchErrorCorrection, listActiveEmployees, getProductNames,
-} from './api.js?v=20261012c';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261012c';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20261012c';
-import { daysBetween, manilaToday, manilaDateStr } from './opsDates.js?v=20261012c';
-import { getOpsConfig, layawayDeadline } from './branchOpsConfig.js?v=20261012c';
-import { confirmDialog, reasonDialog, messageDialog, ERROR_TYPES } from './dialogs.js?v=20261012c';
-import { layawayInfo, statusChipHtml, progressHtml, paidOf, daysText, daysToneOf, ACTIVE_STATUSES } from './layawayStatus.js?v=20261012c';
-import { openCustomerHistory } from './customerHistory.js?v=20261012c';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261012c';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261012c';
-import { attachCustomerPicker } from './customerPicker.js?v=20261012c';
-import { friendlyError } from './shell.js?v=20261012c';
+} from './api.js?v=20261014a';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261014a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20261014a';
+import { daysBetween, manilaToday, manilaDateStr } from './opsDates.js?v=20261014a';
+import { getOpsConfig, layawayDeadline } from './branchOpsConfig.js?v=20261014a';
+import { confirmDialog, reasonDialog, messageDialog, ERROR_TYPES } from './dialogs.js?v=20261014a';
+import { layawayInfo, statusChipHtml, progressHtml, paidOf, daysText, daysToneOf, ACTIVE_STATUSES } from './layawayStatus.js?v=20261014a';
+import { openCustomerHistory } from './customerHistory.js?v=20261014a';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261014a';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261014a';
+import { attachCustomerPicker } from './customerPicker.js?v=20261014a';
+import { friendlyError } from './shell.js?v=20261014a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one

@@ -1,0 +1,299 @@
+// Branch Capital -- CAPITAL ENTRIES: the original Branch Capital page (money or gold / silver put into a branch, with approval), kept exactly as it was and now one tab of the upgraded module.
+// Nothing about the existing entries, the Remaining Cash / Total Capital tiles, the approval rule (a Supervisor other than the person who added it, or an Admin) or the delete rule (Admin) has changed.
+import { esc, toast } from './shell.js?v=20261014a';
+import { listBranchCapitalEntries, getBranchCapitalBalances, getBranchCapitalRemaining, createBranchCapitalEntry, approveBranchCapitalEntry, deleteBranchCapitalEntry, subscribeToChanges } from './api.js?v=20261014a';
+import { branchBadge, branchOptionStyle } from './branchColors.js?v=20261014a';
+import { sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20261014a';
+
+const CAP_SORT_FIELDS = [
+  { key: 'entry_date', label: 'Date' }, { key: 'branch', label: 'Branch' }, { key: 'amount', label: 'Amount' },
+  { key: 'purpose', label: 'Purpose' }, { key: 'status', label: 'Status' },
+];
+const CAP_SORT_COMPARATORS = {
+  entry_date: byDate('entry_date'), amount: byNumber('amount'), purpose: byText('purpose'), status: byText('status'),
+  branch: (a, b) => String(a.branches?.name || '').localeCompare(String(b.branches?.name || '')),
+};
+
+const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+const weight = (n) => n === null || n === undefined ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 3 }) + 'g';
+// Same Metal/Karat vocabulary as Scrap entries on branches.html, for when a capital
+// injection is gold/silver stock handed over instead of (or alongside) cash.
+const GOLD_KARATS = ['24K', '22K', '21K', '20K', '18K', '16K', '14K', '10K', 'Other'];
+const SILVER_KARATS = ['999', '925', 'Other'];
+const karatOptionsFor = (metal) => (metal === 'Silver' ? SILVER_KARATS : GOLD_KARATS).map((k) => '<option>' + k + '</option>').join('');
+
+/** Add + view is limited to Manager, Branch Supervisor, and Personal Assistant (plus Admin, who has everything) -- Sales Admin Associate, Admin Assistant, and rank-and-file
+ * employees do not get in (70_branch_capital_restricted_access.sql). Approving is Supervisor-tier but never your own entry; deleting is Admin only. */
+export function legacyAccess(employee) {
+  return employee.role === 'Admin' || ['Manager', 'Branch Supervisor'].includes(employee.role) || employee.position === 'Personal Assistant';
+}
+
+export function startEntries({ employee, root, getBranches }) {
+  let built = false;
+  let allEntries = [];
+  let branches = [];
+  let branchById = {};
+  const sort = { field: 'entry_date', dir: 'desc' };
+
+  const isAdmin = employee.role === 'Admin';
+  const canAccess = legacyAccess(employee);
+  const isManagerial = isAdmin;
+  const canFullView = canAccess;
+  const canViewBalance = canAccess;
+  const canDelete = isAdmin;
+  const isSupervisorTier = ['Manager', 'Branch Supervisor'].includes(employee.role) || (employee.position || '').includes('Supervisor');
+  const canApproveRow = (r) => isAdmin || (isSupervisorTier && r.created_by !== employee.id);
+  const branchOptions = (selected) => branches.map((b) =>
+    '<option value="' + b.id + '"' + (b.id === selected ? ' selected' : '') + ' style="' + branchOptionStyle(b.id, branches) + '">' + esc(b.name) + '</option>'
+  ).join('');
+  const tile = (num, label) => '<div class="tile"><div class="num">' + num + '</div><div class="lbl">' + label + '</div></div>';
+
+  async function build() {
+    branches = await getBranches();
+    branchById = Object.fromEntries(branches.map((b) => [b.id, b.name]));
+    const addFormHtml =
+      '<div class="card">' +
+        '<h3>Add Capital Entry</h3>' +
+        '<p class="muted" style="margin-top:-4px;">Money put into a branch — working capital, float, or other funding.' +
+          (isManagerial ? '' : ' A Supervisor (other than you) or Ren must approve it before it counts.') +
+        '</p>' +
+        '<form id="cap-form" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;">' +
+          '<div class="field"><label>Branch *</label><select name="branchId" required>' + branchOptions() + '</select></div>' +
+          '<div class="field"><label>Date</label><input type="date" name="entryDate" value="' + localDateStr() + '"></div>' +
+          '<div class="field"><label>Amount (PHP) *</label><input type="number" name="amount" step="0.01" required></div>' +
+          '<div class="field"><label>Purpose</label><select name="purposeType" id="purpose-type"><option>Scrap</option><option>Other</option></select></div>' +
+          '<div class="field" id="purpose-other-field" style="display:none;"><label>Specify</label><input type="text" name="purposeOther" placeholder="What does \'Other\' mean here?"></div>' +
+          '<div class="field"><label>Metal (if given as gold/silver stock)</label><select name="metalType" id="cap-metal"><option value="">— none, cash only —</option><option>Gold</option><option>Silver</option></select></div>' +
+          '<div class="field" id="cap-karat-field" style="display:none;"><label>Karat / Purity</label><select name="karat" id="cap-karat">' + karatOptionsFor('Gold') + '</select></div>' +
+          '<div class="field" id="cap-karat-other-field" style="display:none;"><label>Specify</label><input type="text" name="karatOther" placeholder="Karat / purity"></div>' +
+          '<div class="field" id="cap-weight-field" style="display:none;"><label>Weight (grams)</label><input type="number" name="weightGrams" step="0.001" min="0"></div>' +
+          '<div class="field"><label>Notes</label><input type="text" name="notes"></div>' +
+          '<button class="btn" type="submit">Add Entry</button>' +
+        '</form>' +
+      '</div>';
+
+    root.innerHTML =
+      '<div id="cap-msg"></div><div class="layout-2col">' +
+        '<div class="layout-2col-side">' + addFormHtml + '</div>' +
+        '<div class="layout-2col-main">' +
+          (canViewBalance
+            ? '<h3>Remaining Cash <span class="muted" style="font-weight:normal;">— per branch, right now</span></h3><div class="tiles" id="cap-tiles-remaining"></div>' +
+              '<h3 style="margin-top:16px;">Total Capital <span class="muted" style="font-weight:normal;">— per branch</span></h3>' +
+              '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;">' +
+                '<div class="field"><label>From</label><input type="date" id="cap-tot-from"></div>' +
+                '<div class="field"><label>To</label><input type="date" id="cap-tot-to"></div>' +
+                '<button type="button" class="btn small secondary" id="cap-tot-clear">All Time</button>' +
+              '</div>' +
+              '<div class="tiles" id="cap-tiles-total"></div>' +
+              '<h3 style="margin-top:16px;">Total Grams Received <span class="muted" style="font-weight:normal;">— per branch, by purity, same range as above</span></h3>' +
+              '<div id="cap-grams-list"></div>'
+            : '') +
+          (canFullView
+            ? '<div class="card">' +
+                '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">' +
+                  '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="f-search" placeholder="Purpose, notes…"></div>' +
+                  (isAdmin ? '<div class="field"><label>Branch</label><select id="f-branch"><option value="all">All Branches</option>' + branchOptions() + '</select></div>' : '') +
+                  sortControlHtml(CAP_SORT_FIELDS, sort, 'cap-sort-field', 'cap-sort-dir') +
+                  '<button type="button" class="btn small secondary" id="f-clear">Clear Filters</button>' +
+                '</div>' +
+              '</div>'
+            : '<h3>My Capital Requests</h3><p class="muted" style="margin-top:-4px;">Entries you\'ve submitted, and whether they\'ve been approved yet.</p>') +
+          '<div id="cap-list"><div class="muted">Loading…</div></div>' +
+        '</div>' +
+      '</div>';
+
+    document.getElementById('purpose-type').addEventListener('change', (ev) => {
+      document.getElementById('purpose-other-field').style.display = ev.target.value === 'Other' ? '' : 'none';
+    });
+    document.getElementById('cap-metal').addEventListener('change', (ev) => {
+      const hasMetal = !!ev.target.value;
+      document.getElementById('cap-karat-field').style.display = hasMetal ? '' : 'none';
+      document.getElementById('cap-weight-field').style.display = hasMetal ? '' : 'none';
+      if (hasMetal) document.getElementById('cap-karat').innerHTML = karatOptionsFor(ev.target.value);
+      document.getElementById('cap-karat-other-field').style.display = 'none';
+    });
+    document.getElementById('cap-karat').addEventListener('change', (ev) => {
+      document.getElementById('cap-karat-other-field').style.display = ev.target.value === 'Other' ? '' : 'none';
+    });
+    document.getElementById('cap-form').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      try {
+        const purpose = f.purposeType.value === 'Other' ? f.purposeOther.value.trim() : f.purposeType.value;
+        const metalType = f.metalType.value || null;
+        const karat = metalType ? (f.karat.value === 'Other' ? f.karatOther.value.trim() : f.karat.value) : null;
+        const weightGrams = metalType && f.weightGrams.value ? Number(f.weightGrams.value) : null;
+        await createBranchCapitalEntry({
+          branchId: Number(f.branchId.value), entryDate: f.entryDate.value,
+          amount: Number(f.amount.value), purpose, notes: f.notes.value.trim(),
+          status: isManagerial ? 'Approved' : 'Pending Approval',
+          metalType, karat, weightGrams,
+        });
+        toast('cap-msg', isManagerial ? 'Entry added.' : 'Entry added — pending approval.', false);
+        f.reset();
+        f.entryDate.value = localDateStr();
+        document.getElementById('purpose-other-field').style.display = 'none';
+        document.getElementById('cap-karat-field').style.display = 'none';
+        document.getElementById('cap-weight-field').style.display = 'none';
+        document.getElementById('cap-karat-other-field').style.display = 'none';
+        await load();
+      } catch (err) {
+        toast('cap-msg', String(err.message || err), true);
+      }
+    });
+
+    if (canFullView) {
+      document.getElementById('f-search').addEventListener('input', render);
+      if (isAdmin) document.getElementById('f-branch').addEventListener('change', render);
+      wireSortControl('cap-sort-field', 'cap-sort-dir', sort, render);
+      document.getElementById('f-clear').addEventListener('click', () => {
+        document.getElementById('f-search').value = '';
+        if (isAdmin) document.getElementById('f-branch').value = 'all';
+        render();
+      });
+    }
+    if (canViewBalance) {
+      document.getElementById('cap-tot-from').addEventListener('change', refreshTotals);
+      document.getElementById('cap-tot-to').addEventListener('change', refreshTotals);
+      document.getElementById('cap-tot-clear').addEventListener('click', () => {
+        document.getElementById('cap-tot-from').value = '';
+        document.getElementById('cap-tot-to').value = '';
+        refreshTotals();
+      });
+    }
+    subscribeToChanges('branch_capital_entries', load);
+  }
+
+  function refreshTotals() {
+    loadTotalTiles();
+    renderGramsByPurity();
+  }
+
+  async function load() {
+    const list = document.getElementById('cap-list');
+    if (!list) return;
+    list.innerHTML = '<div class="muted">Loading…</div>';
+    try {
+      if (canFullView) {
+        allEntries = await listBranchCapitalEntries();
+        await loadRemainingTiles();
+        refreshTotals();
+      } else if (canViewBalance) {
+        allEntries = await listBranchCapitalEntries(); // RLS still scopes this to just the caller's own rows -- only the tiles are company-wide
+        await loadRemainingTiles();
+        refreshTotals();
+      } else {
+        allEntries = await listBranchCapitalEntries(); // RLS already scopes this to just the caller's own rows
+      }
+      render();
+    } catch (err) {
+      list.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>';
+    }
+  }
+
+  // Separate from Remaining Cash (a live snapshot, never time-ranged) so the two
+  // don't get refetched together every time one filter changes.
+  async function loadTotalTiles() {
+    const fromDate = document.getElementById('cap-tot-from').value || null;
+    const toDate = document.getElementById('cap-tot-to').value || null;
+    const balances = await getBranchCapitalBalances(fromDate, toDate);
+    const box = document.getElementById('cap-tiles-total');
+    if (!box) return;
+    if (!balances.length) { box.innerHTML = '<p class="muted">No capital entries for this range.</p>'; return; }
+    box.innerHTML = balances.map((b) => tile(money(b.total_capital), branchById[b.branch_id] || 'Branch #' + b.branch_id)).join('');
+  }
+
+  // Grams have no server-side rollup of their own (unlike Total Capital's RPC) --
+  // computed here from allEntries, which canFullView/canViewBalance both already have
+  // (RLS scopes it to just-my-branch for anyone who isn't Admin), same From/To range.
+  function renderGramsByPurity() {
+    const box = document.getElementById('cap-grams-list');
+    if (!box) return;
+    const fromDate = document.getElementById('cap-tot-from').value || null;
+    const toDate = document.getElementById('cap-tot-to').value || null;
+    let rows = allEntries.filter((r) => r.weight_grams != null && r.metal_type);
+    if (fromDate) rows = rows.filter((r) => r.entry_date >= fromDate);
+    if (toDate) rows = rows.filter((r) => r.entry_date <= toDate);
+
+    if (!rows.length) { box.innerHTML = '<p class="muted">No gold/silver capital entries for this range.</p>'; return; }
+
+    const byKey = {};
+    rows.forEach((r) => {
+      const key = r.branch_id + '|' + r.metal_type + '|' + (r.karat || '');
+      byKey[key] = (byKey[key] || 0) + Number(r.weight_grams);
+    });
+    const items = Object.keys(byKey).map((key) => {
+      const [branchId, metalType, karat] = key.split('|');
+      return { branchId: Number(branchId), metalType, karat: karat || '—', grams: byKey[key] };
+    }).sort((a, b) => (branchById[a.branchId] || '').localeCompare(branchById[b.branchId] || '') || a.metalType.localeCompare(b.metalType));
+
+    box.innerHTML = '<div class="table-scroll table-mini"><table><tr><th>Branch</th><th>Metal</th><th>Karat/Purity</th><th>Total Grams</th></tr>' +
+      items.map((it) => '<tr><td data-label="Branch">' + (branchById[it.branchId] ? branchBadge(esc, branchById[it.branchId], it.branchId, branches) : '') + '</td>' +
+        '<td data-label="Metal">' + esc(it.metalType) + '</td>' +
+        '<td data-label="Karat/Purity">' + esc(it.karat) + '</td>' +
+        '<td data-label="Total Grams">' + weight(it.grams) + '</td></tr>').join('') +
+      '</table></div>';
+  }
+
+  async function loadRemainingTiles() {
+    const remaining = await getBranchCapitalRemaining();
+    const box = document.getElementById('cap-tiles-remaining');
+    if (!box) return;
+    if (!remaining.length) { box.innerHTML = '<p class="muted">No capital entries yet.</p>'; return; }
+    box.innerHTML = remaining.map((r) => tile(money(r.remaining_cash), branchById[r.branch_id] || 'Branch #' + r.branch_id)).join('');
+  }
+
+  function render() {
+    let rows = allEntries;
+    if (canFullView) {
+      const fSearch = document.getElementById('f-search').value.trim().toLowerCase();
+      const fBranch = isAdmin ? document.getElementById('f-branch').value : 'all';
+      if (fSearch) rows = rows.filter((r) => (r.purpose || '').toLowerCase().includes(fSearch) || (r.notes || '').toLowerCase().includes(fSearch));
+      if (fBranch !== 'all') rows = rows.filter((r) => String(r.branch_id) === fBranch);
+    }
+
+    const list = document.getElementById('cap-list');
+    if (!rows.length) { list.innerHTML = '<p class="muted">No capital entries for this filter.</p>'; return; }
+    // Filtering already picked `rows`; sort only reorders them (section 11).
+    rows = applySort(rows, sort, CAP_SORT_COMPARATORS);
+    list.innerHTML = '<div class="table-scroll table-2col"><table><tr><th>Branch</th><th>Date</th><th>Amount</th><th>Metal / Grams</th><th>Purpose</th><th>Notes</th><th>Status</th><th></th></tr>' +
+      rows.map((r) => {
+        const pending = r.status === 'Pending Approval';
+        return '<tr' + (pending ? ' style="background:#fff8e8;"' : '') + '>' +
+          '<td data-label="Branch">' + (r.branches ? branchBadge(esc, r.branches.name, r.branch_id, branches) : '') + '</td>' +
+          '<td data-label="Date">' + (r.entry_date || '—') + '</td>' +
+          '<td data-label="Amount">' + money(r.amount) +
+            (r.creator ? '<div class="muted" style="font-size:10px;margin-top:2px;">Added by ' + esc(r.creator.full_name) + '</div>' : '') +
+          '</td>' +
+          '<td data-label="Metal / Grams">' + (r.metal_type ? esc(r.metal_type) + ' ' + esc(r.karat || '') + '<div class="muted" style="font-size:10px;">' + weight(r.weight_grams) + '</div>' : '—') + '</td>' +
+          '<td data-label="Purpose">' + esc(r.purpose || '') + '</td>' +
+          '<td data-label="Notes" class="full-row">' + esc(r.notes || '') + '</td>' +
+          '<td data-label="Status"><span class="badge ' + (pending ? 'pending' : 'ok') + '">' + esc(r.status) + '</span></td>' +
+          '<td data-label="Actions" class="full-row" style="white-space:nowrap;">' +
+            (pending && canApproveRow(r) ? '<button class="btn small" data-id="' + r.id + '" data-act="approve">Approve</button> ' : '') +
+            (canDelete ? '<button class="btn small secondary" data-id="' + r.id + '" data-act="delete">Delete</button>' : '') +
+          '</td>' +
+        '</tr>';
+      }).join('') + '</table></div>';
+
+    list.querySelectorAll('[data-act="approve"]').forEach((btn) => btn.addEventListener('click', async () => {
+      try { await approveBranchCapitalEntry(btn.dataset.id); toast('cap-msg', 'Approved.', false); await load(); }
+      catch (err) { toast('cap-msg', String(err.message || err), true); }
+    }));
+
+    list.querySelectorAll('[data-act="delete"]').forEach((btn) => btn.addEventListener('click', async () => {
+      if (!confirm('Delete this capital entry?')) return;
+      try { await deleteBranchCapitalEntry(btn.dataset.id); toast('cap-msg', 'Deleted.', false); await load(); }
+      catch (err) { toast('cap-msg', String(err.message || err), true); }
+    }));
+  }
+
+  async function show() {
+    if (!built) {
+      built = true;
+      try { await build(); } catch (err) { built = false; root.innerHTML = '<div class="msg error">' + esc(err.message || err) + '</div>'; return; }
+    }
+    await load();
+  }
+  return { refresh: () => (built ? load() : Promise.resolve()), onShow: show };
+}
