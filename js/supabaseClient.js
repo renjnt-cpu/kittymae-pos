@@ -2,7 +2,7 @@
 // one session/auth state for the whole app (mirrors having one google.script.run-backed
 // session in the old Apps Script app).
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js?v=20261014a';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js?v=20261018a';
 
 // A device whose login token has expired -- or whose clock is wrong, so the app thinks the token is
 // still good -- gets "JWT expired" from the server and used to land on a dead-end "Something went

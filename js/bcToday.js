@@ -1,11 +1,11 @@
 // Branch Capital -- TODAY: the "attention needed" list, the cards of the day (opening cash, sales, expenses from sales, bills, petty cash, cash for deposit, expected cash, unverified expenses,
 // pending reimbursements), the sales-and-expenses statement, the cash position and the day as a timeline. For all branches: one line per branch.
 // Gross sales are shown as recorded and are never reduced by an expense; an expense is its own cash-out line.
-import { esc } from './shell.js?v=20261014a';
-import { branchBadge } from './branchColors.js?v=20261014a';
-import { bcOverview, bcTimeline, bcAttention, bcBranchesSummary } from './bcApi.js?v=20261014a';
-import { money, minus, signed, fmtDate, cardHtml, badge, ageText, statusBadge, num } from './bcFormat.js?v=20261014a';
-import { openExpenseForm } from './bcExpenses.js?v=20261014a';
+import { esc } from './shell.js?v=20261018a';
+import { branchBadge } from './branchColors.js?v=20261018a';
+import { bcOverview, bcTimeline, bcAttention, bcBranchesSummary } from './bcApi.js?v=20261018a';
+import { money, minus, signed, fmtDate, cardHtml, badge, ageText, statusBadge, num } from './bcFormat.js?v=20261018a';
+import { openExpenseForm } from './bcExpenses.js?v=20261018a';
 
 const SEVERITY_TONE = { critical: 'bad', warning: 'warn', info: 'info' };
 

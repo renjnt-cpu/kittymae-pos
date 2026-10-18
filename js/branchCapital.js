@@ -2,17 +2,17 @@
 //   Today (attention list, cards, cash position, timeline) · Expenses (paid from daily sales / branch capital / petty cash / bank / e-wallet / split, receipts, approvals, bills, transportation) ·
 //   Petty Cash (funds, replenishment, advances, ledger) · Daily Cash (cash book, deposits, count and close the day) · Reports · Settings · Capital Entries (the original page, unchanged).
 // The database side is migrations 226-230 (closed tables bc_*, petty ledger, audit log). Gross sales are only ever read; an expense is its own cash-out entry.
-import { esc } from './shell.js?v=20261014a';
-import { getBranches } from './api.js?v=20261014a';
-import { bcContext, bcPettyOverview } from './bcApi.js?v=20261014a';
-import { startToday } from './bcToday.js?v=20261014a';
-import { startExpenses, openExpenseDrawer, openExpenseForm } from './bcExpenses.js?v=20261014a';
-import { startPetty } from './bcPetty.js?v=20261014a';
-import { startCash } from './bcCash.js?v=20261014a';
-import { startReports } from './bcReports.js?v=20261014a';
-import { startSettings } from './bcSettings.js?v=20261014a';
-import { startEntries, legacyAccess } from './bcLegacy.js?v=20261014a';
-import { addDays } from './bcFormat.js?v=20261014a';
+import { esc } from './shell.js?v=20261018a';
+import { getBranches } from './api.js?v=20261018a';
+import { bcContext, bcPettyOverview } from './bcApi.js?v=20261018a';
+import { startToday } from './bcToday.js?v=20261018a';
+import { startExpenses, openExpenseDrawer, openExpenseForm } from './bcExpenses.js?v=20261018a';
+import { startPetty } from './bcPetty.js?v=20261018a';
+import { startCash } from './bcCash.js?v=20261018a';
+import { startReports } from './bcReports.js?v=20261018a';
+import { startSettings } from './bcSettings.js?v=20261018a';
+import { startEntries, legacyAccess } from './bcLegacy.js?v=20261018a';
+import { addDays } from './bcFormat.js?v=20261018a';
 
 const store = {
   get(k) { try { return sessionStorage.getItem('bc.' + k); } catch (e) { return null; } },

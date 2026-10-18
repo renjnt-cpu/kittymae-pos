@@ -2,11 +2,11 @@
 // who is following up, who is frustrated, who has a payment / delivery / refund problem, who has been waiting too long -- with the order they belong to, who handles it, a
 // suggested reply and a full timeline. Reports for management, Settings for the owner.
 // The detection is rule-based advice for staff; every decision (reply, order, payment, refund, cancellation) stays with people.
-import { esc } from './shell.js?v=20261014a';
-import { startQueue } from './msgpQueue.js?v=20261014a';
-import { startReports } from './msgpReports.js?v=20261014a';
-import { startSettings } from './msgpSettings.js?v=20261014a';
-import { openDetail } from './msgpDetail.js?v=20261014a';
+import { esc } from './shell.js?v=20261018a';
+import { startQueue } from './msgpQueue.js?v=20261018a';
+import { startReports } from './msgpReports.js?v=20261018a';
+import { startSettings } from './msgpSettings.js?v=20261018a';
+import { openDetail } from './msgpDetail.js?v=20261018a';
 
 export async function startMessagePancake({ employee }) {
   const perms = employee.permissions || [];
@@ -23,7 +23,7 @@ export async function startMessagePancake({ employee }) {
     '<div id="msgp-tab-queue"></div><div id="msgp-tab-reports" hidden></div><div id="msgp-tab-settings" hidden></div>';
   const panes = { queue: root.querySelector('#msgp-tab-queue'), reports: root.querySelector('#msgp-tab-reports'), settings: root.querySelector('#msgp-tab-settings') };
   const mods = {};
-  const open = (id) => openDetail(id, { onChange: () => mods.queue && mods.queue.refresh() });
+  const open = (id) => openDetail(id, { onChange: () => mods.queue && mods.queue.refresh(), employee });
 
   mods.queue = startQueue({ root: panes.queue, employee, canManage: manage, onOpen: open });
 

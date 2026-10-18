@@ -1,6 +1,6 @@
 // Branch Capital (Ren, 2026-10-14) -- the wrappers for the daily cash / expenses / petty cash database functions (migrations 226-230) and the receipt upload. POS-only page.
 // Every rule (permissions, branches, approval tiers, closed days, never-negative petty cash) is checked again in the database; the page only hides what a person cannot use.
-import { supabase } from './supabaseClient.js?v=20261014a';
+import { supabase } from './supabaseClient.js?v=20261018a';
 
 async function rpc(name, args) {
   const { data, error } = await supabase.rpc(name, args);

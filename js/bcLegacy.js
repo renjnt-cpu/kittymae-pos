@@ -1,9 +1,9 @@
 // Branch Capital -- CAPITAL ENTRIES: the original Branch Capital page (money or gold / silver put into a branch, with approval), kept exactly as it was and now one tab of the upgraded module.
 // Nothing about the existing entries, the Remaining Cash / Total Capital tiles, the approval rule (a Supervisor other than the person who added it, or an Admin) or the delete rule (Admin) has changed.
-import { esc, toast } from './shell.js?v=20261014a';
-import { listBranchCapitalEntries, getBranchCapitalBalances, getBranchCapitalRemaining, createBranchCapitalEntry, approveBranchCapitalEntry, deleteBranchCapitalEntry, subscribeToChanges } from './api.js?v=20261014a';
-import { branchBadge, branchOptionStyle } from './branchColors.js?v=20261014a';
-import { sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20261014a';
+import { esc, toast } from './shell.js?v=20261018a';
+import { listBranchCapitalEntries, getBranchCapitalBalances, getBranchCapitalRemaining, createBranchCapitalEntry, approveBranchCapitalEntry, deleteBranchCapitalEntry, subscribeToChanges } from './api.js?v=20261018a';
+import { branchBadge, branchOptionStyle } from './branchColors.js?v=20261018a';
+import { sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr } from './uiKit.js?v=20261018a';
 
 const CAP_SORT_FIELDS = [
   { key: 'entry_date', label: 'Date' }, { key: 'branch', label: 'Branch' }, { key: 'amount', label: 'Amount' },

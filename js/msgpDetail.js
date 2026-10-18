@@ -1,18 +1,19 @@
 // Message Pancake -- one conversation in full (a side panel): what was detected and why, the order, who handles it and its status, the suggested reply, internal notes,
 // response times and the timeline. Everything here is staff-controlled: the detection can be changed, nothing is sent to the customer, nothing touches the order,
 // a payment or a refund (those buttons open the existing screens).
-import { esc, toast } from './shell.js?v=20261014a';
-import { reasonDialog } from './dialogs.js?v=20261014a';
+import { esc, toast } from './shell.js?v=20261018a';
+import { reasonDialog } from './dialogs.js?v=20261018a';
 import {
   msgpConversation, msgpAssign, msgpSetStatus, msgpResolve, msgpReopen, msgpSnooze, msgpAddNote, msgpCorrect, msgpEscalate, msgpDeescalate,
-} from './messagePancakeApi.js?v=20261014a';
-import { TONES, PRIORITIES, WAIT_COLOR, WAIT_LABEL, STATUSES, ESCALATION_REASONS, badge, badgesHtml, fmtWait, ago, stamp, money, eventText } from './msgpFormat.js?v=20261014a';
+} from './messagePancakeApi.js?v=20261018a';
+import { TONES, PRIORITIES, WAIT_COLOR, WAIT_LABEL, STATUSES, ESCALATION_REASONS, badge, badgesHtml, fmtWait, ago, stamp, money, eventText } from './msgpFormat.js?v=20261018a';
+import { mountPayments } from './msgpPayments.js?v=20261018a';
 
 const MSG = 'msgp-msg';
 const ERP = 'https://renjnt-cpu.github.io/kittymae-inventory-system/';
 const OPEN_ORDER_STATES = ['new', 'pending', 'waitting'];   // an order in any other state is already being processed
 
-export async function openDetail(id, { onChange } = {}) {
+export async function openDetail(id, { onChange, employee } = {}) {
   document.querySelectorAll('.msgp-drawer-wrap').forEach((n) => n.remove());
   const wrap = document.createElement('div');
   wrap.className = 'msgp-drawer-wrap';
@@ -82,6 +83,8 @@ export async function openDetail(id, { onChange } = {}) {
 
       '<section class="card msgp-dr-sec"><h3>Order</h3>' + orderHtml(r, o, d.refunds || [], { orderLocked, warnChange, kmco }) + '</section>' +
 
+      '<section class="card msgp-dr-sec" id="msgp-pay"></section>' +
+
       '<section class="card msgp-dr-sec"><h3>Handling</h3><div class="msgp-detect">' +
         '<div class="field"><label for="d-assign">Assigned to</label><select id="d-assign"' + (p.assign ? '' : ' disabled') + '><option value="">Nobody</option>' +
           (d.staff || []).map((s) => '<option value="' + esc(s.id) + '"' + (s.id === r.assigned_to ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
@@ -109,6 +112,8 @@ export async function openDetail(id, { onChange } = {}) {
       '</section>' +
 
       '<section class="card msgp-dr-sec"><h3>Timeline</h3>' + (d.timeline.length ? '<ol class="msgp-tl">' + d.timeline.map((e) => '<li><span class="muted">' + esc(stamp(e.at)) + '</span> ' + esc(eventText(e)) + '</li>').join('') + '</ol>' : '<div class="muted">Nothing yet.</div>') + '</section>';
+    // the payment proofs of this chat and the "send to Payment Verification" button (fills in by itself; the rest of the panel never waits for it)
+    mountPayments(bodyEl.querySelector('#msgp-pay'), { row: r, employee, onChange });
   }
 
   function orderHtml(r, o, refunds, f) {
