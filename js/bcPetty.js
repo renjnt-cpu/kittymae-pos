@@ -1,15 +1,15 @@
 // Branch Capital -- PETTY CASH: the funds (custodian, authorized amount, balance, low-balance alert), opening a fund, replenishment (request -> approve -> process, never automatic),
 // returning unspent cash to the till, adjustments, cash advances to staff (released, then liquidated), and the permanent ledger of every movement with the balance before and after.
 // Petty cash can never go below zero. Putting cash into a fund is a transfer, not an expense — the expense happens when the fund is spent.
-import { esc, toast } from './shell.js?v=20261018b';
-import { reasonDialog, confirmDialog } from './dialogs.js?v=20261018b';
-import { branchBadge } from './branchColors.js?v=20261018b';
+import { esc, toast } from './shell.js?v=20261018c';
+import { reasonDialog, confirmDialog } from './dialogs.js?v=20261018c';
+import { branchBadge } from './branchColors.js?v=20261018c';
 import {
   bcPettyOverview, bcPettyLedger, bcPettyFundSave, bcPettyOpen, bcPettyReplenishRequest, bcPettyReplenishDecide, bcPettyReplenishProcess, bcPettyReplenishCancel,
   bcPettyReturn, bcPettyAdjust, bcPettyAdvanceRelease, bcPettyAdvanceLiquidate, bcPettyAdvanceCancel, uploadReceipt, RECEIPT_ACCEPT, checkReceiptFile,
-} from './bcApi.js?v=20261018b';
-import { formDialog, openDrawer } from './bcUi.js?v=20261018b';
-import { money, signed, fmtDate, fmtStamp, addDays, REPLENISH_SOURCES, optionsHtml, statusBadge, badge, kv, errorsText, ageText, num } from './bcFormat.js?v=20261018b';
+} from './bcApi.js?v=20261018c';
+import { formDialog, openDrawer } from './bcUi.js?v=20261018c';
+import { money, signed, fmtDate, fmtStamp, addDays, REPLENISH_SOURCES, optionsHtml, statusBadge, badge, kv, errorsText, ageText, num } from './bcFormat.js?v=20261018c';
 
 const fin = (res) => (!res || !res.ok)
   ? { error: res && res.code === 'INSUFFICIENT_PETTY_CASH' ? 'INSUFFICIENT PETTY CASH — ' + errorsText(res) : errorsText(res) }

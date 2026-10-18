@@ -1,8 +1,8 @@
 // Branch Capital -- REPORTS: the daily expense report (today / this week / this month / any dates), the branch comparison, the transportation report, the petty cash report and the audit log.
 // Each can be downloaded as a CSV (Excel) with the export permission. Expenses that were rejected, cancelled, reversed or are still drafts are not counted; reversals are shown separately.
-import { esc } from './shell.js?v=20261018b';
-import { bcReportExpenses, bcReportTransport, bcReportPetty, bcAuditList } from './bcApi.js?v=20261018b';
-import { money, signed, fmtDate, fmtStamp, fmtDay, addDays, monthStart, weekStart, cardHtml, barHtml, downloadCsv, optionsHtml, statusBadge, receiptBadge, num } from './bcFormat.js?v=20261018b';
+import { esc } from './shell.js?v=20261018c';
+import { bcReportExpenses, bcReportTransport, bcReportPetty, bcAuditList } from './bcApi.js?v=20261018c';
+import { money, signed, fmtDate, fmtStamp, fmtDay, addDays, monthStart, weekStart, cardHtml, barHtml, downloadCsv, optionsHtml, statusBadge, receiptBadge, num } from './bcFormat.js?v=20261018c';
 
 const VIEWS = [['daily', 'Daily expenses'], ['branches', 'Branch comparison'], ['transport', 'Transportation'], ['petty', 'Petty cash'], ['audit', 'Audit log']];
 const ENTITY_TYPES = [['', 'Everything'], ['expense', 'Expenses'], ['petty_fund', 'Petty cash funds'], ['replenishment', 'Replenishments'], ['advance', 'Cash advances'], ['reconciliation', 'Daily counts'], ['movement', 'Deposits & movements'], ['cash_book', 'Cash books'], ['petty_cash', 'Petty cash blocks'], ['category', 'Categories'], ['settings', 'Settings']];

@@ -1,7 +1,7 @@
 // Message Pancake -- the wording, colours and small helpers the queue, the conversation panel, the reports and the POS attention panel share.
 // Colour is never the only signal: every badge carries its text label (RED critical / angry, ORANGE urgent / frustrated / follow-up, YELLOW needs reply, GREEN ordering,
 // BLUE inquiry, PURPLE payment, GRAY resolved / low).
-import { esc } from './shell.js?v=20261018b';
+import { esc } from './shell.js?v=20261018c';
 
 export const TONES = {
   angry: { label: 'Angry', color: 'red' },

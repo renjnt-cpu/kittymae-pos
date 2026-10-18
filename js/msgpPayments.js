@@ -2,16 +2,17 @@
 // status, and the SEND TO PAYMENT VERIFICATION button that opens the payment-proof form with the customer and the order filled in. Nothing is verified from here: a person
 // in Payment Verification (in the ERP) checks the picture and the reference. The staff who send proofs need only the "add a payment proof" key; seeing the status needs the
 // "view" key.
-import { esc, money, statusBadge, riskBadge, fmtShortDateTime, friendly, shopChip, pancakeStatusBadge, attachedWhere } from './pvFormat.js?v=20261018b';
-import * as pvApi from './pvApi.js?v=20261018b';
-import { openProofForm } from './pvProofForm.js?v=20261018b';
+import { esc, money, statusBadge, riskBadge, fmtShortDateTime, friendly, shopChip, pancakeStatusBadge, attachedWhere } from './pvFormat.js?v=20261018c';
+import * as pvApi from './pvApi.js?v=20261018c';
+import { openProofForm } from './pvProofForm.js?v=20261018c';
 
 const ERP = 'https://renjnt-cpu.github.io/kittymae-inventory-system/';
 
 export async function mountPayments(box, { row: r, employee, onChange }) {
   if (!box) return;
   const perms = (employee && employee.permissions) || [];
-  const can = (k) => (employee && employee.role === 'Admin') || perms.includes(k);
+  // the person's own list of keys decides (an Admin can be held to read-only by a personal override); the role alone only decides when the list could not be loaded
+  const can = (k) => perms.length ? perms.includes(k) : !!(employee && employee.role === 'Admin');
   const canView = can('payment_verify.view'), canSubmit = can('payment_verify.submit');
   if (!canView && !canSubmit) { box.remove(); return; }
   box.innerHTML = '<h3>Payment verification</h3><p class="muted">Loading…</p>';
