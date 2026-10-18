@@ -2,9 +2,9 @@
 // status, and the SEND TO PAYMENT VERIFICATION button that opens the payment-proof form with the customer and the order filled in. Nothing is verified from here: a person
 // in Payment Verification (in the ERP) checks the picture and the reference. The staff who send proofs need only the "add a payment proof" key; seeing the status needs the
 // "view" key.
-import { esc, money, statusBadge, riskBadge, fmtShortDateTime, friendly } from './pvFormat.js?v=20261018a';
-import * as pvApi from './pvApi.js?v=20261018a';
-import { openProofForm } from './pvProofForm.js?v=20261018a';
+import { esc, money, statusBadge, riskBadge, fmtShortDateTime, friendly, shopChip, pancakeStatusBadge, attachedWhere } from './pvFormat.js?v=20261018b';
+import * as pvApi from './pvApi.js?v=20261018b';
+import { openProofForm } from './pvProofForm.js?v=20261018b';
 
 const ERP = 'https://renjnt-cpu.github.io/kittymae-inventory-system/';
 
@@ -26,8 +26,8 @@ export async function mountPayments(box, { row: r, employee, onChange }) {
   const open = (id) => ERP + 'payment-verification.html?open=' + encodeURIComponent(id);
   box.innerHTML = '<h3>Payment verification</h3>' +
     (pays.length ? '<p class="muted">Payment proofs already sent to Payment Verification for this customer’s chat or order:</p>' + pays.map((p) =>
-      '<div class="msgp-kv"><span><b>' + esc(p.pv_code) + '</b> ' + esc(money(p.amount)) + (p.order_ref ? ' · order #' + esc(p.order_ref) : '') + '<div class="muted">' +
-        (p.reference ? 'reference ' + esc(p.reference) + ' · ' : '') + esc(fmtShortDateTime(p.submitted_at)) + '</div></span><span>' + statusBadge(p.status) + ' ' + riskBadge(p.risk) +
+      '<div class="msgp-kv"><span><b>' + esc(p.pv_code) + '</b> ' + esc(money(p.amount)) + (p.order_ref ? ' · order #' + esc(p.order_ref) + ' ' + shopChip(p.shop_name) + ' ' + pancakeStatusBadge(p.order_status) : '') + '<div class="muted">' +
+        (p.reference ? 'reference ' + esc(p.reference) + ' · ' : '') + (p.submitted_by ? 'attached by ' + esc(p.submitted_by) + ' ' + attachedWhere(p.source) + ' · ' : '') + esc(fmtShortDateTime(p.submitted_at)) + '</div></span><span>' + statusBadge(p.status) + ' ' + riskBadge(p.risk) +
         (res.can_view ? ' <a class="act-link" target="_blank" rel="noopener noreferrer" href="' + esc(open(p.id)) + '">Open ↗</a>' : '') + '</span></div>').join('')
       : '<p class="muted">' + (r.payment_proof ? 'The customer may have sent a payment screenshot. ' : '') + 'No payment proof has been sent to Payment Verification for this chat yet.</p>') +
     (res.can_submit ? '<div class="msgp-actions"><button type="button" class="btn" data-send-pay>SEND TO PAYMENT VERIFICATION</button>' +

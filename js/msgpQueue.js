@@ -1,8 +1,8 @@
 // Message Pancake -- the Customer Attention Queue: the tiles, the filters, the search and the customer cards.
 // Everything shown comes from msgp_inbox (the database applies the branch rules); this file only draws it and sends the filters back.
-import { esc, toast } from './shell.js?v=20261018a';
-import { msgpInbox, msgpRequestCheck } from './messagePancakeApi.js?v=20261018a';
-import { TONES, PRIORITIES, WAIT_COLOR, WAIT_LABEL, STATUSES, badge, badgesHtml, fmtWait, ago, stamp, manilaToday } from './msgpFormat.js?v=20261018a';
+import { esc, toast } from './shell.js?v=20261018b';
+import { msgpInbox, msgpRequestCheck } from './messagePancakeApi.js?v=20261018b';
+import { TONES, PRIORITIES, WAIT_COLOR, WAIT_LABEL, STATUSES, badge, badgesHtml, fmtWait, ago, stamp, manilaToday } from './msgpFormat.js?v=20261018b';
 
 const MSG = 'msgp-msg';
 const has = (r, k) => r.intent === k || (r.intents || []).includes(k);

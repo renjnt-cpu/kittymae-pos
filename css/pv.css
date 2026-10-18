@@ -24,6 +24,19 @@ body.pv-noscroll { overflow:hidden; }
 .badge.pv-risk-veryhigh { background:#a31515; color:#fff; }
 .badge.pv-tag-pancake { background:#e6f4ee; color:#1f6b50; }
 .badge.pv-tag-src { background:#f1f1f1; color:#555; }
+/* the two Pancake shops, and the order's status in Pancake (worded and coloured like the Online Orders pages) */
+.badge.pv-shop-jewels { background:#fff1bc; color:#6b5200; box-shadow:inset 0 0 0 1px #ecdc9a; }
+.badge.pv-shop-kmco { background:#e0f3f3; color:#0f5b61; box-shadow:inset 0 0 0 1px #b6dcdd; }
+.badge.pv-shop-other { background:#f1f1f1; color:#555; }
+.badge.pv-ps-low { background:#fdecea; color:#c62828; }
+.badge.pv-ps-ok { background:#eaf6ec; color:#2e7d32; }
+.badge.pv-ps-pending { background:#fff4e0; color:#a15c00; }
+.badge.pv-ps-transit { background:#e3edfd; color:#1a56b0; }
+.pv-orderlink { color:#1a56b0; text-decoration:none; white-space:nowrap; }
+.pv-orderlink:hover, .pv-orderlink:focus { text-decoration:underline; }
+.pv-ordline { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:3px; }
+.pv-match-order { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.pv-table td.pv-c-cust { min-width:190px; }
 .pv-ref { font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12.5px; word-break:break-all; }
 .pv-miss { color:var(--pv-red); font-size:12px; font-weight:600; }
 .pv-small { font-size:12px; }

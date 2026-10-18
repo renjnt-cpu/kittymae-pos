@@ -2,8 +2,8 @@
 // the POS Message Pancake panel (the ERP and the POS carry an identical copy of this file). It opens as its own window on top of the page, takes the order, the
 // payment details and the pictures, and -- the moment a reference or a picture is entered -- asks the database to run the whole duplicate check and shows exactly which
 // earlier order and customer already used it. Saving never verifies anything: the proof goes to the verification queue for a person to check.
-import { esc, money, fmtDate, manilaToday, debounce, friendly, statusBadge, riskBadge, matchCardHtml, riskRank, fmtBytes, orderSummaryLines, SOURCES } from './pvFormat.js?v=20261018a';
-import { prepareImage } from './pvImage.js?v=20261018a';
+import { esc, money, fmtDate, manilaToday, debounce, friendly, statusBadge, riskBadge, matchCardHtml, riskRank, fmtBytes, orderSummaryLines, SOURCES, shopChip, orderRefHtml, pancakeStatusBadge, pancakeStatusLabel } from './pvFormat.js?v=20261018b';
+import { prepareImage } from './pvImage.js?v=20261018b';
 
 const FALLBACK_METHODS = ['GCash', 'Maya', 'BDO', 'BPI', 'Bank Transfer', 'Other E-Wallet', 'Other Bank', 'Cash Deposit', 'Other'].map((m) => ({ method: m, proof_required: true, reference_required: true }));
 const MAX_PICS = 6;
@@ -86,11 +86,11 @@ export function openProofForm(opts) {
     if (st.order) {
       const o = st.order;
       const lines = st.summary ? orderSummaryLines(st.summary) : [];
-      box.innerHTML = '<div class="pv-ordercard"><div class="pv-ordercard-head"><div><b>Order #' + esc(o.order_ref) + '</b> · ' + esc(o.customer_name || 'Customer') + (o.customer_phone ? ' · ' + esc(o.customer_phone) : '') + '</div>' +
+      box.innerHTML = '<div class="pv-ordercard"><div class="pv-ordercard-head"><div>' + shopChip(o.shop_name) + ' ' + orderRefHtml(o) + ' · ' + esc(o.customer_name || 'Customer') + (o.customer_phone ? ' · ' + esc(o.customer_phone) : '') + '</div>' +
         (lockOrder ? '' : '<button type="button" class="btn small secondary" data-change-order>Change</button>') + '</div>' +
-        '<div class="muted">' + [o.status ? 'status ' + o.status : '', o.order_amount != null ? 'order ' + money(o.order_amount) : '', o.prepaid ? 'paid online ' + money(o.prepaid) : '', o.order_date ? 'ordered ' + fmtDate(String(o.order_date).slice(0, 10)) : ''].filter(Boolean).map(esc).join(' · ') + '</div>' +
+        '<div class="muted">' + (o.status ? 'Pancake status ' + pancakeStatusBadge(o.status) + ' · ' : '') + [o.order_amount != null ? 'order ' + money(o.order_amount) : '', o.prepaid ? 'paid online ' + money(o.prepaid) : '', o.order_date ? 'ordered ' + fmtDate(String(o.order_date).slice(0, 10)) : ''].filter(Boolean).map(esc).join(' · ') + '</div>' +
         (lines.length ? '<div class="pv-ordersum">' + lines.map((l) => '<span>' + esc(l[0]) + ' <b>' + esc(l[1]) + '</b></span>').join('') + '</div>' : '') +
-        (st.summary && st.summary.payments && st.summary.payments.length ? '<div class="muted">Already on this order: ' + st.summary.payments.map((p) => esc(p.pv_code) + ' ' + money(p.amount) + ' ' + statusBadge(p.status)).join(' · ') + '</div>' : '') + '</div>';
+        (st.summary && st.summary.payments && st.summary.payments.length ? '<div class="muted">Already on this order: ' + st.summary.payments.map((p) => esc(p.pv_code) + ' ' + money(p.amount) + (p.submitted_by ? ' (attached by ' + esc(p.submitted_by) + ')' : '') + ' ' + statusBadge(p.status)).join(' · ') + '</div>' : '') + '</div>';
       return;
     }
     box.innerHTML = '<div class="field"><label for="pvf-orderq">Find the order — order number, customer name or phone</label>' +
@@ -109,8 +109,8 @@ export function openProofForm(opts) {
       if (seq !== st.orderSeq || !$('pvf-orderres')) return;
       const list = Array.isArray(rows) ? rows : (rows && rows.orders) || [];
       st.found = list;
-      res.innerHTML = list.length ? list.map((o, i) => '<button type="button" class="pv-orderpick" data-pick="' + i + '"><b>#' + esc(o.order_ref) + '</b> ' + esc(o.customer_name || '') + '<span class="muted"> · ' +
-        [o.customer_phone, o.status, o.order_amount != null ? money(o.order_amount) : ''].filter(Boolean).map(esc).join(' · ') + '</span></button>').join('')
+      res.innerHTML = list.length ? list.map((o, i) => '<button type="button" class="pv-orderpick" data-pick="' + i + '"><b>#' + esc(o.order_ref) + '</b> ' + shopChip(o.shop_name) + ' ' + esc(o.customer_name || '') + '<span class="muted"> · ' +
+        [o.customer_phone, pancakeStatusLabel(o.status), o.order_amount != null ? money(o.order_amount) : ''].filter(Boolean).map(esc).join(' · ') + '</span></button>').join('')
         : '<div class="muted">No order found. You can type the customer instead.</div>';
     } catch (e) { if (seq === st.orderSeq && $('pvf-orderres')) res.innerHTML = '<div class="msg error">' + esc(friendly(e)) + '</div>'; }
   }, 350);

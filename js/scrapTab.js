@@ -19,19 +19,19 @@ import {
   uploadScrapAttachment, uploadScrapPaymentProof, uploadScrapLinePhoto, getScrapLineIds, getScrapAttachmentUrl, convertScrapToSubasta,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges,
-} from './api.js?v=20261018a';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261018a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261018a';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261018a';
-import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261018a';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261018a';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261018a';
-import { attachCustomerPicker } from './customerPicker.js?v=20261018a';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261018a';
-import { GOLD_PURITIES } from './metals.js?v=20261018a';
-import { linesOf, linesLabel, normLines, mountScrapLines } from './scrapLines.js?v=20261018a';
-import { manilaToday } from './opsDates.js?v=20261018a';
-import { friendlyError } from './shell.js?v=20261018a';
+} from './api.js?v=20261018b';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261018b';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261018b';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261018b';
+import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261018b';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261018b';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261018b';
+import { attachCustomerPicker } from './customerPicker.js?v=20261018b';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261018b';
+import { GOLD_PURITIES } from './metals.js?v=20261018b';
+import { linesOf, linesLabel, normLines, mountScrapLines } from './scrapLines.js?v=20261018b';
+import { manilaToday } from './opsDates.js?v=20261018b';
+import { friendlyError } from './shell.js?v=20261018b';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 18): Scrap sortable by Date/Metal-Purity/Customer/Type/Weight/Amount.
 const SC_SORT_FIELDS = [

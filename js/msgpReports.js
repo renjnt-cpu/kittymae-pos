@@ -1,9 +1,9 @@
 // Message Pancake -- the management reports (message_pancake.analytics): message volumes, reply times, follow-up rate, complaints, payment and refund issues, tone trends,
 // messages by branch, assigned / resolved conversations, and the inquiry -> ordering -> order funnel.
 // The tone is a rule-based guess and is shown as a trend only; it is NOT used to judge staff (the staff tables show assigned / resolved / open conversations and reply times).
-import { esc, toast } from './shell.js?v=20261018a';
-import { msgpReport } from './messagePancakeApi.js?v=20261018a';
-import { manilaToday, fmtWait } from './msgpFormat.js?v=20261018a';
+import { esc, toast } from './shell.js?v=20261018b';
+import { msgpReport } from './messagePancakeApi.js?v=20261018b';
+import { manilaToday, fmtWait } from './msgpFormat.js?v=20261018b';
 
 const MSG = 'msgp-msg';
 const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };

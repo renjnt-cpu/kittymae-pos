@@ -70,6 +70,38 @@ export const riskBadge = (r) => (!r || r === 'NONE') ? '' : '<span class="badge 
 export const SOURCES = { ONLINE_ORDER: 'Online Orders', PANCAKE: 'Pancake chat', MANUAL_ENTRY: 'Manual entry', OTHER: 'Other', POS_SALE: 'POS sale', LAYAWAY_PAYMENT: 'Layaway payment' };
 export const sourceLabel = (s) => SOURCES[s] || s || '—';
 
+// ---------------------------------------------------------------- the two Pancake shops, the order as Pancake knows it, and who attached the reference
+// One registry covers both shops; every screen says which shop an order belongs to (the same order number exists in both shops) and what Pancake says about the order.
+export const SHOPS = [[100015407, 'Miss Kittymae Jewels'], [1328205188, 'Kittymae.co']];
+/** a small coloured tag with the shop's name (nothing when the shop is not known) */
+export function shopChip(name) {
+  if (!name) return '';
+  const k = /jewels/i.test(name) ? 'pv-shop-jewels' : /kittymae\.co/i.test(name) ? 'pv-shop-kmco' : 'pv-shop-other';
+  return '<span class="badge pv-badge pv-shop ' + k + '" title="Pancake shop">' + esc(name) + '</span>';
+}
+// Pancake's own order statuses, worded and coloured like the Online Orders pages
+const PANCAKE_NAMES = { new: 'New', pending: 'Pending Confirmation', waitting: 'Awaiting Stock', ordered: 'Ordered', confirmed: 'Confirmed', wait_print: 'Awaiting Print', printed: 'Printed', packing: 'Packing' };
+export const PANCAKE_STATUS_ORDER = ['new', 'submitted', 'wait_submit', 'pending', 'waitting', 'ordered', 'confirmed', 'wait_print', 'printed', 'packing', 'shipped', 'delivered', 'received_money', 'returned', 'canceled', 'removed'];
+export const pancakeStatusLabel = (raw) => !raw ? '' : (PANCAKE_NAMES[raw] || String(raw).split('_').map((w) => w ? w[0].toUpperCase() + w.slice(1) : w).join(' '));
+const pancakeStatusClass = (raw) => {
+  const s = String(raw || '').toLowerCase();
+  if (s.includes('cancel') || s.includes('return') || s.includes('fail')) return 'low';
+  if (s.includes('ship') || s.includes('deliver') || s.includes('complet') || s.includes('done')) return 'ok';
+  if (s.includes('wait') || s.includes('pending') || s.includes('new') || s.includes('submit')) return 'pending';
+  return 'transit';
+};
+/** the order's status in Pancake POS as a badge (nothing when unknown) */
+export const pancakeStatusBadge = (raw) => raw ? '<span class="badge pv-badge pv-ps-' + pancakeStatusClass(raw) + '" title="Status of this order in Pancake POS">' + esc(pancakeStatusLabel(raw)) + '</span>' : '';
+/** "#44432 ↗" -- the Pancake order number, opening the order in Pancake POS when its address is known (only https addresses are linked) */
+export function orderRefHtml(r) {
+  if (!r || !r.order_ref) return '';
+  const num = '<b>#' + esc(r.order_ref) + '</b>';
+  return r.pancake_url && /^https:\/\//.test(r.pancake_url)
+    ? '<a class="pv-orderlink" href="' + esc(r.pancake_url) + '" target="_blank" rel="noopener noreferrer" title="Open order #' + esc(r.order_ref) + ' in Pancake POS">' + num + ' ↗</a>' : num;
+}
+/** where the reference was attached: a proof read from the Online Orders was attached by a Pancake admin inside Pancake; every other proof was typed in the ERP */
+export const attachedWhere = (source) => source === 'ONLINE_ORDER' ? 'in Pancake' : 'in the ERP';
+
 export const REJECT_REASONS = [
   ['DUPLICATE_PROOF', 'Duplicate proof'], ['REFERENCE_ALREADY_USED', 'Reference already used'], ['INVALID_PROOF', 'Invalid proof'],
   ['AMOUNT_MISMATCH', 'Amount does not match'], ['UNREADABLE_PROOF', 'Unreadable proof'], ['WRONG_ACCOUNT', 'Wrong account'],
@@ -91,7 +123,7 @@ export function matchSentence(m, ref) {
     : same ? 'This proof picture is already linked to '
       : byImg ? 'This proof picture looks the same as the one linked to '
         : 'Reference ' + (ref || '—') + ' is already linked to ';
-  return lead + (o.order_ref ? 'Order #' + o.order_ref : (o.pv_code || 'another payment')) + ' — ' + (o.customer_name || 'unknown customer') + '.';
+  return lead + (o.order_ref ? 'Order #' + o.order_ref + (o.shop_name ? ' (' + o.shop_name + ')' : '') : (o.pv_code || 'another payment')) + ' — ' + (o.customer_name || 'unknown customer') + '.';
 }
 export const matchTags = (m) => {
   const t = [];
@@ -116,6 +148,8 @@ export function matchCardHtml(m, opts = {}) {
     '<div class="pv-match-head">' + (info ? '<span class="badge pv-badge pv-risk-info">Same order</span>' : '<span class="badge pv-badge ' + (RISK[sev] || RISK.LOW).cls + '">' + esc(riskLabel(sev)) + '</span>') +
       (m.blocking ? ' <span class="badge pv-badge pv-st-rejected">Blocks verification</span>' : '') + ' <b>' + head + '</b></div>' +
     '<div class="pv-match-body"><div>' + (o.pv_code ? '<b>' + esc(o.pv_code) + '</b> · ' : '') + esc(sourceLabel(o.source)) + ' · ' + money(o.amount) + ' · ' + state + '</div>' +
+      (o.shop_name || o.submitted_by ? '<div class="pv-match-order">' + [shopChip(o.shop_name), orderRefHtml(o), pancakeStatusBadge(o.order_status)].filter(Boolean).join(' ') +
+        (o.submitted_by ? ' <span class="muted">· reference attached by <b>' + esc(o.submitted_by) + '</b> ' + attachedWhere(o.source) + (o.submitted_at ? ' · ' + esc(fmtDate(manilaDay(o.submitted_at))) : '') + '</span>' : '') + '</div>' : '') +
       '<div class="muted">' + [o.branch_name, o.reference ? 'reference ' + o.reference : '', o.method, o.submitted_at ? 'sent ' + fmtDate(manilaDay(o.submitted_at)) : ''].filter(Boolean).map(esc).join(' · ') + '</div>' +
       '<div class="pv-tags">' + matchTags(m).map((t) => '<span class="pv-tag">' + esc(t) + '</span>').join('') + '</div></div>' +
     ((opts.open && o.id) || (opts.compare && o.id && o.image) ? '<div class="pv-match-actions">' +
