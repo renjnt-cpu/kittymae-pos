@@ -1,8 +1,8 @@
 // Payment Verification -- every Supabase call the module makes lives here, so the screens never touch `supabase` directly (and can be exercised against a stand-in
 // object in tests). Nothing reads the pv_* tables: each screen asks a pv_* database function, which checks who is calling (the payment_verify.* keys), which
 // branches they may see, and returns {ok:false, message} for anything that is not allowed or not valid. The ERP and the POS carry an identical copy of this file.
-import { supabase } from './supabaseClient.js?v=20261023a';
-import { uploadPrepared } from './pvImage.js?v=20261023a';
+import { supabase } from './supabaseClient.js?v=20261023b';
+import { uploadPrepared } from './pvImage.js?v=20261023b';
 
 export const BUCKET = 'payment-proofs';
 

@@ -17,18 +17,22 @@ import {
   listLayawayForfeitRequests, requestLayawayForfeit, approveLayawayForfeitStage1, approveLayawayForfeitFinal, rejectLayawayForfeit,
   cancelLayawayForfeitRequest, getLayawayReminderQueue, markLayawayContacted, setLayawayAltContact, listLayawayChangeLog,
   logBranchErrorCorrection, listActiveEmployees, getProductNames,
-} from './api.js?v=20261023a';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261023a';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20261023a';
-import { daysBetween, manilaToday, manilaDateStr } from './opsDates.js?v=20261023a';
-import { getOpsConfig, layawayDeadline } from './branchOpsConfig.js?v=20261023a';
-import { confirmDialog, reasonDialog, messageDialog, ERROR_TYPES } from './dialogs.js?v=20261023a';
-import { layawayInfo, statusChipHtml, progressHtml, paidOf, daysText, daysToneOf, ACTIVE_STATUSES } from './layawayStatus.js?v=20261023a';
-import { openCustomerHistory } from './customerHistory.js?v=20261023a';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261023a';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261023a';
-import { attachCustomerPicker } from './customerPicker.js?v=20261023a';
-import { friendlyError } from './shell.js?v=20261023a';
+} from './api.js?v=20261023b';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261023b';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, localDateStr, flagInvalid } from './uiKit.js?v=20261023b';
+import { daysBetween, manilaToday, manilaDateStr } from './opsDates.js?v=20261023b';
+import { getOpsConfig, layawayDeadline } from './branchOpsConfig.js?v=20261023b';
+import { confirmDialog, reasonDialog, messageDialog, ERROR_TYPES } from './dialogs.js?v=20261023b';
+import { layawayInfo, statusChipHtml, progressHtml, paidOf, daysText, daysToneOf, ACTIVE_STATUSES } from './layawayStatus.js?v=20261023b';
+import { openCustomerHistory } from './customerHistory.js?v=20261023b';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261023b';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261023b';
+import { attachCustomerPicker } from './customerPicker.js?v=20261023b';
+import { friendlyError } from './shell.js?v=20261023b';
+
+// How many payment lines one layaway form takes (the other modules keep the component's default of three). Every line is its own payment
+// record, so a customer settling several installments at once -- or paying in several ways -- is entered in one go (Ren, 2026-10-23).
+const LW_MAX_PAYMENT_LINES = 10;
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 20): one Sort control governs
 // every status folder (On Hold/Completed/Cancelled/Forfeited) so there's exactly one
@@ -342,7 +346,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
           '</div>' +
           '<div class="drawer-section" id="lw-sec-payment">' +
             '<h4>3 · Payment</h4>' +
-            '<div id="lw-pay-box">' + paymentRowsHtml({ recorder: employee.full_name || 'you', hint: 'Leave the amount blank if the customer is not paying anything yet. Split it across methods if they paid in more than one way; each line can carry its own reference and proof.' }) + '</div>' +
+            '<div id="lw-pay-box">' + paymentRowsHtml({ recorder: employee.full_name || 'you', max: LW_MAX_PAYMENT_LINES, hint: 'Leave the amount blank if the customer is not paying anything yet. Split it across methods if they paid in more than one way; each line can carry its own reference and proof.' }) + '</div>' +
             '<div class="field" style="margin-top:8px;"><label>Payment Notes (optional)</label><input type="text" name="paymentNotes"></div>' +
           '</div>' +
           '<div class="drawer-section" id="lw-sec-deadline">' +
@@ -1378,7 +1382,7 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
             '</div>' +
             (canAct
               ? '<form class="lw-addpay" data-hold-id="' + h.id + '" style="display:none;flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:8px;margin-top:10px;">' +
-                  '<div data-addpay-box>' + paymentRowsHtml({ recorder: employee.full_name || 'you', hint: 'Split it across methods if the customer paid in more than one way; each line can carry its own reference and proof.' }) + '</div>' +
+                  '<div data-addpay-box>' + paymentRowsHtml({ recorder: employee.full_name || 'you', max: LW_MAX_PAYMENT_LINES, hint: 'Add a line for each payment (different methods, or different dates when several installments are entered together); each line can carry its own reference and proof.' }) + '</div>' +
                   '<div class="field"><label>Notes (optional)</label><input type="text" name="notes"></div>' +
                   '<div class="msg error" data-addpay-err hidden></div>' +
                   '<div style="display:flex;gap:6px;"><button class="btn small" type="submit">Record payment</button><button type="button" class="btn small secondary" data-act="cancel-addpay">Cancel</button></div>' +
@@ -1425,8 +1429,8 @@ export async function initLayawayTab({ root, esc, toast, msgId, getBranchId, emp
     wireCustomerLinks(container);
     loadHistory(h);
 
-    // + Add Payment: the shared payment rows (method / amount / date / reference / proof -- up to three lines when the customer paid in
-    // more than one way). Each line is its own payment record, exactly as a single payment was before.
+    // + Add Payment: the shared payment rows (method / amount / date / reference / proof -- up to LW_MAX_PAYMENT_LINES lines when the customer paid in
+    // more than one way or several installments are entered together). Each line is its own payment record, exactly as a single payment was before.
     const addPay = container.querySelector('.lw-addpay');
     if (addPay) {
       const owed = infoOf(h).remaining;

@@ -6,8 +6,8 @@
 //   * a filter (All staff / My assigned orders / Unassigned / each staff member) and a one-line summary of the workload;
 //   * a "Staff handler" section in the record's drawer with who assigned it, when, and the full history.
 // Who sees what is decided by three keys (branch_handler.view / .assign / .view_all); the database checks them again. Inactive employees are never offered but stay on old records.
-import { confirmDialog } from './dialogs.js?v=20261023a';
-import { branchHandlersFor, branchHandlerHistory, listBranchHandlers, assignBranchHandler } from './handlerApi.js?v=20261023a';
+import { confirmDialog } from './dialogs.js?v=20261023b';
+import { branchHandlersFor, branchHandlerHistory, listBranchHandlers, assignBranchHandler } from './handlerApi.js?v=20261023b';
 
 const fmtDT = (s) => s ? new Date(s).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' }) : '—';
 const kv = (k, v) => '<div class="drawer-kv"><span>' + k + '</span><b>' + v + '</b></div>';

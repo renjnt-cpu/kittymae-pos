@@ -1,11 +1,11 @@
-// Reusable payment lines for any form that takes money in or out: up to three rows of Method / Amount / Date / Reference / Proof,
+// Reusable payment lines for any form that takes money in or out: up to `max` rows (three unless the form asks for more -- Layaway takes ten) of Method / Amount / Date / Reference / Proof,
 // a live "due · paying now · balance" summary, and one read() that checks the rows the same way everywhere (each amount above 0,
 // no date in the future or before the record's own date, the total never above what is due). New Scrap and Subasta "Mark Sold"
 // use it today; Layaway and POS adopt it in a later phase. The component keeps no state besides the inputs: build the HTML with
 // paymentRowsHtml(), put it in a container, then mountPaymentRows() on that container.
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261023a';
-import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261023a';
-import { manilaToday } from './opsDates.js?v=20261023a';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261023b';
+import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261023b';
+import { manilaToday } from './opsDates.js?v=20261023b';
 
 const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const money = (n) => '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 });

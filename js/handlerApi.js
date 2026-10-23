@@ -1,6 +1,6 @@
 // Branches -- "Handled by": the wrappers for the staff-handler functions (migration 253). Used by the POS Walk-In & COD, Scrap and Subasta tabs.
 // Every rule (who may see, who may assign, who may be chosen, the branch fence) is checked again in the database.
-import { supabase } from './supabaseClient.js?v=20261023a';
+import { supabase } from './supabaseClient.js?v=20261023b';
 
 async function rpc(name, args) {
   const { data, error } = await supabase.rpc(name, args);

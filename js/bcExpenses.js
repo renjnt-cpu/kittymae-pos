@@ -1,17 +1,17 @@
 // Branch Capital -- EXPENSES: the list, the "Add Expense" form (with Paid From, Split Funding, bill link, transport details, receipts), the rule dialogs that appear when petty cash is too low
 // (INSUFFICIENT PETTY CASH) or when the funding has to be confirmed (CONFIRM EXPENSE FUNDING), the duplicate warning, and the expense panel (approve / reject / receipt / reverse / correct / reimburse).
 // The page never moves money silently: every choice that changes where the money comes from is shown and confirmed first, and the database re-checks all of it.
-import { esc, toast } from './shell.js?v=20261023a';
-import { reasonDialog, confirmDialog } from './dialogs.js?v=20261023a';
-import { branchBadge } from './branchColors.js?v=20261023a';
+import { esc, toast } from './shell.js?v=20261023b';
+import { reasonDialog, confirmDialog } from './dialogs.js?v=20261023b';
+import { branchBadge } from './branchColors.js?v=20261023b';
 import {
   bcExpenseSave, bcExpenseDuplicates, bcBillsLookup, bcExpensesList, bcExpenseGet, bcExpenseDecide, bcExpenseReviewDuplicate, bcExpenseCancelDraft, bcExpenseReverse,
   bcExpenseCorrect, bcExpenseEdit, bcExpenseReimburse, bcPettyReplenishRequest, uploadReceipt, bcAttachVerify, receiptUrl, RECEIPT_ACCEPT, checkReceiptFile,
-} from './bcApi.js?v=20261023a';
-import { formDialog, choiceDialog, openDrawer } from './bcUi.js?v=20261023a';
+} from './bcApi.js?v=20261023b';
+import { formDialog, choiceDialog, openDrawer } from './bcUi.js?v=20261023b';
 import {
   money, fmtDate, fmtStamp, PAID_FROM, FUNDING_SOURCES, REPLENISH_SOURCES, METHODS, TRANSPORT_TYPES, STATUSES, RECEIPT_STATUSES, LEVEL_NAMES, optionsHtml, statusBadge, receiptBadge, badge, kv, errorsText, addDays,
-} from './bcFormat.js?v=20261023a';
+} from './bcFormat.js?v=20261023b';
 
 const VOID = ['Draft', 'Cancelled', 'Rejected', 'Reversed'];   // not counted in totals
 const r2 = (n) => Math.round(Number(n) * 100) / 100;

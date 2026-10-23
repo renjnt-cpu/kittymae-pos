@@ -2,8 +2,8 @@
 // the POS Message Pancake panel (the ERP and the POS carry an identical copy of this file). It opens as its own window on top of the page, takes the order, the
 // payment details and the pictures, and -- the moment a reference or a picture is entered -- asks the database to run the whole duplicate check and shows exactly which
 // earlier order and customer already used it. Saving never verifies anything: the proof goes to the verification queue for a person to check.
-import { esc, money, fmtDate, manilaToday, debounce, friendly, statusBadge, riskBadge, matchCardHtml, riskRank, fmtBytes, orderSummaryLines, SOURCES, shopChip, orderRefHtml, pancakeStatusBadge, pancakeStatusLabel } from './pvFormat.js?v=20261023a';
-import { prepareImage } from './pvImage.js?v=20261023a';
+import { esc, money, fmtDate, manilaToday, debounce, friendly, statusBadge, riskBadge, matchCardHtml, riskRank, fmtBytes, orderSummaryLines, SOURCES, shopChip, orderRefHtml, pancakeStatusBadge, pancakeStatusLabel } from './pvFormat.js?v=20261023b';
+import { prepareImage } from './pvImage.js?v=20261023b';
 
 const FALLBACK_METHODS = ['GCash', 'Maya', 'BDO', 'BPI', 'Bank Transfer', 'Other E-Wallet', 'Other Bank', 'Cash Deposit', 'Other'].map((m) => ({ method: m, proof_required: true, reference_required: true }));
 const MAX_PICS = 6;

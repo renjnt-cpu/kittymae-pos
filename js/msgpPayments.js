@@ -2,9 +2,9 @@
 // status, and the SEND TO PAYMENT VERIFICATION button that opens the payment-proof form with the customer and the order filled in. Nothing is verified from here: a person
 // in Payment Verification (in the ERP) checks the picture and the reference. The staff who send proofs need only the "add a payment proof" key; seeing the status needs the
 // "view" key.
-import { esc, money, statusBadge, riskBadge, fmtShortDateTime, friendly, shopChip, pancakeStatusBadge, attachedWhere } from './pvFormat.js?v=20261023a';
-import * as pvApi from './pvApi.js?v=20261023a';
-import { openProofForm } from './pvProofForm.js?v=20261023a';
+import { esc, money, statusBadge, riskBadge, fmtShortDateTime, friendly, shopChip, pancakeStatusBadge, attachedWhere } from './pvFormat.js?v=20261023b';
+import * as pvApi from './pvApi.js?v=20261023b';
+import { openProofForm } from './pvProofForm.js?v=20261023b';
 
 const ERP = 'https://renjnt-cpu.github.io/kittymae-inventory-system/';
 
