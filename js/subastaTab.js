@@ -19,19 +19,20 @@ import {
   updateSubastaPayment, uploadSubastaPaymentProof, getSubastaAttachmentUrl, getSubastaPawnerHistory, searchProducts,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges,
-} from './api.js?v=20261018c';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261018c';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, flagInvalid } from './uiKit.js?v=20261018c';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261018c';
-import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261018c';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261018c';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261018c';
-import { attachCustomerPicker } from './customerPicker.js?v=20261018c';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261018c';
-import { METALS } from './metals.js?v=20261018c';
-import { subastaLinesOf, linesLabel, normLines, mountScrapLines } from './scrapLines.js?v=20261018c';
-import { manilaToday, manilaDateStr, daysBetween } from './opsDates.js?v=20261018c';
-import { friendlyError } from './shell.js?v=20261018c';
+} from './api.js?v=20261023a';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261023a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, byDate, flagInvalid } from './uiKit.js?v=20261023a';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261023a';
+import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261023a';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261023a';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261023a';
+import { attachCustomerPicker } from './customerPicker.js?v=20261023a';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261023a';
+import { METALS } from './metals.js?v=20261023a';
+import { subastaLinesOf, linesLabel, normLines, mountScrapLines } from './scrapLines.js?v=20261023a';
+import { manilaToday, manilaDateStr, daysBetween } from './opsDates.js?v=20261023a';
+import { friendlyError } from './shell.js?v=20261023a';
+import { createHandlers } from './handlerUi.js?v=20261023a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 19): Subasta sortable by Pawn Date / Item / SKU / Weight / Sale Price / Status.
 const SB_SORT_FIELDS = [
@@ -102,6 +103,9 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
   let openId = null, mode = null; // mode: null | 'edit' | 'sold' | 'history' -- a form being typed in is never redrawn by a live refresh
 
   const notify = (text, isError) => toast(msgId, text, isError);
+  // HANDLED BY (migration 253): the staff member handling an item, chosen by an Admin / Manager.
+  const H = createHandlers({ table: 'subasta_items', employee, esc, notify, branchName, onChanged: async () => { render(); refreshOpenDetail(); } });
+  const subastaCtx = (id) => { const r = items.find((x) => String(x.id) === String(id)); return r ? { branchId: r.branch_id, label: r.pawn_reference ? 'Subasta ' + r.pawn_reference : 'Subasta #' + r.id, customer: r.buyer_name || r.pawner_name } : null; };
   const effOf = (r) => (r.status === 'Pending' && r.auction_eligible_date && r.auction_eligible_date <= manilaToday() ? 'Eligible' : r.status);
 
   const filterCard =
@@ -113,6 +117,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
         '<div class="field" style="min-width:220px;"><label>Search</label><input type="text" id="sb-f-search" placeholder="Item, SKU, pawner, pawn ref, buyer, reference, #id…"></div>' +
         '<div class="field"><label>Status</label><select id="sb-f-status">' + STATUS_FILTERS.map(([v, l]) => '<option value="' + v + '">' + l + '</option>').join('') + '</select></div>' +
         '<div class="field"><label>Metal</label><select id="sb-f-metal"><option value="all">All</option>' + METALS.map((m) => '<option>' + m + '</option>').join('') + '</select></div>' +
+        H.filterFieldHtml('sb-f-handler') +
         // From/To are driven by the page's global date range: kept in the DOM, not shown.
         '<div class="field range-managed"><label>From</label><input type="date" id="sb-f-from"></div>' +
         '<div class="field range-managed"><label>To</label><input type="date" id="sb-f-to"></div>' +
@@ -130,6 +135,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
     '<div class="tiles" id="sb-tiles"><div class="muted">Loading…</div></div>' +
     filterCard +
     '<div id="sb-active"></div>' +
+    '<div id="sb-handler-sum"></div>' +
     '<div id="sb-list" style="margin-top:10px;"><div class="muted">Loading…</div></div>' +
     // Delete requests: collapsed while empty, opened and highlighted while something waits.
     '<h3 style="margin:18px 0 6px;">Approvals</h3>' +
@@ -374,6 +380,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
         listBranchRecordRequests(['subasta_items', 'subasta_payments']).catch(() => []),
       ]);
       items = rows.map(decorate);
+      await H.load(items.map((r) => r.id));
       requests = reqs.filter((q) => q.branch_id === getBranchId());
       render();
       refreshOpenDetail();
@@ -420,7 +427,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
   // List
   // ---------------------------------------------------------------------------------------------
   function readFilters() {
-    return { search: $('sb-f-search').value.trim().toLowerCase(), status: $('sb-f-status').value, metal: $('sb-f-metal').value, from: $('sb-f-from').value, to: $('sb-f-to').value };
+    return { search: $('sb-f-search').value.trim().toLowerCase(), status: $('sb-f-status').value, metal: $('sb-f-metal').value, handler: $('sb-f-handler') ? $('sb-f-handler').value : 'all', from: $('sb-f-from').value, to: $('sb-f-to').value };
   }
   function matchesNonDate(r, f) {
     if (f.metal !== 'all' && !r._lines.some((l) => l.metal_type === f.metal)) return false;
@@ -432,7 +439,8 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
       case 'unpaid': if (!(r.status === 'Sold' && r._st.balance > 0.01)) return false; break;
       default: if (r.status !== f.status) return false;
     }
-    return !f.search || r._hay.includes(f.search);
+    if (f.handler && f.handler !== 'all' && !H.matches(r.id, f.handler)) return false;
+    return !f.search || r._hay.includes(f.search) || H.nameOf(r.id).toLowerCase().includes(f.search);
   }
   // The global date range narrows what has FINISHED (sold / withdrawn / cancelled) -- an item still open is on the shelf or
   // waiting to be listed whatever the dates, so it is never hidden by them.
@@ -446,7 +454,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
 
   function setStatusFilter(v) {
     $('sb-f-status').value = STATUS_FILTERS.some(([k]) => k === v) ? v : 'all';
-    $('sb-f-search').value = ''; $('sb-f-metal').value = 'all';
+    $('sb-f-search').value = ''; $('sb-f-metal').value = 'all'; if ($('sb-f-handler')) $('sb-f-handler').value = 'all';
     pg.page = 1; render();
   }
 
@@ -464,17 +472,20 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
     const canAdd = canAddHere();
     $('sb-new-btn').disabled = !canAdd;
     $('sb-write-note').innerHTML = canAdd ? '' : '<p class="muted" style="font-size:11px;">View only — you can only add subasta items for your own branch.</p>';
-    const f = readFilters();
     items.forEach((r) => { r._eff = effOf(r); });
+    H.syncFilterOptions($('sb-f-handler'), items.filter((r) => inRangeItem(r, readFilters())).map((r) => r.id));
+    const f = readFilters();
     const rows = items.filter((r) => matchesNonDate(r, f) && inRangeItem(r, f));
     // The module pill count follows these same filtered rows (MASTER UI rules 6/19/20/28).
     if (onCountUpdate) onCountUpdate(rows.length);
-    const hasFilters = !!(f.search || f.status !== 'all' || f.metal !== 'all');
+    const hasFilters = !!(f.search || f.status !== 'all' || f.metal !== 'all' || f.handler !== 'all');
     const activeEl = $('sb-active');
     activeEl.innerHTML = activeFiltersHtml([
-      { label: 'Search', value: esc(f.search) }, { label: 'Status', value: f.status === 'all' ? '' : esc((STATUS_FILTERS.find(([k]) => k === f.status) || [])[1] || f.status) }, { label: 'Metal', value: esc(f.metal) },
+      { label: 'Search', value: esc(f.search) }, { label: 'Status', value: f.status === 'all' ? '' : esc((STATUS_FILTERS.find(([k]) => k === f.status) || [])[1] || f.status) }, { label: 'Metal', value: esc(f.metal) }, { label: 'Handled by', value: esc(H.filterLabel(f.handler)) },
     ], 'sb-f-clear');
     wireProxyButtons(activeEl);
+    $('sb-handler-sum').innerHTML = H.summaryHtml(items.filter((r) => inRangeItem(r, f)).map((r) => r.id));
+    H.wireSummary($('sb-handler-sum'), 'sb-f-handler');
     renderItems(rows, hasFilters);
     renderRequests();
   }
@@ -501,7 +512,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
     if (!rows.length) { emptyList(list, hasFilters); return; }
     const info = pageSlice(applySort(rows, sort, SB_SORT_COMPARATORS), pg);
     list.innerHTML = '<div class="table-scroll table-2col"><table class="sc-table">' +
-      '<thead><tr><th>Item</th><th>Pawner</th><th class="nw">Weight</th><th class="nw">Pawn Ref / Date</th><th class="nw">Eligible</th><th class="nw">Status</th><th class="nw">Sale</th><th class="nw">Payment</th><th></th></tr></thead><tbody>' +
+      '<thead><tr><th>Item</th><th>Pawner</th><th class="nw">Weight</th><th class="nw">Pawn Ref / Date</th><th class="nw">Eligible</th><th class="nw">Status</th><th class="nw">Sale</th><th class="nw">Payment</th>' + (H.canView ? '<th>Handled By</th>' : '') + '<th></th></tr></thead><tbody>' +
       info.rows.map((r) => '<tr data-row-id="' + r.id + '">' +
         '<td data-label="Item"><b>' + esc(r.item_description) + '</b><div class="muted" style="font-size:10.5px;">' +
           esc([r.sku, r.category, r._label].filter(Boolean).join(' · ') || '—') + '</div></td>' +
@@ -512,9 +523,11 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
         '<td data-label="Status" class="nw">' + statusBadge(r._eff) + (r.status === 'Hold' && r.hold_reason ? '<div class="muted" style="font-size:10px;max-width:130px;white-space:normal;">' + esc(r.hold_reason) + '</div>' : '') + '</td>' +
         '<td data-label="Sale" class="nw">' + (r.status === 'Sold' ? money(r.sale_price) + '<div class="muted" style="font-size:10.5px;">' + esc(r.buyer_name || '') + ' · ' + fmtDate(r.sale_date) + '</div>' : '—') + '</td>' +
         '<td data-label="Payment" class="nw">' + (r.status === 'Sold' ? paymentChipHtml(r._st) + (r._st.balance > 0.01 ? '<div class="muted" style="font-size:10px;">' + money(r._st.balance) + ' left</div>' : '') : '—') + '</td>' +
+        (H.canView ? '<td data-label="Handled By" class="full-row" style="font-size:12px;">' + H.cellHtml(r.id) + '</td>' : '') +
         '<td class="full-row nw"><button type="button" class="btn small secondary" data-act="view-details" data-id="' + r.id + '">View Details</button></td>' +
       '</tr>').join('') + '</tbody></table></div>' + pagerHtml(info);
     wirePager(list, pg, render);
+    H.wire(list, subastaCtx);
     list.querySelectorAll('tr[data-row-id]').forEach((tr) => tr.addEventListener('click', (ev) => {
       if (ev.target.closest('a, input, select') || (ev.target.closest('button') && !ev.target.closest('[data-act="view-details"]'))) return;
       openDetail(Number(tr.dataset.rowId));
@@ -641,6 +654,7 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
       kv('Metal / Purity', esc(r._label || '—')) + kv(r._lines.length > 1 ? 'Total weight' : 'Weight', grams(r.weight_grams)) +
       kv('Branch', esc(branchName(r.branch_id))) + kv('Status', statusBadge(eff)) +
       (converted ? kv('Origin', 'Converted from Scrap #' + r.converted_from_scrap_entry_id) : '') + '</div>';
+    h += H.sectionHtml(r.id);
 
     // An item with several metals / purities: one row per line.
     if (r._lines.length > 1) {
@@ -749,6 +763,8 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
   function wireDetailBody(container, r) {
     const on = (sel, fn) => container.querySelectorAll(sel).forEach((el) => el.addEventListener('click', () => fn(el)));
     const open = async (path) => { try { window.open(await getSubastaAttachmentUrl(path), '_blank'); } catch (err) { notify(String(err.message || err), true); } };
+    H.wire(container, subastaCtx);
+    H.fillHistory(container, r.id);
     on('[data-act="view-proof"]', (el) => open(el.dataset.path));
     on('[data-act="attach-proof"]', (el) => pickFile('image/*,.pdf', async (file) => {
       try { await uploadSubastaPaymentProof(r.branch_id, r.id, Number(el.dataset.id), file); notify('Proof attached.', false); await load(); } catch (err) { notify(String(err.message || err), true); }
@@ -1096,11 +1112,11 @@ export async function initSubastaTab({ root, esc, toast, msgId, getBranchId, emp
   // Filters, range, views
   // ---------------------------------------------------------------------------------------------
   $('sb-f-search').addEventListener('input', () => { pg.page = 1; render(); });
-  ['sb-f-status', 'sb-f-metal'].forEach((id) => $(id).addEventListener('change', () => { pg.page = 1; render(); }));
+  ['sb-f-status', 'sb-f-metal', 'sb-f-handler'].forEach((id) => { if ($(id)) $(id).addEventListener('change', () => { pg.page = 1; render(); }); });
   // The global date range changes these two (hidden) inputs: the list re-filters and the server figures are fetched again.
   ['sb-f-from', 'sb-f-to'].forEach((id) => $(id).addEventListener('change', () => { pg.page = 1; render(); loadReport(); }));
   $('sb-f-clear').addEventListener('click', () => {
-    $('sb-f-search').value = ''; $('sb-f-status').value = 'all'; $('sb-f-metal').value = 'all';
+    $('sb-f-search').value = ''; $('sb-f-status').value = 'all'; $('sb-f-metal').value = 'all'; if ($('sb-f-handler')) $('sb-f-handler').value = 'all';
     pg.page = 1; render(); // the date range is the page's global range -- not cleared here
   });
   wireSortControl('sb-sort-field', 'sb-sort-dir', sort, () => { pg.page = 1; render(); });

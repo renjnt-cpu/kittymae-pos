@@ -1,14 +1,14 @@
 // Branch Capital -- DAILY CASH: the cash book of a branch (the cash in the till on the day it was started), the day's expected cash, counting the cash and closing the day
 // (expected vs counted, over / short, a reason when the difference is bigger than the limit, prepared / checked / approved), deposits and other cash movements, and the history of counted days.
 // Closing a day locks it (and the days before it): nothing new can be dated on or before a closed day until a manager reopens it, and the reopening is kept in the history.
-import { esc, toast } from './shell.js?v=20261018c';
-import { reasonDialog } from './dialogs.js?v=20261018c';
+import { esc, toast } from './shell.js?v=20261023a';
+import { reasonDialog } from './dialogs.js?v=20261023a';
 import {
   bcOverview, bcBookSet, bcMovementSave, bcMovementVoid, bcMovementsList, bcReconClose, bcReconCheck, bcReconApprove, bcReconReopen, bcReconsList, uploadReceipt, RECEIPT_ACCEPT, checkReceiptFile,
-} from './bcApi.js?v=20261018c';
-import { formDialog, openDrawer } from './bcUi.js?v=20261018c';
-import { money, signed, fmtDate, fmtStamp, addDays, MOVEMENT_KINDS, optionsHtml, statusBadge, badge, kv, errorsText, num } from './bcFormat.js?v=20261018c';
-import { cashPositionHtml } from './bcToday.js?v=20261018c';
+} from './bcApi.js?v=20261023a';
+import { formDialog, openDrawer } from './bcUi.js?v=20261023a';
+import { money, signed, fmtDate, fmtStamp, addDays, MOVEMENT_KINDS, optionsHtml, statusBadge, badge, kv, errorsText, num } from './bcFormat.js?v=20261023a';
+import { cashPositionHtml } from './bcToday.js?v=20261023a';
 
 const MOVE_CHOICES = [['DEPOSIT', 'Bank deposit (cash leaves the till)'], ['REMITTANCE', 'Remittance (cash leaves the till)'], ['OTHER_CASH_OUT', 'Other cash out'], ['OTHER_CASH_IN', 'Other cash in']];
 

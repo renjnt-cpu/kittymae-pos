@@ -1,7 +1,7 @@
 // Branch Capital -- the side panel and the dialogs. In-page (no browser confirm / prompt), so they behave the same on a phone and can be driven from automated checks.
 // formDialog: a form with Save / Cancel; the submit handler decides when it closes (so a rule from the database can be shown without losing what was typed).
 // choiceDialog: a message with several buttons, one of which is picked (used for "INSUFFICIENT PETTY CASH" and "CONFIRM EXPENSE FUNDING").
-import { esc } from './shell.js?v=20261018c';
+import { esc } from './shell.js?v=20261023a';
 
 const stack = [];   // open dialogs, last one is on top
 function onKey(ev) {

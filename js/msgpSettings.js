@@ -1,11 +1,11 @@
 // Message Pancake -- Settings (owner only, message_pancake.manage): the Pancake connection (write-only page token), the waiting times, the categories (add / edit), the word lists,
 // the link that opens a chat, and the recent checks. The token is saved privately and never shown again.
-import { esc, toast } from './shell.js?v=20261018c';
-import { confirmDialog } from './dialogs.js?v=20261018c';
+import { esc, toast } from './shell.js?v=20261023a';
+import { confirmDialog } from './dialogs.js?v=20261023a';
 import {
   msgpGetSettings, msgpSaveSettings, msgpSaveCategory, msgpDeleteCategory, msgpSaveWordlist, msgpSetToken, msgpClearToken, msgpRequestCheck,
-} from './messagePancakeApi.js?v=20261018c';
-import { COLORS, badge, ago, stamp } from './msgpFormat.js?v=20261018c';
+} from './messagePancakeApi.js?v=20261023a';
+import { COLORS, badge, ago, stamp } from './msgpFormat.js?v=20261023a';
 
 const MSG = 'msgp-msg';
 const VERDICT = {

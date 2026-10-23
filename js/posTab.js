@@ -21,17 +21,18 @@ import {
   listRefundReasons, listRefundsForOrder, createRefundRequest, logBranchErrorCorrection,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges, LEDGER_ROW_CAP,
-} from './api.js?v=20261018c';
-import { branchColor } from './branchColors.js?v=20261018c';
-import { POS_PAYMENT_METHODS, POS_REF_REQUIRED, POS_CASH_METHODS, posMethodLabel } from './paymentMethods.js?v=20261018c';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, flagInvalid } from './uiKit.js?v=20261018c';
-import { manilaDateStr, manilaToday } from './opsDates.js?v=20261018c';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261018c';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261018c';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261018c';
-import { attachCustomerPicker } from './customerPicker.js?v=20261018c';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261018c';
-import { friendlyError } from './shell.js?v=20261018c';
+} from './api.js?v=20261023a';
+import { branchColor } from './branchColors.js?v=20261023a';
+import { POS_PAYMENT_METHODS, POS_REF_REQUIRED, POS_CASH_METHODS, posMethodLabel } from './paymentMethods.js?v=20261023a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, flagInvalid } from './uiKit.js?v=20261023a';
+import { manilaDateStr, manilaToday } from './opsDates.js?v=20261023a';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261023a';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261023a';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261023a';
+import { attachCustomerPicker } from './customerPicker.js?v=20261023a';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261023a';
+import { friendlyError } from './shell.js?v=20261023a';
+import { createHandlers } from './handlerUi.js?v=20261023a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 12): Sales Transactions sortable
 // across Date & Time/Order/Customer/SKU/Qty/Amount/Payment. The ledger is one row per
@@ -127,6 +128,9 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   let report = null, reportErr = '', reportSeq = 0, loadSeq = 0;
   let openGroupId = null, detailMode = null; // detailMode: null | 'edit-item' | 'edit-pay' | 'add-pay' | 'refund' -- a form being typed in is never redrawn by a live refresh
   const notify = (text, isError) => toast(msgId, text, isError);
+  // HANDLED BY (migration 253): the staff member handling a sale, chosen by an Admin / Manager. The record key is the sale_group_id.
+  const H = createHandlers({ table: 'pos_sale', employee, esc, notify, branchName, onChanged: async () => { render(); refreshDetailIfOpen(); } });
+  const posCtx = (gid) => { const g = groupById(gid); const f = g && g.items[0]; return f ? { branchId: f.branch_id, label: f.order_number ? 'Order #' + f.order_number : 'POS sale', customer: f.customer_name } : null; };
 
   root.innerHTML =
     // Summary sits right beside + New Sale (Ren, 2026-09-22) -- same button/popover, same ids, just relocated.
@@ -149,6 +153,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
         '<div class="field"><label>Payment Method</label><select id="pos-f-method"><option value="all">All</option>' +
           POS_PAYMENT_METHODS.map((m) => '<option value="' + m + '">' + esc(posMethodLabel(m)) + '</option>').join('') + '</select></div>' +
         '<div class="field"><label>Admin</label><select id="pos-f-admin"><option value="all">All</option></select></div>' +
+        H.filterFieldHtml('pos-f-handler') +
         // From/To are driven by the page's global date range, so they are kept in the DOM (the range handler reads them) but not shown.
         '<div class="field range-managed"><label>From</label><input type="date" id="pos-f-from"></div>' +
         '<div class="field range-managed"><label>To</label><input type="date" id="pos-f-to"></div>' +
@@ -157,6 +162,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
       '</div>' +
     '</div>' +
     '<div id="pos-active"></div>' +
+    '<div id="pos-handler-sum"></div>' +
     '<h3 style="margin-top:0;">Sales by Admin &amp; Payment Method <span class="muted" style="font-weight:normal;font-size:12px;">— reflects the selected date range, all admins for this branch</span></h3>' +
     '<div id="pos-by-admin" style="margin-bottom:20px;"><div class="muted">Loading…</div></div>' +
     '<h3 style="margin-top:6px;">Sales Transactions <span class="muted" id="pos-range-note" style="font-weight:normal;font-size:12px;"></span></h3>' +
@@ -690,7 +696,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
       if (mine !== loadSeq) return;
       allPosSales = rows.filter((r) => r.sale_group_id);
       const groupIds = [...new Set(allPosSales.map((r) => r.sale_group_id))];
-      const payments = await listSalePayments(groupIds);
+      const [payments] = await Promise.all([listSalePayments(groupIds), H.load(groupIds)]);
       if (mine !== loadSeq) return;
       posPaymentsByGroup = {};
       payments.forEach((p) => { (posPaymentsByGroup[p.sale_group_id] || (posPaymentsByGroup[p.sale_group_id] = [])).push(p); });
@@ -922,11 +928,11 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
       (p.reference_number ? ' #' + esc(p.reference_number) : '')).join('<br>') + '</div>' : '');
   }
   function readFilters() {
-    return { search: $('pos-f-search').value.trim().toLowerCase(), show: $('pos-f-show').value, method: $('pos-f-method').value, admin: $('pos-f-admin').value };
+    return { search: $('pos-f-search').value.trim().toLowerCase(), show: $('pos-f-show').value, method: $('pos-f-method').value, admin: $('pos-f-admin').value, handler: $('pos-f-handler') ? $('pos-f-handler').value : 'all' };
   }
   function haystack(g) {
     const first = g.items[0], pays = posPaymentsByGroup[g.groupId] || [];
-    return [first.order_number, first.customer_name, first.contact_number, first.customer_type, first.notes, nameOf(first.employee_id),
+    return [first.order_number, first.customer_name, first.contact_number, first.customer_type, first.notes, nameOf(first.employee_id), H.nameOf(g.groupId),
       ...g.items.flatMap((r) => [r.sku, r.products && r.products.item_name]),
       ...pays.flatMap((p) => [p.payment_method, posMethodLabel(p.payment_method), p.reference_number])].filter((x) => x != null).join(' ').toLowerCase();
   }
@@ -953,8 +959,9 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
       ? ''
       : '<p class="muted" style="font-size:11px;">View only — you can only ring up sales for your own branch.</p>';
     syncAdminOptions();
-    const f = readFilters();
     const allGroups = groupPosSales(allPosSales);
+    H.syncFilterOptions($('pos-f-handler'), allGroups.map((g) => g.groupId));
+    const f = readFilters();
     renderByAdminPayment(allGroups); // date-filtered only -- not narrowed by the free-text search / status filters
     // Ren, 2026-10-02: admin in the filter search lets typing a staff name find every sale they processed (and who they sold to).
     let groups = allGroups;
@@ -962,19 +969,22 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     if (f.show !== 'all') groups = groups.filter((g) => matchesShow(g, f.show));
     if (f.method !== 'all') groups = groups.filter((g) => (posPaymentsByGroup[g.groupId] || []).some((p) => p.payment_method === f.method));
     if (f.admin !== 'all') groups = groups.filter((g) => String(g.items[0].employee_id) === f.admin);
+    if (f.handler !== 'all') groups = groups.filter((g) => H.matches(g.groupId, f.handler));
     renderPopover(groups);
 
     // Pill count, active-filter strip and ledger all follow these same filters (MASTER UI rules 6/19/20/28).
     if (onCountUpdate) onCountUpdate(groups.length);
-    const hasFilters = !!(f.search || f.show !== 'all' || f.method !== 'all' || f.admin !== 'all');
+    const hasFilters = !!(f.search || f.show !== 'all' || f.method !== 'all' || f.admin !== 'all' || f.handler !== 'all');
     const rangeNow = getRange ? getRange() : null;
     const rangeLabel = rangeNow && rangeNow.preset !== 'all' ? rangeNow.label : '';
     $('pos-range-note').textContent = (rangeLabel ? '— ' + rangeLabel : '— all dates') + (allPosSales.length >= LEDGER_ROW_CAP ? ' · showing the latest ' + LEDGER_ROW_CAP.toLocaleString('en-PH') + ' lines — narrow the dates to see older sales' : '');
     const activeEl = $('pos-active');
     activeEl.innerHTML = activeFiltersHtml([
       { label: 'Search', value: esc(f.search) }, { label: 'Showing', value: f.show === 'all' ? '' : esc((SHOW_FILTERS.find(([k]) => k === f.show) || [])[1] || f.show) },
-      { label: 'Payment', value: f.method === 'all' ? '' : esc(posMethodLabel(f.method)) }, { label: 'Admin', value: f.admin === 'all' ? '' : esc(nameOf(f.admin)) },
+      { label: 'Payment', value: f.method === 'all' ? '' : esc(posMethodLabel(f.method)) }, { label: 'Admin', value: f.admin === 'all' ? '' : esc(nameOf(f.admin)) }, { label: 'Handled by', value: esc(H.filterLabel(f.handler)) },
     ], 'pos-f-clear');
+    $('pos-handler-sum').innerHTML = H.summaryHtml(allGroups.map((g) => g.groupId));
+    H.wireSummary($('pos-handler-sum'), 'pos-f-handler');
     wireProxyButtons(activeEl);
 
     const box = $('pos-list');
@@ -1001,7 +1011,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
     const sortedGroups = applySort(groups, sort, posSortComparators());
     const info = pageSlice(sortedGroups, pg);
     box.innerHTML = '<div class="table-scroll table-mini"><table>' +
-      '<thead><tr><th>Date &amp; Time</th><th>Order</th><th>Customer</th><th>SKU</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Line Total</th><th>Payment</th><th></th></tr></thead><tbody>' +
+      '<thead><tr><th>Date &amp; Time</th><th>Order</th><th>Customer</th><th>SKU</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Line Total</th><th>Payment</th>' + (H.canView ? '<th>Handled By</th>' : '') + '<th></th></tr></thead><tbody>' +
       info.rows.map((g) => {
         const paidLabel = paymentStatusHtml(g);
         return g.items.map((r, idx) => '<tr>' +
@@ -1015,12 +1025,14 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
           '<td data-label="Discount">' + (num(r.discount) > 0 ? '− ' + money(r.discount) : '—') + '</td>' +
           '<td data-label="Line Total">' + money(lineNet(r)) + '</td>' +
           '<td data-label="Payment" class="full-row">' + (idx === 0 ? paidLabel : '<span class="muted" style="font-size:10px;">same sale</span>') + '</td>' +
+          (H.canView ? '<td data-label="Handled By" class="full-row">' + (idx === 0 ? H.cellHtml(g.groupId) : '<span class="muted" style="font-size:10px;">same sale</span>') + '</td>' : '') +
           '<td class="full-row"><button type="button" class="btn small secondary" data-act="view-details" data-group="' + esc(g.groupId) + '">View Details</button></td>' +
         '</tr>').join('');
       }).join('') +
       '</tbody></table></div>' + pagerHtml(info);
     wirePager(box, pg, render);
     box.querySelectorAll('[data-act="view-details"]').forEach((btn) => btn.addEventListener('click', () => openDetail(btn.dataset.group)));
+    H.wire(box, posCtx);
     renderRequests(); renderRemovals();
   }
 
@@ -1134,6 +1146,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
       (first.pickup_status === 'Pending Pickup' && canEditSale
         ? '<div style="margin-top:6px;"><button type="button" class="btn small secondary" data-act="mark-picked-up" data-group="' + esc(g.groupId) + '">Mark Picked Up</button></div>' : '') +
     '</div>' : '') +
+    H.sectionHtml(g.groupId) +
     '<div class="drawer-section"><h4>Items</h4>' +
       g.items.map((r) => '<div class="payment-line">' +
         '<div><b>' + esc(r.products?.item_name || r.sku) + '</b> <span class="muted">' + esc(r.sku) + '</span></div>' +
@@ -1246,6 +1259,8 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   function wireDetailBody(container, g) {
     const back = () => { detailMode = null; openDetail(g.groupId); };
     container.querySelector('[data-act="print"]')?.addEventListener('click', () => printReceipt(g));
+    H.wire(container, posCtx);
+    H.fillHistory(container, g.groupId);
 
     container.querySelector('[data-act="mark-picked-up"]')?.addEventListener('click', async (ev) => {
       if (!await confirmDialog({ title: 'Mark this sale picked up?', message: 'The status changes from Pending Pickup to Picked Up.', confirmLabel: 'Mark picked up' })) return;
@@ -1522,7 +1537,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   // ---------------------------------------------------------------------------------------------
   const rerender = () => { pg.page = 1; render(); };
   $('pos-f-search').addEventListener('input', rerender);
-  ['pos-f-show', 'pos-f-method', 'pos-f-admin'].forEach((id) => $(id).addEventListener('change', rerender));
+  ['pos-f-show', 'pos-f-method', 'pos-f-admin', 'pos-f-handler'].forEach((id) => { if ($(id)) $(id).addEventListener('change', rerender); });
   // The date range changes the rows that are loaded (the ledger and the summary both come from the database for that range).
   let rangeTimer = null;
   const onRangeChange = () => { clearTimeout(rangeTimer); rangeTimer = setTimeout(() => { pg.page = 1; load(); }, 60); };
@@ -1530,7 +1545,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   $('pos-f-to').addEventListener('change', onRangeChange);
   $('pos-f-clear').addEventListener('click', () => {
     $('pos-f-search').value = '';
-    $('pos-f-show').value = 'all'; $('pos-f-method').value = 'all'; $('pos-f-admin').value = 'all';
+    $('pos-f-show').value = 'all'; $('pos-f-method').value = 'all'; $('pos-f-admin').value = 'all'; if ($('pos-f-handler')) $('pos-f-handler').value = 'all';
     rerender(); // the date range is the page's global range -- not cleared here
   });
   wireSortControl('pos-sort-field', 'pos-sort-dir', sort, render);
@@ -1541,7 +1556,7 @@ export async function initPosTab({ root, esc, toast, msgId, getBranchId, employe
   // Needs Attention / summary-card click: narrow the ledger to what was clicked. These are "what is still open today" views, so they
   // look across all dates (the host widens the range).
   function applyView(view) {
-    $('pos-f-search').value = ''; $('pos-f-method').value = 'all'; $('pos-f-admin').value = 'all';
+    $('pos-f-search').value = ''; $('pos-f-method').value = 'all'; $('pos-f-admin').value = 'all'; if ($('pos-f-handler')) $('pos-f-handler').value = 'all';
     $('pos-f-show').value = SHOW_FILTERS.some(([k]) => k === view) ? view : 'all';
     pg.page = 1;
     render();

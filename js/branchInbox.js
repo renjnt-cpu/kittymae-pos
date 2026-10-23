@@ -11,10 +11,10 @@ import {
   approveLayawayPaymentDeletion, rejectLayawayPaymentDeletion,
   approveLayawayHoldDeletionStage1, approveLayawayHoldDeletionFinal, rejectLayawayHoldDeletion,
   approveLayawayForfeitStage1, approveLayawayForfeitFinal, rejectLayawayForfeit, cancelLayawayForfeitRequest,
-} from './api.js?v=20261018c';
-import { confirmDialog, reasonDialog } from './dialogs.js?v=20261018c';
-import { approvalCardHtml } from './approvalUi.js?v=20261018c';
-import { friendlyError } from './shell.js?v=20261018c';
+} from './api.js?v=20261023a';
+import { confirmDialog, reasonDialog } from './dialogs.js?v=20261023a';
+import { approvalCardHtml } from './approvalUi.js?v=20261023a';
+import { friendlyError } from './shell.js?v=20261023a';
 
 const MODULES = ['POS', 'Layaway', 'Scrap', 'Subasta'];
 const money = (n) => n === null || n === undefined ? '—' : '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });

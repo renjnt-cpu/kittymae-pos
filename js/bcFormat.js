@@ -1,6 +1,6 @@
 // Branch Capital -- small shared helpers: money and dates (Philippine peso, Manila time), the badges for statuses and receipts, the fixed lists (paid from, payment method, transport type),
 // summary cards, and the CSV download used by the reports. No data access here.
-import { esc } from './shell.js?v=20261018c';
+import { esc } from './shell.js?v=20261023a';
 
 export { esc };
 

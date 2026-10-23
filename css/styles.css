@@ -1053,3 +1053,21 @@ body.bc-noscroll { overflow:hidden; }
 
 /* [hidden] must win over .field / .bc-span2 display rules inside the Branch Capital forms */
 .bc-form-grid [hidden], .bc-dlg-slot [hidden], .field[hidden], .bc-pane [hidden], .bc-span2[hidden] { display:none !important; }
+
+/* ---- Branches: HANDLED BY (staff handler of a POS sale / scrap entry / Subasta item), 2026-10-23 ---- */
+.bh-btn { margin-top:3px; padding:1px 8px; font-size:11px; }
+.dlg.bh-dlg { width:min(520px, 100%); }
+.bh-list { max-height:min(320px, 42vh); overflow-y:auto; border:1px solid #e6e6e6; border-radius:8px; background:#fff; }
+.bh-group { position:sticky; top:0; background:var(--rose-bg); font-size:10.5px; font-weight:700; letter-spacing:0.05em; color:var(--muted); padding:6px 10px; border-bottom:1px solid #e9eef2; }
+.bh-opt { display:flex; justify-content:space-between; align-items:center; gap:8px; width:100%; text-align:left; background:#fff; border:0; border-bottom:1px solid #f1f1f1; padding:8px 10px; font:inherit; font-size:13px; color:var(--ink); cursor:pointer; }
+.bh-opt:hover { background:var(--rose-bg); }
+.bh-opt[aria-selected="true"] { background:var(--rose); font-weight:600; }
+.bh-opt:focus-visible { outline:2px solid #1a56b0; outline-offset:-2px; }
+.bh-pos { display:block; font-size:11px; font-weight:normal; }
+.bh-none { padding:12px; }
+.bh-sum { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:-6px 0 12px; font-size:12px; }
+.bh-chip { cursor:pointer; font:inherit; font-size:12px; }
+.bh-chip:hover { border-color:var(--rose); background:var(--rose-bg); }
+.bh-history .lw-history { margin-top:2px; }
+.bh-dlg .field input, .bh-dlg .field select { min-width:0; }
+.bh-dlg .dlg-actions .btn[disabled] { opacity:0.5; cursor:not-allowed; }

@@ -19,19 +19,20 @@ import {
   uploadScrapAttachment, uploadScrapPaymentProof, uploadScrapLinePhoto, getScrapLineIds, getScrapAttachmentUrl, convertScrapToSubasta,
   listBranchAuditLog, listBranchRecordRequests, requestBranchRecordAction, approveBranchRecordStage1, approveBranchRecordFinal,
   rejectBranchRecordAction, cancelBranchRecordAction, adminApplyBranchRecordAction, subscribeToChanges,
-} from './api.js?v=20261018c';
-import { PAYMENT_METHODS } from './paymentMethods.js?v=20261018c';
-import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261018c';
-import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261018c';
-import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261018c';
-import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261018c';
-import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261018c';
-import { attachCustomerPicker } from './customerPicker.js?v=20261018c';
-import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261018c';
-import { GOLD_PURITIES } from './metals.js?v=20261018c';
-import { linesOf, linesLabel, normLines, mountScrapLines } from './scrapLines.js?v=20261018c';
-import { manilaToday } from './opsDates.js?v=20261018c';
-import { friendlyError } from './shell.js?v=20261018c';
+} from './api.js?v=20261023a';
+import { PAYMENT_METHODS } from './paymentMethods.js?v=20261023a';
+import { activeFiltersHtml, emptyStateHtml, wireProxyButtons, sortControlHtml, wireSortControl, applySort, byText, byNumber, flagInvalid } from './uiKit.js?v=20261023a';
+import { confirmDialog, reasonDialog, ERROR_TYPES } from './dialogs.js?v=20261023a';
+import { paymentStatusOf, paymentChipHtml } from './paymentStatus.js?v=20261023a';
+import { pageSlice, pagerHtml, wirePager } from './pager.js?v=20261023a';
+import { approvalCardHtml, setApprovalFolder } from './approvalUi.js?v=20261023a';
+import { attachCustomerPicker } from './customerPicker.js?v=20261023a';
+import { paymentRowsHtml, mountPaymentRows } from './paymentRows.js?v=20261023a';
+import { GOLD_PURITIES } from './metals.js?v=20261023a';
+import { linesOf, linesLabel, normLines, mountScrapLines } from './scrapLines.js?v=20261023a';
+import { manilaToday } from './opsDates.js?v=20261023a';
+import { friendlyError } from './shell.js?v=20261023a';
+import { createHandlers } from './handlerUi.js?v=20261023a';
 
 // Global Filter + Sort rules (Ren, 2026-09-21, section 18): Scrap sortable by Date/Metal-Purity/Customer/Type/Weight/Amount.
 const SC_SORT_FIELDS = [
@@ -124,6 +125,9 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
   let openId = null, editingId = null;
 
   const notify = (text, isError) => toast(msgId, text, isError);
+  // HANDLED BY (migration 253): the staff member handling an entry, chosen by an Admin / Manager.
+  const H = createHandlers({ table: 'scrap_entries', employee, esc, notify, branchName, onChanged: async () => { render(); refreshOpenDetail(); } });
+  const scrapCtx = (id) => { const r = entries.find((x) => String(x.id) === String(id)); return r ? { branchId: r.branch_id, label: 'Scrap #' + r.id, customer: r.customer_name } : null; };
 
   // Page order follows Ren's MASTER UI rule 2: primary action at the top, Summary directly below, Search & Filters,
   // then the records.
@@ -138,6 +142,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
         '<div class="field"><label>Type</label><select id="sc-f-kind"><option value="all">All</option>' + KINDS.map((k) => '<option>' + k + '</option>').join('') + '</select></div>' +
         '<div class="field"><label>Payment</label><select id="sc-f-pay"><option value="all">All</option><option value="owing">Owing (unpaid + partly paid)</option>' +
           '<option value="unpaid">UNPAID</option><option value="partial">PARTIALLY PAID</option><option value="paid">PAID</option></select></div>' +
+        H.filterFieldHtml('sc-f-handler') +
         // From/To are driven by the page's global date range (Branch Operations Summary): kept in the DOM, not shown.
         '<div class="field range-managed"><label>From</label><input type="date" id="sc-f-from"></div>' +
         '<div class="field range-managed"><label>To</label><input type="date" id="sc-f-to"></div>' +
@@ -165,6 +170,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     '</details>' +
     filterCard +
     '<div id="sc-active"></div>' +
+    '<div id="sc-handler-sum"></div>' +
     '<div class="ops-seg" id="sc-view-seg" role="group" aria-label="Scrap view" style="margin:14px 0 10px;">' +
       '<button type="button" data-view="entries" aria-pressed="true">Entries</button>' +
       '<button type="button" data-view="payments" aria-pressed="false">Scrap Payments</button>' +
@@ -444,6 +450,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
         listBranchRecordRequests(['scrap_entries', 'scrap_payments']).catch(() => []),
       ]);
       entries = ents.map(decorate);
+      await H.load(entries.map((r) => r.id));
       cashBalances = cash;
       requests = reqs.filter((q) => q.branch_id === getBranchId());
       render();
@@ -536,7 +543,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
   function readFilters() {
     return {
       search: $('sc-f-search').value.trim().toLowerCase(), metal: $('sc-f-metal').value, kind: $('sc-f-kind').value, pay: $('sc-f-pay').value,
-      from: $('sc-f-from').value, to: $('sc-f-to').value,
+      handler: $('sc-f-handler') ? $('sc-f-handler').value : 'all', from: $('sc-f-from').value, to: $('sc-f-to').value,
     };
   }
   function matchesNonDate(r, f) {
@@ -546,7 +553,8 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       const k = r._st.key;
       if (f.pay === 'owing' ? !(k === 'unpaid' || k === 'partial') : k !== f.pay) return false;
     }
-    return !f.search || r._hay.includes(f.search);
+    if (f.handler && f.handler !== 'all' && !H.matches(r.id, f.handler)) return false;
+    return !f.search || r._hay.includes(f.search) || H.nameOf(r.id).toLowerCase().includes(f.search);
   }
   const inRange = (d, f) => (!f.from || String(d).slice(0, 10) >= f.from) && (!f.to || String(d).slice(0, 10) <= f.to);
 
@@ -564,19 +572,23 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     const canAdd = canAddHere();
     $('sc-new-btn').disabled = !canAdd;
     $('sc-write-note').innerHTML = canAdd ? '' : '<p class="muted" style="font-size:11px;">View only — you can only add scrap for your own branch.</p>';
+    H.syncFilterOptions($('sc-f-handler'), entries.filter((r) => inRange(r.entry_date, readFilters())).map((r) => r.id));
     const f = readFilters();
     const rows = entries.filter((r) => matchesNonDate(r, f) && inRange(r.entry_date, f));
     // The module pill count follows these same filtered rows (MASTER UI rules 6/19/20/28).
     if (onCountUpdate) onCountUpdate(rows.length);
     // The date range is the page's global range (Branch Operations Summary), not a filter that Clear Filters could
     // undo -- it is named in the empty-state message instead.
-    const hasFilters = !!(f.search || f.metal !== 'all' || f.kind !== 'all' || f.pay !== 'all');
+    const hasFilters = !!(f.search || f.metal !== 'all' || f.kind !== 'all' || f.pay !== 'all' || f.handler !== 'all');
     const activeEl = $('sc-active');
     activeEl.innerHTML = activeFiltersHtml([
       { label: 'Search', value: esc(f.search) }, { label: 'Metal', value: esc(f.metal) }, { label: 'Type', value: esc(f.kind) },
       { label: 'Payment', value: esc({ owing: 'Owing', unpaid: 'UNPAID', partial: 'PARTIALLY PAID', paid: 'PAID' }[f.pay] || f.pay) },
+      { label: 'Handled by', value: esc(H.filterLabel(f.handler)) },
     ], 'sc-f-clear');
     wireProxyButtons(activeEl);
+    $('sc-handler-sum').innerHTML = H.summaryHtml(entries.filter((r) => inRange(r.entry_date, f)).map((r) => r.id));
+    H.wireSummary($('sc-handler-sum'), 'sc-f-handler');
     if (view === 'entries') renderEntries(rows, hasFilters); else renderPayments(f, hasFilters);
     renderRequests();
   }
@@ -607,7 +619,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
     // Auto-width columns with no-wrap on the figures (a fixed percentage column broke "₱15,750.00" in two at laptop
     // widths); the box scrolls sideways only when the screen really is too narrow, and below 1024px it is a card list.
     list.innerHTML = '<div class="table-scroll table-2col"><table class="sc-table">' +
-      '<thead><tr><th class="nw">Date</th><th>Customer</th><th class="nw">Metal/Purity</th><th>Type</th><th class="nw">Weight</th><th class="nw">Price/Gram</th><th class="nw">Amount</th><th class="nw">Payment</th><th>Recorded By</th><th></th></tr></thead><tbody>' +
+      '<thead><tr><th class="nw">Date</th><th>Customer</th><th class="nw">Metal/Purity</th><th>Type</th><th class="nw">Weight</th><th class="nw">Price/Gram</th><th class="nw">Amount</th><th class="nw">Payment</th><th>Recorded By</th>' + (H.canView ? '<th>Handled By</th>' : '') + '<th></th></tr></thead><tbody>' +
       info.rows.map((r) => '<tr data-row-id="' + r.id + '">' +
         '<td data-label="Date" class="nw">' + fmtDate(r.entry_date) + (r.purchase_time ? '<div class="muted" style="font-size:10.5px;">' + fmtTime(r.purchase_time) + '</div>' : '') + '</td>' +
         '<td data-label="Customer">' + esc(personOf(r)) + '</td>' +
@@ -624,9 +636,11 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
           (r.converted_to_subasta_item_id ? '<div style="font-size:10px;"><span class="badge ok" style="font-size:9px;">→ Subasta #' + r.converted_to_subasta_item_id + '</span></div>' : '') + '</td>' +
         '<td data-label="Payment" class="nw">' + paymentChipHtml(r._st) + (r._st.key === 'unpaid' || r._st.key === 'partial' ? '<div class="muted" style="font-size:10px;">' + money(r._st.balance) + ' left</div>' : '') + '</td>' +
         '<td data-label="Recorded By" class="full-row" style="font-size:12px;">' + esc((r.creator && r.creator.full_name) || '—') + '</td>' +
+        (H.canView ? '<td data-label="Handled By" class="full-row" style="font-size:12px;">' + H.cellHtml(r.id) + '</td>' : '') +
         '<td class="full-row nw"><button type="button" class="btn small secondary" data-act="view-details" data-id="' + r.id + '">View Details</button></td>' +
       '</tr>').join('') + '</tbody></table></div>' + pagerHtml(info);
     wirePager(list, pg, render);
+    H.wire(list, scrapCtx);
     list.querySelectorAll('tr[data-row-id]').forEach((tr) => tr.addEventListener('click', (ev) => {
       if (ev.target.closest('a, input, select') || (ev.target.closest('button') && !ev.target.closest('[data-act="view-details"]'))) return;
       openDetail(Number(tr.dataset.rowId));
@@ -803,7 +817,8 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
       kv('Created', fmtDateTime(r.created_at)) +
       (r.updated_by ? kv('Last edited', fmtDateTime(r.updated_at) + (r.updater ? ' · ' + esc(r.updater.full_name) : '')) : '') +
       (r.converted_to_subasta_item_id ? kv('Converted', '<span class="badge ok">→ Subasta #' + r.converted_to_subasta_item_id + '</span>') : '') +
-    '</div>';
+    '</div>' +
+      H.sectionHtml(r.id);
 
     // A transaction with several metals / purities (or any line with its own photo): one row per line, with its photo (its share of the final amount
     // is shown, so the grams and the money agree). A line's photo is viewed or attached here, the way the entry's own photo is in Actions.
@@ -918,6 +933,8 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
   function wireDetailBody(container, r) {
     const on = (sel, fn) => container.querySelectorAll(sel).forEach((el) => el.addEventListener('click', () => fn(el)));
     const open = async (path) => { try { window.open(await getScrapAttachmentUrl(path), '_blank'); } catch (err) { notify(String(err.message || err), true); } };
+    H.wire(container, scrapCtx);
+    H.fillHistory(container, r.id);
     on('[data-act="view-photo"]', (el) => open(el.dataset.path));
     on('[data-act="view-proof"]', (el) => open(el.dataset.path));
     on('[data-act="view-line-photo"]', (el) => open(el.dataset.path));
@@ -1158,11 +1175,11 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
   // ---------------------------------------------------------------------------------------------
   const resetPaging = () => { pg.page = 1; payPg.page = 1; };
   ['sc-f-search'].forEach((id) => $(id).addEventListener('input', () => { resetPaging(); render(); }));
-  ['sc-f-metal', 'sc-f-kind', 'sc-f-pay'].forEach((id) => $(id).addEventListener('change', () => { resetPaging(); render(); }));
+  ['sc-f-metal', 'sc-f-kind', 'sc-f-pay', 'sc-f-handler'].forEach((id) => { if ($(id)) $(id).addEventListener('change', () => { resetPaging(); render(); }); });
   // The global date range changes these two (hidden) inputs: the lists re-filter and the server figures are fetched again.
   ['sc-f-from', 'sc-f-to'].forEach((id) => $(id).addEventListener('change', () => { resetPaging(); render(); loadReports(); }));
   $('sc-f-clear').addEventListener('click', () => {
-    $('sc-f-search').value = ''; $('sc-f-metal').value = 'all'; $('sc-f-kind').value = 'all'; $('sc-f-pay').value = 'all';
+    $('sc-f-search').value = ''; $('sc-f-metal').value = 'all'; $('sc-f-kind').value = 'all'; $('sc-f-pay').value = 'all'; if ($('sc-f-handler')) $('sc-f-handler').value = 'all';
     resetPaging(); render(); // the date range is the page's global range -- not cleared here
   });
   wireSortControl('sc-sort-field', 'sc-sort-dir', sort, () => { resetPaging(); render(); });
@@ -1170,7 +1187,7 @@ export async function initScrapTab({ root, esc, toast, msgId, getBranchId, emplo
   /** A summary card / Needs Attention item opens a particular view: 'unpaid' = the Scrap Payments view filtered to what is still owing. */
   function applyView(v) {
     if (v === 'unpaid') {
-      $('sc-f-pay').value = 'owing'; $('sc-f-search').value = ''; $('sc-f-metal').value = 'all'; $('sc-f-kind').value = 'all';
+      $('sc-f-pay').value = 'owing'; $('sc-f-search').value = ''; $('sc-f-metal').value = 'all'; $('sc-f-kind').value = 'all'; if ($('sc-f-handler')) $('sc-f-handler').value = 'all';
       resetPaging(); setView('payments'); render();
       $('sc-pay-list').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else if (v === 'requests') {

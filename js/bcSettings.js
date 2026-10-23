@@ -1,9 +1,9 @@
 // Branch Capital -- SETTINGS (Admin): who has to approve which expense amounts (approval tiers), when a receipt is needed, how big a cash difference needs an explanation, what counts as a high expense,
 // the duplicate warning, and the expense categories. Changes take effect for new expenses and are kept in the audit log.
-import { esc, toast } from './shell.js?v=20261018c';
-import { bcSettingsSave, bcCategorySave, bcContext } from './bcApi.js?v=20261018c';
-import { formDialog } from './bcUi.js?v=20261018c';
-import { money, optionsHtml, badge, errorsText } from './bcFormat.js?v=20261018c';
+import { esc, toast } from './shell.js?v=20261023a';
+import { bcSettingsSave, bcCategorySave, bcContext } from './bcApi.js?v=20261023a';
+import { formDialog } from './bcUi.js?v=20261023a';
+import { money, optionsHtml, badge, errorsText } from './bcFormat.js?v=20261023a';
 
 const LEVELS = [['none', 'No approval needed'], ['supervisor', 'Supervisor or higher'], ['manager', 'Manager or higher'], ['admin', 'Admin only']];
 const KINDS = [['general', 'General expense'], ['transportation', 'Transportation (asks for type / from / to)'], ['bill', 'Bill payment (links to a bill)']];
